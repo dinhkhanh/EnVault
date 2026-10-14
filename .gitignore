@@ -1,0 +1,12 @@
+# Xcode / generated
+*.xcodeproj
+*.xcworkspace
+!project.yml
+DerivedData/
+build/
+.build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+# macOS
+.DS_Store
