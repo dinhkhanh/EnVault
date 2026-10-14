@@ -279,6 +279,45 @@ public actor VaultStore {
         header = newHeader
     }
 
+    // MARK: - Recovery
+
+    public var hasRecoveryKey: Bool { header.recovery != nil }
+
+    /// Creates (or replaces) the recovery key. Show the returned string once.
+    public func createRecoveryKey() async throws -> String {
+        guard let vk = vaultKey else { throw VaultError.locked }
+        let (h, key) = try KeyHierarchy.addRecovery(header: header, vaultKey: vk)
+        try await storage.writeReplace(VaultPath(VaultHeader.fileName), data: try h.encoded())
+        header = h
+        return key
+    }
+
+    public func removeRecoveryKey() async throws {
+        guard vaultKey != nil else { throw VaultError.locked }
+        var h = header
+        h.recovery = nil
+        try await storage.writeReplace(VaultPath(VaultHeader.fileName), data: try h.encoded())
+        header = h
+    }
+
+    /// Unlocks with the recovery key. Follow with `resetPassphrase` so the
+    /// user has a passphrase again.
+    @discardableResult
+    public func unlock(recoveryKey: String) async throws -> VaultKey {
+        let vk = try KeyHierarchy.unlock(header: header, recoveryKey: recoveryKey)
+        try await unlock(vaultKey: vk)
+        return vk
+    }
+
+    /// Sets a new passphrase without knowing the old one (vault must be unlocked,
+    /// e.g. via recovery key or Touch ID).
+    public func resetPassphrase(new: String) async throws {
+        guard let vk = vaultKey else { throw VaultError.locked }
+        let newHeader = try KeyHierarchy.rewrap(header: header, vaultKey: vk, newPassphrase: new)
+        try await storage.writeReplace(VaultPath(VaultHeader.fileName), data: try newHeader.encoded())
+        header = newHeader
+    }
+
     // MARK: - Paths & encoding
 
     private func itemPath(projectId: UUID, itemId: UUID, revisionId: ULID) -> VaultPath {

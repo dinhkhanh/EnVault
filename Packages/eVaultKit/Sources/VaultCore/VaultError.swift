@@ -4,6 +4,8 @@ public enum VaultError: Error, Equatable, Sendable {
     case noVaultAtLocation
     case vaultAlreadyExists
     case wrongPassphrase
+    case noRecoveryKey
+    case wrongRecoveryKey
     case locked
     case corruptHeader(String)
     case corruptRevision(String)
@@ -20,6 +22,8 @@ extension VaultError: LocalizedError {
         case .noVaultAtLocation: "No vault found at that location."
         case .vaultAlreadyExists: "A vault already exists at that location."
         case .wrongPassphrase: "Wrong passphrase."
+        case .noRecoveryKey: "This vault has no recovery key."
+        case .wrongRecoveryKey: "That recovery key is not valid for this vault."
         case .locked: "The vault is locked."
         case .corruptHeader(let why): "Vault header is corrupt: \(why)"
         case .corruptRevision(let why): "A revision file is corrupt: \(why)"

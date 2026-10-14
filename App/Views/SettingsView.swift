@@ -71,6 +71,14 @@ struct VaultSettings: View {
                 }
                 Button("Close Vault…") { model.closeVault() }
             }
+            Section("Recovery Key") {
+                Text(model.hasRecoveryKey ? "A recovery key exists. Generating a new one invalidates the old one." : "No recovery key. Without one, a forgotten passphrase means the vault is lost.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Button(model.hasRecoveryKey ? "Generate New Recovery Key…" : "Create Recovery Key…") {
+                    Task { model.pendingRecoveryKey = await model.createRecoveryKey() }
+                }
+                .disabled(model.phase != .unlocked)
+            }
             Section("Touch ID") {
                 if model.hasBiometricKey {
                     Button("Disable Touch ID Unlock") { model.disableBiometrics() }

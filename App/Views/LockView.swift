@@ -1,10 +1,13 @@
 import SwiftUI
+import VaultCore
 
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @State private var passphrase = ""
     @State private var remember = false
     @State private var busy = false
+    @State private var useRecovery = false
+    @State private var recoveryKey = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -21,6 +24,20 @@ struct LockView: View {
             }
 
             VStack(spacing: 10) {
+                if useRecovery {
+                    TextField("Recovery key (EVLT-…)", text: $recoveryKey)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .focused($focused)
+                        .onSubmit(submitRecovery)
+                    HStack {
+                        Button("Back to passphrase") { useRecovery = false }
+                        Spacer()
+                        Button("Unlock with Recovery Key", action: submitRecovery)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(RecoveryKey.normalize(recoveryKey) == nil || busy)
+                    }
+                } else {
                 SecureField("Passphrase", text: $passphrase)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
@@ -40,6 +57,11 @@ struct LockView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(passphrase.isEmpty || busy)
                 }
+                if model.hasRecoveryKey {
+                    Button("Forgot passphrase? Use recovery key") { useRecovery = true; model.errorMessage = nil }
+                        .buttonStyle(.link).font(.caption)
+                }
+                }
             }
             .frame(width: 360)
 
@@ -54,6 +76,17 @@ struct LockView: View {
         .onAppear {
             focused = true
             if model.hasBiometricKey { Task { await model.unlockWithBiometrics() } }
+        }
+    }
+
+    private func submitRecovery() {
+        guard RecoveryKey.normalize(recoveryKey) != nil else { return }
+        busy = true
+        let k = recoveryKey
+        Task {
+            await model.unlock(recoveryKey: k)
+            recoveryKey = ""
+            busy = false
         }
     }
 

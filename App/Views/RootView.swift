@@ -17,5 +17,13 @@ struct RootView: View {
             }
         }
         .onContinuousHover { _ in model.userActivity() }
+        .sheet(isPresented: Binding(get: { model.pendingRecoveryKey != nil }, set: { if !$0 { model.pendingRecoveryKey = nil } })) {
+            if let k = model.pendingRecoveryKey {
+                RecoveryKeySheet(recoveryKey: k) { model.pendingRecoveryKey = nil }
+            }
+        }
+        .sheet(isPresented: Binding(get: { model.needsPassphraseReset && model.pendingRecoveryKey == nil }, set: { _ in })) {
+            SetPassphraseSheet()
+        }
     }
 }

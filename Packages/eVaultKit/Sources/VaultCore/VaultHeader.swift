@@ -13,6 +13,8 @@ public struct VaultHeader: Codable, Equatable, Sendable {
     public var kdf: KDFParams
     /// AES-GCM sealed box (nonce ‖ ciphertext ‖ tag) of the 32-byte vault key, keyed by the KEK.
     public var wrappedVaultKey: Data
+    /// Optional second wrap under a recovery key (see `RecoveryKey`).
+    public var recovery: RecoveryWrap?
 
     public init(formatVersion: Int = VaultHeader.currentFormatVersion, vaultId: UUID, createdAt: Date, kdf: KDFParams, wrappedVaultKey: Data) {
         self.formatVersion = formatVersion

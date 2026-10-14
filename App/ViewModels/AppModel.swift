@@ -33,6 +33,11 @@ final class AppModel {
     var errorMessage: String?
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
+    private(set) var hasRecoveryKey = false
+    /// A freshly generated recovery key the UI must show once, then clear.
+    var pendingRecoveryKey: String?
+    /// Set after a recovery-key unlock: the user must choose a new passphrase.
+    var needsPassphraseReset = false
 
     /// True when this build carries the iCloud entitlement (signed configurations).
     /// Debug builds launched with `-fakeCloud YES` simulate it with an in-memory cloud.
@@ -122,6 +127,7 @@ final class AppModel {
             syncMode = mode
             if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
             hasBiometricKey = keychain.hasCachedKey(vaultId: vaultId!)
+            hasRecoveryKey = await s.hasRecoveryKey
             phase = .locked
             errorMessage = nil
             startWatching()
@@ -144,6 +150,8 @@ final class AppModel {
             if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
             hasBiometricKey = false
             errorMessage = nil
+            pendingRecoveryKey = try await s.createRecoveryKey()
+            hasRecoveryKey = true
             startWatching()
             if mode == .iCloud {
                 startCloud()
@@ -195,6 +203,7 @@ final class AppModel {
             await syncNow()
             // openVault leaves us locked; unlock with the passphrase we just set.
             await unlock(passphrase: passphrase, rememberWithBiometrics: false)
+            pendingRecoveryKey = await createRecoveryKey()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -338,6 +347,47 @@ final class AppModel {
         try? keychain.remove(vaultId: vaultId)
         hasBiometricKey = false
         UserDefaults.standard.set(false, forKey: Prefs.biometricUnlock)
+    }
+
+    // MARK: - Recovery key
+
+    /// Generates (or replaces) the recovery key and returns it for display.
+    func createRecoveryKey() async -> String? {
+        guard let store else { return nil }
+        do {
+            let k = try await store.createRecoveryKey()
+            hasRecoveryKey = true
+            schedulePush()
+            return k
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func unlock(recoveryKey: String) async {
+        guard let store else { return }
+        do {
+            try await store.unlock(recoveryKey: recoveryKey)
+            await becameUnlocked()
+            needsPassphraseReset = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// New passphrase without the old one (after a recovery unlock).
+    func resetPassphrase(new: String) async -> Bool {
+        guard let store else { return false }
+        do {
+            try await store.resetPassphrase(new: new)
+            needsPassphraseReset = false
+            schedulePush()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     func lock() {
