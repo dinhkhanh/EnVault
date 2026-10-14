@@ -28,6 +28,8 @@ targets:
         product: VaultSync
       - package: eVaultKit
         product: ToolKit
+      - package: eVaultKit
+        product: LicenseKit
     configFiles:
       Debug-iCloud: Config/Signing.xcconfig
       Release-iCloud: Config/Signing.xcconfig

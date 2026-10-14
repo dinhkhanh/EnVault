@@ -3,6 +3,7 @@ import VaultCore
 
 struct MainView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LicenseManager.self) private var licenses
     @State private var showNewProject = false
     @State private var showNewItem = false
 
@@ -43,7 +44,7 @@ struct MainView: View {
         .sheet(isPresented: $showNewItem) {
             if let pid = model.selectedProjectId { NewItemSheet(projectId: pid) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .newProject)) { _ in showNewProject = true }
+        .onReceive(NotificationCenter.default.publisher(for: .newProject)) { _ in if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
         .onReceive(NotificationCenter.default.publisher(for: .newItem)) { _ in if model.selectedProjectId != nil { showNewItem = true } }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

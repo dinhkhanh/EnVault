@@ -6,6 +6,7 @@ struct SettingsView: View {
         TabView {
             GeneralSettings().tabItem { Label("General", systemImage: "gear") }
             VaultSettings().tabItem { Label("Vault", systemImage: "lock.shield") }
+            LicenseSettings().tabItem { Label("License", systemImage: "sparkles") }
         }
         .frame(width: 480)
         .padding()

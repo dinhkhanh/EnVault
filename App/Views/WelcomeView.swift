@@ -5,6 +5,7 @@ import VaultCore
 /// First launch: create a new vault (in iCloud or a folder) or open an existing one.
 struct WelcomeView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LicenseManager.self) private var licenses
 
     enum Flow: Equatable { case menu, createFolder(URL), createICloud, openICloud }
     @State private var flow: Flow = .menu
@@ -44,11 +45,11 @@ struct WelcomeView: View {
         VStack(spacing: 14) {
             if model.cloudAvailable {
                 HStack(spacing: 12) {
-                    Button { model.errorMessage = nil; flow = .createICloud } label: {
+                    Button { if licenses.require(.cloudKitSync) { model.errorMessage = nil; flow = .createICloud } } label: {
                         Label("Create Vault in iCloud…", systemImage: "icloud.and.arrow.up")
                     }
                     .buttonStyle(.borderedProminent)
-                    Button { model.errorMessage = nil; flow = .openICloud; loadVaults() } label: {
+                    Button { if licenses.require(.cloudKitSync) { model.errorMessage = nil; flow = .openICloud; loadVaults() } } label: {
                         Label("Open Vault from iCloud…", systemImage: "icloud.and.arrow.down")
                     }
                 }

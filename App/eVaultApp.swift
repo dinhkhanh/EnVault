@@ -4,12 +4,17 @@ import SwiftUI
 struct eVaultApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
+    @State private var licenses = LicenseManager()
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("eVault", id: "main") {
             RootView()
                 .environment(model)
+                .environment(licenses)
+                .sheet(isPresented: Binding(get: { licenses.upgradePrompt != nil }, set: { if !$0 { licenses.upgradePrompt = nil } })) {
+                    UpgradeSheet(feature: licenses.upgradePrompt).environment(licenses)
+                }
                 .frame(minWidth: 900, minHeight: 560)
                 .task { await model.start() }
                 .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { _ in model.remotePushReceived() }
@@ -43,12 +48,13 @@ struct eVaultApp: App {
         }
 
         Settings {
-            SettingsView().environment(model)
+            SettingsView().environment(model).environment(licenses)
         }
 
         MenuBarExtra("eVault", systemImage: "key.horizontal.fill") {
             MenuBarView(openMain: { openWindow(id: "main"); NSApp.activate() })
                 .environment(model)
+                .environment(licenses)
         }
         .menuBarExtraStyle(.window)
     }

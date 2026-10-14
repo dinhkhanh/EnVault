@@ -5,6 +5,7 @@ import EnvKit
 /// Menu bar quick-copy: search every key in every env file and every secret.
 struct MenuBarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LicenseManager.self) private var licenses
     let openMain: () -> Void
     @State private var query = ""
     @State private var copiedId: String?
@@ -39,7 +40,14 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.phase == .unlocked {
+            if model.phase == .unlocked, !licenses.allows(.menuBarQuickCopy) {
+                VStack(spacing: 8) {
+                    Image(systemName: "sparkles").font(.title)
+                    Text("Menu bar quick copy is part of eVault Pro.").foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Learn More") { licenses.upgradePrompt = .menuBarQuickCopy; openMain() }.buttonStyle(.borderedProminent)
+                }
+                .padding(24)
+            } else if model.phase == .unlocked {
                 TextField("Search keys…", text: $query).textFieldStyle(.roundedBorder).padding(8)
                 Divider()
                 List(hits) { h in

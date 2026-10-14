@@ -9,6 +9,7 @@ enum SidebarSelection: Hashable {
 
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LicenseManager.self) private var licenses
     @Binding var showNewProject: Bool
     @State private var renaming: Project?
     @State private var deleting: Project?
@@ -23,7 +24,7 @@ struct SidebarView: View {
             set: { sel in
                 switch sel {
                 case .project(let id): model.selectedToolId = nil; model.selectedProjectId = id; model.selectedItemId = nil
-                case .tool(let id): model.selectedToolId = id
+                case .tool(let id): if licenses.require(.developerTools) { model.selectedToolId = id }
                 case nil: break
                 }
             })
@@ -40,7 +41,14 @@ struct SidebarView: View {
             ForEach(model.tools.byCategory, id: \.0) { category, tools in
                 Section(category.rawValue) {
                     ForEach(tools, id: \.id) { t in
-                        Label(t.title, systemImage: t.systemImage).tag(SidebarSelection.tool(t.id))
+                        HStack {
+                            Label(t.title, systemImage: t.systemImage)
+                            if !licenses.allows(.developerTools) {
+                                Spacer()
+                                Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .tag(SidebarSelection.tool(t.id))
                     }
                 }
             }
@@ -48,7 +56,7 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button { showNewProject = true } label: { Label("New Project", systemImage: "plus") }
+                Button { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } } label: { Label("New Project", systemImage: "plus") }
                     .buttonStyle(.borderless)
                 Spacer()
                 if model.syncMode == .iCloud {
