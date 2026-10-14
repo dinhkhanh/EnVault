@@ -24,7 +24,11 @@ ditto -c -k --keepParent "$OUT/export/eVault.app" "$OUT/eVault-$VERSION.zip"
 # Sparkle appcast: signs the zip with the EdDSA key from the keychain.
 GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
 if [ -n "$GA" ]; then
-  "$GA" --download-url-prefix "https://github.com/dinhkhanh/eVault/releases/download/v$VERSION/" "$OUT" >/dev/null
+  # Sparkle wants exactly one archive per version: feed it the zip only.
+  rm -rf "$OUT/appcast-src" && mkdir -p "$OUT/appcast-src"
+  cp "$OUT/eVault-$VERSION.zip" "$OUT/appcast-src/"
+  "$GA" --download-url-prefix "https://github.com/dinhkhanh/eVault/releases/download/v$VERSION/" -o "$OUT/appcast.xml" "$OUT/appcast-src" >/dev/null
+  rm -rf "$OUT/appcast-src"
   echo "appcast: $OUT/appcast.xml"
 else
   echo "warning: generate_appcast not found; resolve packages first (make gen && xcodebuild -resolvePackageDependencies)"
