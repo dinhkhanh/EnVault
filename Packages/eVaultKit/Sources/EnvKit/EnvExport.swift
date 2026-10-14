@@ -26,7 +26,7 @@ public enum EnvExport {
         doc.entries.map { "\($0.key)=\($0.value)" }.joined(separator: "\n") + "\n"
     }
 
-    static func shellQuote(_ s: String) -> String {
+    public static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
