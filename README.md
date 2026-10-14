@@ -122,7 +122,13 @@ keychain (item `dk.dinhkhanh.evault.license-signing`); back it up. Issue a key:
 
 ```sh
 scripts/issue-license.sh --email a@b.c --name "Ada" --plan pro --updates-until 2027-10-14
+scripts/list-licenses.sh [search]      # the vendor ledger
 ```
+
+Every issued key is appended to `~/Library/Application Support/eVault Vendor/licenses.jsonl`
+on the issuing Mac. That file and the keychain signing key are the vendor's
+only records; back both up. Keys cannot be revoked offline, so keep
+`--updates-until` short-ish and rely on it for lapsed customers.
 
 Free: 3 projects, folder sync, editor, history, Touch ID, CLI.
 Pro: unlimited projects, CloudKit sync, menu bar quick copy, developer tools.
