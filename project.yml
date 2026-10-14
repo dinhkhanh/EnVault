@@ -1,0 +1,64 @@
+name: eVault
+options:
+  bundleIdPrefix: dk.dinhkhanh
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+packages:
+  eVaultKit:
+    path: Packages/eVaultKit
+targets:
+  eVault:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: eVaultKit
+        product: VaultCore
+      - package: eVaultKit
+        product: EnvKit
+      - package: eVaultKit
+        product: VaultSync
+      - package: eVaultKit
+        product: ToolKit
+    entitlements:
+      path: App/eVault.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: eVault
+        CFBundleName: eVault
+        LSMinimumSystemVersion: "15.0"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSHumanReadableCopyright: "© 2026 Dinh Khanh"
+        NSFaceIDUsageDescription: "eVault uses Touch ID to unlock your vault."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: true
+        GENERATE_INFOPLIST_FILE: false
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        ENABLE_PREVIEWS: true
+        SWIFT_EMIT_LOC_STRINGS: false
+        DEAD_CODE_STRIPPING: true
+schemes:
+  eVault:
+    build:
+      targets:
+        eVault: all
+    run:
+      config: Debug
+    test:
+      config: Debug

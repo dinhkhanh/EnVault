@@ -4,7 +4,8 @@ A native macOS app for developers to store `.env` files and other secrets in an
 encrypted local vault, and get them back on any of their Macs via iCloud (or any
 synced folder), without the sync transport ever seeing plaintext.
 
-Status: **proposal, nothing built yet.** Date: 2026-10-14.
+Status: **phases 0–6 implemented on 2026-10-14** (see §11 for what each
+covers; §13 lists what is deliberately still open). Date: 2026-10-14.
 
 ---
 
@@ -276,25 +277,37 @@ eVault/
 
 ## 11. Phases
 
-| Phase | Deliverable | Rough size |
+| Phase | Deliverable | Status |
 |---|---|---|
-| 0 | Repo scaffold, packages, XcodeGen project, Makefile, CI-less build passes | small |
-| 1 | `VaultCore`: crypto, key hierarchy, `.evr` format, `VaultStore` actor, tests | medium |
-| 2 | `EnvKit`: dotenv parse/serialize/diff with fixtures | small |
-| 3 | App: create/unlock, Touch ID, projects, items, env editor, import/export, auto-lock, clipboard hygiene | large |
-| 4 | `VaultSync` folder backend over iCloud Drive, revision merge, history/restore UI, second-device onboarding | medium |
-| 5 | Menu bar extra, `ToolRegistry` + 3 starter tools | small |
-| 6 | `evault` CLI | medium |
+| 0 | Repo scaffold, packages, XcodeGen project, Makefile | done |
+| 1 | `VaultCore`: crypto, key hierarchy, `.evr` format, `VaultStore` actor, tests | done |
+| 2 | `EnvKit`: dotenv parse/serialize/diff/export with fixtures | done |
+| 3 | App: create/unlock, Touch ID, projects, items, env editor, import/export, auto-lock, clipboard hygiene | done |
+| 4 | Folder sync over iCloud Drive, FSEvents watcher, revision merge, history/restore/compact UI | done |
+| 5 | Menu bar extra, `ToolRegistry` + 5 starter tools (env diff, random secret, UUID/ULID, JWT, base64/hex) | done |
+| 6 | `evault` CLI (`ls`, `get`, `pull`, `push`, `run`, `history`, `init`) | done |
 
-Phases 0–2 can be built and tested without opening Xcode's UI at all.
+One deviation from §10: the four packages live as targets of a single
+SwiftPM package `Packages/eVaultKit` instead of four package directories.
 
 ---
 
-## 12. Open questions for you
+## 13. Known gaps after the first build
 
-1. **Sync v1 = encrypted folder in iCloud Drive** (no Apple developer account
-   needed) with CloudKit as a later backend. OK?
-2. **Install XcodeGen via Homebrew** to generate the `.xcodeproj` from a
-   checked-in `project.yml`? (Alternative: commit a hand-maintained project.)
-3. **Minimum macOS 15** (Sequoia)? Could go 14 or 26.
-4. Name/bundle id: `eVault`, `dk.dinhkhanh.evault`?
+- No app icon or asset catalog yet.
+- Touch ID on ad-hoc signed builds uses the legacy keychain fallback (§5
+  describes the Developer ID path).
+- The raw editor has basic highlighting only; no line numbers.
+- Menu bar search covers env keys and secrets, not notes.
+- Not yet verified on a second physical Mac through iCloud Drive; verified
+  locally by writing from the CLI while the app watched the folder.
+- CloudKit backend, sharing, and iOS remain future work (§9).
+
+---
+
+## 12. Decisions taken
+
+1. Sync v1 = encrypted folder in iCloud Drive; CloudKit as a later backend.
+2. XcodeGen generates the `.xcodeproj` from the checked-in `project.yml`.
+3. Minimum macOS 15.
+4. App name eVault, bundle id `dk.dinhkhanh.evault`.
