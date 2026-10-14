@@ -4,6 +4,8 @@ import ToolKit
 extension ToolRegistry {
     static let all = ToolRegistry([
         EnvDiffTool(),
+        EnvExampleTool(),
+        SecretScanTool(),
         RandomSecretTool(),
         UUIDTool(),
         JWTDecoderTool(),

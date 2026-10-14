@@ -79,6 +79,7 @@ struct EnvFileView: View {
     @State private var mode: Mode = .table
     @State private var draft: String
     @State private var exportConfirm: URL?
+    @State private var keyAges: [String: Date] = [:]
 
     init(item: Item, text: String) {
         self.item = item
@@ -107,6 +108,7 @@ struct EnvFileView: View {
                     Button("Copy as `export` Lines") { ClipboardService.shared.copy(EnvExport.shell(doc)) }
                     Button("Copy as Inline Command Prefix") { ClipboardService.shared.copy(EnvExport.inlineCommand(doc)) }
                     Button("Copy as JSON") { ClipboardService.shared.copy(EnvExport.json(doc)) }
+                    Button("Copy as .env.example") { ClipboardService.shared.copy(EnvHygiene.example(from: doc), concealed: false) }
                     Divider()
                     Button("Write File to Folder…") { writeToFolder() }
                 } label: { Label("Export", systemImage: "square.and.arrow.up") }
@@ -120,7 +122,7 @@ struct EnvFileView: View {
 
             switch mode {
             case .table:
-                EnvTableView(doc: doc, masked: maskValues) { key, value in
+                EnvTableView(doc: doc, masked: maskValues, keyAges: keyAges) { key, value in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.setting(key, to: value).text)) }
                 } onDelete: { key in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.removing(key).text)) }
@@ -130,6 +132,13 @@ struct EnvFileView: View {
             }
         }
         .onChange(of: text) { _, new in if !dirty || mode == .table { draft = new } }
+        .task(id: item.revisionId) {
+            let revs = await model.history(of: item.id).compactMap { r -> (date: Date, text: String)? in
+                guard case .envFile(let t) = r.payload else { return nil }
+                return (r.modifiedAt, t)
+            }
+            keyAges = EnvHygiene.keyAges(revisions: revs)
+        }
         .confirmationDialog("Replace existing file?", isPresented: Binding(get: { exportConfirm != nil }, set: { if !$0 { exportConfirm = nil } }), presenting: exportConfirm) { url in
             Button("Replace", role: .destructive) { write(to: url) }
         } message: { url in

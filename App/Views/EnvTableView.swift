@@ -7,6 +7,7 @@ import EnvKit
 struct EnvTableView: View {
     let doc: EnvDocument
     let masked: Bool
+    var keyAges: [String: Date] = [:]
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
 
@@ -16,7 +17,7 @@ struct EnvTableView: View {
                 ForEach(doc.lines) { line in
                     switch line.kind {
                     case .entry(let e):
-                        EnvEntryRow(entry: e, masked: masked, onEdit: onEdit, onDelete: onDelete)
+                        EnvEntryRow(entry: e, masked: masked, lastChanged: keyAges[e.key], onEdit: onEdit, onDelete: onDelete)
                     case .comment(let c):
                         Text("# " + c).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
                             .padding(.horizontal, 16).padding(.vertical, 3)
@@ -42,6 +43,7 @@ struct EnvTableView: View {
 struct EnvEntryRow: View {
     let entry: EnvEntry
     let masked: Bool
+    var lastChanged: Date?
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
     @State private var revealed = false
@@ -80,6 +82,14 @@ struct EnvEntryRow: View {
             }
             if let c = entry.inlineComment, !editing {
                 Text("# " + c).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if let d = lastChanged, !editing, !entry.value.isEmpty {
+                let days = Int(Date().timeIntervalSince(d) / 86400)
+                if days >= 90 {
+                    Label("\(days)d", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption).foregroundStyle(.orange)
+                        .help("Value unchanged for \(days) days. Consider rotating it.")
+                }
             }
             HStack(spacing: 4) {
                 if editing {
