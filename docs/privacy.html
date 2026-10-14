@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eVault — Privacy</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#5b6170; --accent:#3b5cf5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1016; --fg:#f2f3f7; --muted:#9aa1b2; --accent:#6f88ff; } }
+  body { margin:0; font:16px/1.65 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:720px; margin:0 auto; padding:48px 20px 80px; }
+  h1 { letter-spacing:-.02em; } h2 { margin-top:32px; }
+  a { color:var(--accent); } p, li { color:var(--fg); } .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="./">← eVault</a></p>
+  <h1>Privacy</h1>
+  <p class="muted">Last updated 14 October 2026</p>
+
+  <h2>What eVault stores</h2>
+  <p>Your secrets are encrypted on your Mac with a key derived from your passphrase. They are written only to the vault folder you choose or, in iCloud mode, to your own private CloudKit database. eVault has no servers and no accounts. We cannot read your vault and cannot reset your passphrase.</p>
+
+  <h2>Network access</h2>
+  <p>The app is sandboxed without a network entitlement. Sync is performed by macOS (iCloud Drive or CloudKit). Update checks are performed by the Sparkle framework's helper service and fetch a signed update feed from GitHub; they send no personal data. The command-line tool only talks to third-party services (Vercel, Cloudflare, GitHub) when you run a <code>deploy</code> command, using their own CLIs and your own credentials.</p>
+
+  <h2>Licenses</h2>
+  <p>License keys are verified offline with a public key embedded in the app. No activation server, no usage tracking. The key contains the name and email entered at purchase so you can identify it; it is stored only on your Mac.</p>
+
+  <h2>Analytics and crash reports</h2>
+  <p>eVault contains no analytics SDK. Crash reports go through Apple's standard crash reporter, under your macOS settings, and we only see them if you choose to share them with Apple and Apple shares them with us.</p>
+
+  <h2>Contact</h2>
+  <p><a href="mailto:tran@dinhkhanh.dk">tran@dinhkhanh.dk</a></p>
+</main>
+</body>
+</html>

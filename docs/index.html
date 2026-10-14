@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eVault — encrypted .env storage for your Macs</title>
+<meta name="description" content="eVault keeps your .env files and secrets in an encrypted vault that syncs through iCloud. Zero-knowledge, local-first, with a CLI and shell integration.">
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#5b6170; --accent:#3b5cf5; --card:#f5f6fa; --border:#e3e5ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1016; --fg:#f2f3f7; --muted:#9aa1b2; --accent:#6f88ff; --card:#171a23; --border:#262a36; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:960px; margin:0 auto; padding:0 20px 80px; }
+  header { padding:72px 0 40px; text-align:center; }
+  .logo { width:96px; height:96px; border-radius:22px; background:linear-gradient(150deg,#2a5cf2,#5c33cc); display:inline-grid; place-items:center; box-shadow:0 10px 30px rgba(59,92,245,.3); }
+  .logo svg { width:52px; height:52px; fill:#fff; }
+  h1 { font-size:44px; line-height:1.1; margin:24px 0 12px; letter-spacing:-.02em; }
+  .tagline { font-size:20px; color:var(--muted); max-width:620px; margin:0 auto 28px; }
+  .cta { display:inline-flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  .btn { display:inline-block; padding:12px 20px; border-radius:10px; font-weight:600; text-decoration:none; color:#fff; background:var(--accent); }
+  .btn.alt { background:var(--card); color:var(--fg); border:1px solid var(--border); }
+  .note { color:var(--muted); font-size:14px; margin-top:12px; }
+  section { margin-top:64px; }
+  h2 { font-size:28px; letter-spacing:-.01em; margin:0 0 16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; }
+  .card h3 { margin:0 0 6px; font-size:17px; }
+  .card p { margin:0; color:var(--muted); font-size:15px; }
+  pre { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; overflow:auto; font:13.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+  .pricing { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .plan { border:1px solid var(--border); border-radius:16px; padding:24px; background:var(--card); }
+  .plan.pro { border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,92,245,.12); }
+  .price { font-size:34px; font-weight:700; margin:6px 0 2px; }
+  .plan ul { padding-left:18px; margin:12px 0 18px; color:var(--muted); }
+  footer { margin-top:80px; color:var(--muted); font-size:14px; text-align:center; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 5a3 3 0 0 1 3 3v1h.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1H9v-1a3 3 0 0 1 3-3Zm0 1.6A1.4 1.4 0 0 0 10.6 10v1h2.8v-1A1.4 1.4 0 0 0 12 8.6Z"/></svg>
+    </div>
+    <h1>Your .env files, encrypted,<br>on every Mac you own.</h1>
+    <p class="tagline">eVault is a native macOS vault for environment files and secrets. It syncs through your own iCloud, never through our servers, because we don't have any.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/dinhkhanh/eVault/releases/latest">Download for macOS</a>
+      <a class="btn alt" href="https://github.com/dinhkhanh/eVault">Source on GitHub</a>
+    </div>
+    <p class="note">macOS 15 or later. Free tier included; no account required.</p>
+  </header>
+
+  <section>
+    <h2>Zero-knowledge by construction</h2>
+    <div class="grid">
+      <div class="card"><h3>Encrypted before it leaves memory</h3><p>Every revision is an immutable AES-256-GCM file. Your passphrase derives the key on your Mac. iCloud, Dropbox or git only ever carry ciphertext.</p></div>
+      <div class="card"><h3>No conflict copies, ever</h3><p>Files are never overwritten, so any sync service works and offline edits on two Macs merge cleanly. Full history and restore come free.</p></div>
+      <div class="card"><h3>Touch ID, auto-lock, clean clipboard</h3><p>Unlock with Touch ID, lock on sleep, and copied secrets are hidden from clipboard managers and cleared automatically.</p></div>
+      <div class="card"><h3>Recovery key</h3><p>Forgot the passphrase? A one-time recovery key gets you back in. Lose both and the vault is unrecoverable, by design.</p></div>
+      <div class="card"><h3>Sandboxed, no network</h3><p>The app has no network entitlement. Sync happens through iCloud Drive or CloudKit, both handled by macOS, not by eVault.</p></div>
+      <div class="card"><h3>Open core</h3><p>The vault format and crypto are open source. Read the threat model, audit the code, build it yourself.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Built for the terminal too</h2>
+    <pre>$ evault link my-saas .env.local       # bind this directory to an env file
+$ eval "$(evault hook zsh)"            # variables load on cd, unload on leave
+$ evault run my-saas .env -- npm start # or inject just for one command
+$ evault deploy vercel my-saas .env.production --target production
+$ evault scan .                        # find secrets committed by mistake
+$ evault example my-saas .env > .env.example</pre>
+  </section>
+
+  <section id="pricing">
+    <h2>Pricing</h2>
+    <div class="pricing">
+      <div class="plan">
+        <h3>Free</h3>
+        <div class="price">$0</div>
+        <ul>
+          <li>3 projects, unlimited env files</li>
+          <li>Folder sync (iCloud Drive, Dropbox, git)</li>
+          <li>Editor, history, restore, Touch ID</li>
+          <li>Full CLI</li>
+        </ul>
+        <a class="btn alt" href="https://github.com/dinhkhanh/eVault/releases/latest">Download</a>
+      </div>
+      <div class="plan pro">
+        <h3>Pro</h3>
+        <div class="price">$29 <span style="font-size:14px;color:var(--muted);font-weight:400">one-time</span></div>
+        <ul>
+          <li>Unlimited projects</li>
+          <li>iCloud sync with CloudKit</li>
+          <li>Menu bar quick copy</li>
+          <li>Developer tools: env diff, .env.example, secret scan, JWT, generators</li>
+          <li>Shell integration</li>
+          <li>Updates for one year</li>
+        </ul>
+        <a class="btn" href="mailto:tran@dinhkhanh.dk?subject=eVault%20Pro">Buy Pro</a>
+        <p class="note">Checkout opens soon. Until then, email to get a key.</p>
+      </div>
+      <div class="plan">
+        <h3>Team</h3>
+        <div class="price">Coming</div>
+        <ul>
+          <li>Share projects with teammates</li>
+          <li>Per-member keys, no shared passphrase</li>
+          <li>Audit log of who pulled what</li>
+          <li>Rotation reminders</li>
+        </ul>
+        <a class="btn alt" href="mailto:tran@dinhkhanh.dk?subject=eVault%20Team">Join the waitlist</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How sync works</h2>
+    <p>A vault is a folder. <code>vault.json</code> holds your key-derivation parameters and the vault key, wrapped by a key derived from your passphrase. Every change to an item writes a new <code>.evr</code> file that is never modified again. Two modes:</p>
+    <div class="grid">
+      <div class="card"><h3>Folder</h3><p>Put the vault in iCloud Drive, Dropbox, Syncthing, or a git repo. Works with the free tier and needs no account.</p></div>
+      <div class="card"><h3>iCloud (Pro)</h3><p>The vault lives in the app and mirrors to your private CloudKit database. Other Macs on your Apple Account open it with the passphrase.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <p><a href="privacy.html">Privacy</a> · <a href="https://github.com/dinhkhanh/eVault/blob/main/docs/PLAN.md">Threat model &amp; design</a> · <a href="https://github.com/dinhkhanh/eVault/issues">Support</a></p>
+    <p>© 2026 Dinh Khanh</p>
+  </footer>
+</main>
+</body>
+</html>
