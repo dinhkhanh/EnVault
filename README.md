@@ -12,13 +12,33 @@ Requires Xcode 16+ (built with Xcode 27 / Swift 6.4) and [XcodeGen](https://gith
 
 ```sh
 brew install xcodegen
-make build        # generates eVault.xcodeproj and builds build/Build/Products/Debug/eVault.app
+make build        # unsigned local build: folder sync only
 make run          # build + open the app
 make test         # swift test for the packages
 ```
 
 `make gen` only regenerates the project; the `.xcodeproj` is git-ignored and
 comes from `project.yml`.
+
+### Signed build with iCloud sync
+
+With an Apple Developer account:
+
+1. `cp Config/Signing.xcconfig.example Config/Signing.xcconfig` and put your
+   team id in it (the file is git-ignored).
+2. `make build-icloud` / `make run-icloud` — configuration `Debug-iCloud`,
+   signed with "Apple Development", entitled for CloudKit container
+   `iCloud.dk.dinhkhanh.evault` and silent push. Xcode's automatic signing
+   registers the container on first build (`-allowProvisioningUpdates`).
+3. `make archive` — `Release-iCloud` with Developer ID, notarized and stapled
+   into `dist/` (see `scripts/release.sh` for the one-time `notarytool`
+   credential setup). Developer ID builds talk to the **Production** CloudKit
+   environment: deploy the schema from Development in the CloudKit Console
+   first. The schema is just one record type, `VaultFile`, with `path`,
+   `data` and `asset` fields; it is created just-in-time in Development.
+
+The app detects the iCloud entitlement at runtime, so the same code runs in
+folder-only mode when unsigned.
 
 ## Layout
 
@@ -33,6 +53,18 @@ Packages/eVaultKit/
   Tests/                  Swift Testing suites
 docs/PLAN.md              architecture, security model, roadmap
 ```
+
+## Sync modes
+
+| Mode | Where the vault lives | Transport | Needs |
+|---|---|---|---|
+| Folder | any folder you pick (iCloud Drive by default) | the folder's own sync (iCloud Drive, Dropbox, Syncthing, git) | nothing |
+| iCloud | app container, mirrored to your private CloudKit database | CloudKit, with silent push + 5-minute polling + sync on activate | signed build |
+
+Both modes use the same on-disk format. In iCloud mode a `CloudMirror` uploads
+every new local file once and downloads every new remote file once; because
+files are immutable there is nothing to merge. Compaction deletes records,
+and a passphrase change replaces the `vault.json` record.
 
 ## How it works
 
@@ -70,7 +102,9 @@ with the unlocked projects/items and a concealed-clipboard helper.
 ## Dev notes
 
 - Debug builds accept `-vaultPath DIR [-passphrase PW]` to open or create a
-  vault without the folder picker (used for UI testing).
+  vault without the folder picker, and `-fakeCloud YES [-createICloud YES
+  -passphrase PW]` to exercise the iCloud flow against an in-memory cloud.
+- `scripts/make-icon.swift` renders the app icon; the asset catalog is checked in.
 - Ad-hoc signed builds fall back from the data-protection keychain to a legacy
   keychain item with app-enforced Touch ID; Developer ID builds use the
   keychain-enforced `.biometryCurrentSet` item.

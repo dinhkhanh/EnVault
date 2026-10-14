@@ -10,20 +10,38 @@ import ToolKit
 final class AppModel {
     enum Phase: Equatable {
         case loading
-        case noVault              // no folder chosen yet
+        case noVault              // no vault chosen yet
         case locked
         case unlocked
     }
 
+    /// Where the vault's files are synchronised.
+    enum SyncMode: Equatable {
+        case folder               // any folder (iCloud Drive, Dropbox, git…)
+        case iCloud               // local copy in the app container, mirrored via CloudKit
+    }
+
     private(set) var phase: Phase = .loading
+    private(set) var syncMode: SyncMode = .folder
     private(set) var vaultURL: URL?
     private(set) var vaultId: UUID?
     private(set) var projects: [Project] = []
     private(set) var items: [Item] = []
     private(set) var lastRefresh: Date?
+    private(set) var syncStatus: SyncStatus = .idle
+    private(set) var lastCloudSync: Date?
     var errorMessage: String?
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
+
+    /// True when this build carries the iCloud entitlement (signed configurations).
+    /// Debug builds launched with `-fakeCloud YES` simulate it with an in-memory cloud.
+    let cloudAvailable: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "fakeCloud") { return true }
+        #endif
+        return CloudKitAvailability.isEntitled
+    }()
 
     var selectedProjectId: UUID?
     var selectedItemId: UUID?
@@ -33,10 +51,21 @@ final class AppModel {
     @ObservationIgnored private var store: VaultStore?
     @ObservationIgnored private var watcher: FolderWatcher?
     @ObservationIgnored private var watchTask: Task<Void, Never>?
+    @ObservationIgnored private var mirror: CloudMirror?
+    @ObservationIgnored private var cloudTimer: Task<Void, Never>?
+    @ObservationIgnored private var pushDebounce: Task<Void, Never>?
     @ObservationIgnored private var autoLock: AutoLock!
     @ObservationIgnored private let keychain = KeychainVaultKeyStore()
+    @ObservationIgnored private lazy var cloud: CloudVaultTransport = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "fakeCloud") { return MemoryCloudTransport() }
+        #endif
+        return CloudKitTransport()
+    }()
 
     let tools = ToolRegistry.all
+
+    private static let iCloudVaultKey = "dk.dinhkhanh.evault.iCloudVaultId"
 
     init() {
         Prefs.registerDefaults()
@@ -48,7 +77,7 @@ final class AppModel {
     func items(in projectId: UUID) -> [Item] { items.filter { $0.projectId == projectId } }
     var selectedProject: Project? { projects.first { $0.id == selectedProjectId } }
     var selectedItem: Item? { items.first { $0.id == selectedItemId } }
-    var isInICloud: Bool { vaultURL.map(SyncLocations.isInsideICloudDrive) ?? false }
+    var isInICloudDrive: Bool { syncMode == .folder && (vaultURL.map(SyncLocations.isInsideICloudDrive) ?? false) }
 
     // MARK: - Startup
 
@@ -56,66 +85,218 @@ final class AppModel {
         guard phase == .loading else { return }
         #if DEBUG
         // Dev/testing: `eVault -vaultPath <dir> [-passphrase <pw>]` opens or creates a vault directly.
+        // `-fakeCloud YES -createICloud YES -passphrase <pw>` creates a vault in the in-memory cloud.
+        if UserDefaults.standard.bool(forKey: "createICloud"), let pw = UserDefaults.standard.string(forKey: "passphrase") {
+            await createVaultInICloud(passphrase: pw)
+            if phase != .loading { return }
+        }
         if let path = UserDefaults.standard.string(forKey: "vaultPath") {
             let url = URL(fileURLWithPath: path, isDirectory: true)
             if await VaultStore.vaultExists(in: LocalFolderStorage(root: url)) {
-                await openVault(at: url)
+                await openVault(at: url, mode: .folder)
             } else if let pw = UserDefaults.standard.string(forKey: "passphrase") {
-                await createVault(at: url, passphrase: pw)
+                await createVault(at: url, passphrase: pw, mode: .folder)
             }
             if phase != .loading { return }
         }
         #endif
+        if cloudAvailable, let s = UserDefaults.standard.string(forKey: Self.iCloudVaultKey), let id = UUID(uuidString: s) {
+            await openICloudVault(id, download: false)
+            if phase != .loading { return }
+        }
         if let url = VaultLocation.restore() {
-            await openVault(at: url)
+            await openVault(at: url, mode: .folder)
         } else {
             phase = .noVault
         }
     }
 
     /// Opens (locked) the vault in `url`. Shows an error if there is none.
-    func openVault(at url: URL) async {
+    func openVault(at url: URL, mode: SyncMode) async {
         do {
             let storage = LocalFolderStorage(root: url)
             let s = try await VaultStore.open(storage: storage)
-            try VaultLocation.save(url)
             store = s
             vaultURL = url
             vaultId = await s.vaultId
+            syncMode = mode
+            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
             hasBiometricKey = keychain.hasCachedKey(vaultId: vaultId!)
             phase = .locked
             errorMessage = nil
+            startWatching()
+            if mode == .iCloud { startCloud() }
         } catch {
             errorMessage = error.localizedDescription
             if phase == .loading { phase = .noVault }
         }
     }
 
-    func createVault(at url: URL, passphrase: String) async {
+    func createVault(at url: URL, passphrase: String, mode: SyncMode) async {
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             let storage = LocalFolderStorage(root: url)
             let s = try await VaultStore.create(storage: storage, passphrase: passphrase)
-            try VaultLocation.save(url)
             store = s
             vaultURL = url
             vaultId = await s.vaultId
+            syncMode = mode
+            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
             hasBiometricKey = false
             errorMessage = nil
+            startWatching()
+            if mode == .iCloud {
+                startCloud()
+                try await mirror?.bootstrap()
+            }
             await becameUnlocked()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Forget the current vault location (does not delete any files).
+    /// Forget the current vault (does not delete any files).
     func closeVault() {
         lock()
+        stopWatching()
+        stopCloud()
         VaultLocation.forget()
+        UserDefaults.standard.removeObject(forKey: Self.iCloudVaultKey)
         store = nil
         vaultURL = nil
         vaultId = nil
+        syncMode = .folder
         phase = .noVault
+    }
+
+    // MARK: - iCloud (CloudKit) mode
+
+    private static func localRoot(for vaultId: UUID) -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("eVault/Vaults/\(vaultId.uuidString)", isDirectory: true)
+    }
+    private static func stateURL(for vaultId: UUID) -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("eVault/SyncState/\(vaultId.uuidString).json")
+    }
+
+    func createVaultInICloud(passphrase: String) async {
+        // The vault id is assigned by VaultStore.create, so create in a temp folder and rename.
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let tmp = support.appendingPathComponent("eVault/Vaults/new-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+            let s = try await VaultStore.create(storage: LocalFolderStorage(root: tmp), passphrase: passphrase)
+            let vid = await s.vaultId
+            let final = Self.localRoot(for: vid)
+            try FileManager.default.moveItem(at: tmp, to: final)
+            await openVault(at: final, mode: .iCloud)
+            try await mirror?.bootstrap()
+            await syncNow()
+            // openVault leaves us locked; unlock with the passphrase we just set.
+            await unlock(passphrase: passphrase, rememberWithBiometrics: false)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    struct CloudVaultSummary: Identifiable, Sendable {
+        let id: UUID
+        let createdAt: Date?
+    }
+
+    /// Vaults in the iCloud account, newest first.
+    func listICloudVaults() async -> [CloudVaultSummary] {
+        do {
+            var out: [CloudVaultSummary] = []
+            for id in try await cloud.listVaults() {
+                let header = try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: id).flatMap { try? VaultHeader.decode($0) }
+                out.append(CloudVaultSummary(id: id, createdAt: header?.createdAt))
+            }
+            return out.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
+    /// Downloads (if needed) and opens a vault from the iCloud account.
+    func openICloudVault(_ id: UUID, download: Bool = true) async {
+        let root = Self.localRoot(for: id)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let m = CloudMirror(vaultId: id, localRoot: root, stateURL: Self.stateURL(for: id), transport: cloud)
+            let haveLocal = await VaultStore.vaultExists(in: LocalFolderStorage(root: root))
+            if download || !haveLocal {
+                syncStatus = .syncing
+                try await m.pull()
+                syncStatus = .idle
+            }
+            await openVault(at: root, mode: .iCloud)
+        } catch {
+            syncStatus = .error(error.localizedDescription)
+            errorMessage = error.localizedDescription
+            if phase == .loading { phase = .noVault }
+        }
+    }
+
+    private func startCloud() {
+        guard cloudAvailable, let vaultId, let vaultURL else { return }
+        mirror = CloudMirror(vaultId: vaultId, localRoot: vaultURL, stateURL: Self.stateURL(for: vaultId), transport: cloud)
+        cloudTimer?.cancel()
+        cloudTimer = Task { [weak self] in
+            await self?.syncNow()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300))
+                await self?.syncNow()
+            }
+        }
+    }
+
+    private func stopCloud() {
+        cloudTimer?.cancel(); cloudTimer = nil
+        pushDebounce?.cancel(); pushDebounce = nil
+        mirror = nil
+        syncStatus = .idle
+        lastCloudSync = nil
+    }
+
+    /// Full pull + push. Safe to call any time, locked or not.
+    func syncNow() async {
+        guard let mirror else { return }
+        syncStatus = .syncing
+        let r = await mirror.sync()
+        syncStatus = await mirror.status
+        lastCloudSync = await mirror.lastSync
+        if r.pulled > 0 {
+            try? await store?.reloadHeader()
+            await refreshFromDisk()
+        }
+    }
+
+    /// A CloudKit silent push arrived: something changed remotely.
+    func remotePushReceived() { Task { await syncNow() } }
+
+    /// The app became active: catch up in case a push was missed.
+    func appActivated() { if mirror != nil { Task { await syncNow() } } }
+
+    /// Local files changed (our own writes): push soon, coalesced.
+    private func schedulePush() {
+        guard mirror != nil else { return }
+        pushDebounce?.cancel()
+        pushDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, let mirror = self.mirror else { return }
+            self.syncStatus = .syncing
+            _ = try? await mirror.push()
+            self.syncStatus = await mirror.status
+            self.lastCloudSync = await mirror.lastSync
+        }
+    }
+
+    func resetCloudState() async {
+        await mirror?.reset()
+        await syncNow()
     }
 
     // MARK: - Lock / unlock
@@ -161,8 +342,6 @@ final class AppModel {
 
     func lock() {
         guard phase == .unlocked, let store else { return }
-        watchTask?.cancel(); watchTask = nil
-        watcher?.stop(); watcher = nil
         autoLock.stop()
         Task { await store.lock() }
         projects = []
@@ -176,15 +355,17 @@ final class AppModel {
         errorMessage = nil
         await reload()
         if selectedProjectId == nil { selectedProjectId = projects.first?.id }
-        startWatching()
         autoLock.touch()
     }
 
     func userActivity() { autoLock.touch() }
 
-    // MARK: - Sync / refresh
+    // MARK: - Folder watching / refresh
 
+    /// Watches the vault folder from the moment it is opened. Locked: only
+    /// cloud pushes happen. Unlocked: new revisions are also indexed.
     private func startWatching() {
+        stopWatching()
         guard let url = vaultURL else { return }
         let w = FolderWatcher(url: url)
         watcher = w
@@ -192,11 +373,17 @@ final class AppModel {
             for await _ in w.changes {
                 guard let self, !Task.isCancelled else { return }
                 await self.refreshFromDisk()
+                self.schedulePush()
             }
         }
     }
 
-    /// Picks up revisions written by other devices.
+    private func stopWatching() {
+        watchTask?.cancel(); watchTask = nil
+        watcher?.stop(); watcher = nil
+    }
+
+    /// Picks up revisions written by other devices or the CLI.
     func refreshFromDisk() async {
         guard let store, phase == .unlocked else { return }
         do {
@@ -224,6 +411,7 @@ final class AppModel {
             try await op(store)
             await reload()
             errorMessage = nil
+            schedulePush()
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -16,7 +16,7 @@ usage: evault [--vault DIR] <command>
   history <project> <item>            list revisions
   init                                create a new vault in DIR
 
-Vault folder: --vault, $EVAULT_DIR, or ~/Library/Mobile Documents/com~apple~CloudDocs/eVault
+Vault folder: --vault, $EVAULT_DIR, the iCloud Drive eVault folder, or the app's iCloud-synced vault
 Passphrase:   $EVAULT_PASSPHRASE or a prompt.
 """
 
@@ -32,7 +32,20 @@ if let i = args.firstIndex(of: "--vault"), i + 1 < args.count {
     args.removeSubrange(i...(i + 1))
 }
 let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
-let root = URL(fileURLWithPath: vaultDir ?? "\(home)/Library/Mobile Documents/com~apple~CloudDocs/eVault", isDirectory: true)
+
+/// Default vault: --vault / $EVAULT_DIR, else the iCloud Drive folder, else the
+/// single iCloud-synced vault managed by the eVault app (in its container).
+func defaultVaultDir() -> String {
+    let drive = "\(home)/Library/Mobile Documents/com~apple~CloudDocs/eVault"
+    if FileManager.default.fileExists(atPath: drive + "/vault.json") { return drive }
+    let appVaults = "\(home)/Library/Containers/dk.dinhkhanh.evault/Data/Library/Application Support/eVault/Vaults"
+    let ids = ((try? FileManager.default.contentsOfDirectory(atPath: appVaults)) ?? []).filter { !$0.hasPrefix(".") }
+    if ids.count == 1 { return appVaults + "/" + ids[0] }
+    if ids.count > 1 { fail("several app vaults found; pass --vault DIR:\n" + ids.map { "  \(appVaults)/\($0)" }.joined(separator: "\n")) }
+    return drive
+}
+
+let root = URL(fileURLWithPath: vaultDir ?? defaultVaultDir(), isDirectory: true)
 guard let command = args.first else { fail(usage) }
 args.removeFirst()
 

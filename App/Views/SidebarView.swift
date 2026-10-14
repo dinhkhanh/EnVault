@@ -51,7 +51,9 @@ struct SidebarView: View {
                 Button { showNewProject = true } label: { Label("New Project", systemImage: "plus") }
                     .buttonStyle(.borderless)
                 Spacer()
-                if model.isInICloud {
+                if model.syncMode == .iCloud {
+                    SyncStatusLabel()
+                } else if model.isInICloudDrive {
                     Image(systemName: "icloud").foregroundStyle(.secondary).help("Vault is in iCloud Drive")
                 }
             }
@@ -139,5 +141,31 @@ struct NewProjectSheet: View {
         guard !n.isEmpty else { return }
         Task { await model.createProject(name: n) }
         dismiss()
+    }
+}
+
+/// Small iCloud sync indicator used in the sidebar footer and lock screen.
+struct SyncStatusLabel: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { Task { await model.syncNow() } } label: {
+            switch model.syncStatus {
+            case .syncing:
+                Label("Syncing…", systemImage: "arrow.triangle.2.circlepath.icloud").symbolEffect(.rotate, isActive: true)
+            case .error(let e):
+                Label("Sync error", systemImage: "exclamationmark.icloud").foregroundStyle(.red).help(e)
+            case .idle:
+                if let t = model.lastCloudSync {
+                    Label("Synced \(Text(t, style: .relative)) ago", systemImage: "checkmark.icloud")
+                } else {
+                    Label("iCloud", systemImage: "icloud")
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help("Sync with iCloud now")
     }
 }

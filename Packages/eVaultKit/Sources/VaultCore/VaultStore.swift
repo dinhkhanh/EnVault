@@ -48,6 +48,12 @@ public actor VaultStore {
         return VaultStore(storage: storage, header: header, device: device)
     }
 
+    /// Re-reads `vault.json` (e.g. after another device changed the passphrase).
+    /// The cached vault key, if any, stays valid because only the wrapping changes.
+    public func reloadHeader() async throws {
+        header = try VaultHeader.decode(try await storage.read(VaultPath(VaultHeader.fileName)))
+    }
+
     public static func vaultExists(in storage: VaultStorage) async -> Bool {
         (try? await storage.exists(VaultPath(VaultHeader.fileName))) ?? false
     }

@@ -43,12 +43,31 @@ struct VaultSettings: View {
     var body: some View {
         Form {
             Section("Location") {
-                LabeledContent("Folder") {
-                    Text(model.vaultURL?.path(percentEncoded: false) ?? "—").textSelection(.enabled).font(.callout)
-                }
-                if model.isInICloud {
-                    Label("Inside iCloud Drive: other Macs signed into this Apple Account get the vault automatically.", systemImage: "icloud")
+                if model.syncMode == .iCloud {
+                    LabeledContent("Sync") { Label("iCloud (CloudKit)", systemImage: "icloud") }
+                    LabeledContent("Vault id") { Text(model.vaultId?.uuidString ?? "—").font(.callout.monospaced()).textSelection(.enabled) }
+                    LabeledContent("Status") {
+                        switch model.syncStatus {
+                        case .idle: Text(model.lastCloudSync.map { "Synced \($0.formatted(.relative(presentation: .named)))" } ?? "Not synced yet")
+                        case .syncing: Text("Syncing…")
+                        case .error(let e): Text(e).foregroundStyle(.red)
+                        }
+                    }
+                    HStack {
+                        Button("Sync Now") { Task { await model.syncNow() } }
+                        Button("Reset Sync State") { Task { await model.resetCloudState() } }
+                            .help("Forget what has been uploaded/downloaded and re-check everything against iCloud. Files are never deleted by this.")
+                    }
+                    Text("Other Macs signed in to the same iCloud account can open this vault from the welcome screen with the passphrase.")
                         .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    LabeledContent("Folder") {
+                        Text(model.vaultURL?.path(percentEncoded: false) ?? "—").textSelection(.enabled).font(.callout)
+                    }
+                    if model.isInICloudDrive {
+                        Label("Inside iCloud Drive: other Macs signed into this Apple Account get the vault automatically.", systemImage: "icloud")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
                 }
                 Button("Close Vault…") { model.closeVault() }
             }

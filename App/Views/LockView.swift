@@ -11,8 +11,11 @@ struct LockView: View {
         VStack(spacing: 20) {
             Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(.tint)
             Text("Vault Locked").font(.title2.bold())
-            if let url = model.vaultURL {
-                Label(url.lastPathComponent, systemImage: model.isInICloud ? "icloud" : "folder")
+            if model.syncMode == .iCloud {
+                Label("Synced with iCloud", systemImage: "icloud").font(.callout).foregroundStyle(.secondary)
+                SyncStatusLabel()
+            } else if let url = model.vaultURL {
+                Label(url.lastPathComponent, systemImage: model.isInICloudDrive ? "icloud" : "folder")
                     .font(.callout).foregroundStyle(.secondary)
                     .help(url.path(percentEncoded: false))
             }

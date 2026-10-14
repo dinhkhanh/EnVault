@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct eVaultApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
     @Environment(\.openWindow) private var openWindow
 
@@ -11,6 +12,8 @@ struct eVaultApp: App {
                 .environment(model)
                 .frame(minWidth: 900, minHeight: 560)
                 .task { await model.start() }
+                .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { _ in model.remotePushReceived() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.appActivated() }
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
@@ -26,9 +29,11 @@ struct eVaultApp: App {
                 Button("Lock") { model.lock() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
                     .disabled(model.phase != .unlocked)
-                Button("Refresh from Disk") { Task { await model.refreshFromDisk() } }
-                    .keyboardShortcut("r")
-                    .disabled(model.phase != .unlocked)
+                Button(model.syncMode == .iCloud ? "Sync with iCloud Now" : "Refresh from Disk") {
+                    Task { if model.syncMode == .iCloud { await model.syncNow() } else { await model.refreshFromDisk() } }
+                }
+                .keyboardShortcut("r")
+                .disabled(model.phase == .noVault)
                 Divider()
                 Button("Reveal Vault Folder in Finder") {
                     if let u = model.vaultURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }

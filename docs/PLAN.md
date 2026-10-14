@@ -4,8 +4,8 @@ A native macOS app for developers to store `.env` files and other secrets in an
 encrypted local vault, and get them back on any of their Macs via iCloud (or any
 synced folder), without the sync transport ever seeing plaintext.
 
-Status: **phases 0–6 implemented on 2026-10-14** (see §11 for what each
-covers; §13 lists what is deliberately still open). Date: 2026-10-14.
+Status: **phases 0–7 implemented on 2026-10-14** (see §11; §13 lists what is
+still open). Date: 2026-10-14.
 
 ---
 
@@ -185,9 +185,17 @@ protocol SyncBackend: Sendable {
 }
 ```
 
-v1 ships `FolderBackend` (local dir, iCloud Drive dir, anything). Planned:
-`CloudKitBackend` (same immutable-revision model maps 1:1 to `CKRecord`s),
-`GitBackend` (each revision a commit; nice for teams already on git).
+v1 ships the folder backend (local dir, iCloud Drive dir, anything).
+
+**CloudKit (phase 7, built):** rather than a second `VaultStorage`, the local
+folder stays the store and a `CloudMirror` keeps it identical to a private
+CloudKit record zone (`vault-<id>`, one `VaultFile` record per file, zone
+change tokens for incremental fetches, `CKDatabaseSubscription` for silent
+pushes). Immutable files make the mirror trivial: upload each new local file
+once, download each new remote file once, apply deletions, replace the header
+when its hash changes. The CloudKit calls sit behind `CloudVaultTransport`, so
+the mirror is unit-tested with an in-memory transport simulating two Macs.
+Planned: `GitBackend` (each revision a commit; nice for teams already on git).
 
 **Onboarding a second Mac:** install app → choose the same folder → enter
 passphrase → optionally enable Touch ID. Nothing else.
@@ -286,17 +294,23 @@ eVault/
 | 4 | Folder sync over iCloud Drive, FSEvents watcher, revision merge, history/restore/compact UI | done |
 | 5 | Menu bar extra, `ToolRegistry` + 5 starter tools (env diff, random secret, UUID/ULID, JWT, base64/hex) | done |
 | 6 | `evault` CLI (`ls`, `get`, `pull`, `push`, `run`, `history`, `init`) | done |
+| 7 | CloudKit backend (`CloudMirror` + `CloudKitTransport`), signed `*-iCloud` configurations, push notifications, app icon, release/notarize script | done; CloudKit path verified against an in-memory transport and compiled with the entitled configuration, not yet run against a real iCloud account |
 
 One deviation from §10: the four packages live as targets of a single
 SwiftPM package `Packages/eVaultKit` instead of four package directories.
 
 ---
 
-## 13. Known gaps after the first build
+## 13. Known gaps
 
-- No app icon or asset catalog yet.
+- CloudKit sync has not been run against a real iCloud account yet (no signing
+  identity on the build machine). First real run: `make run-icloud`, create a
+  vault in iCloud, then on a second Mac "Open Vault from iCloud…".
 - Touch ID on ad-hoc signed builds uses the legacy keychain fallback (§5
-  describes the Developer ID path).
+  describes the Developer ID path). The CLI cannot use the app's cached key;
+  a shared keychain access group is the planned fix once both are signed.
+- Concurrent passphrase changes on two offline devices: last header wins; the
+  loser must use the other passphrase (the vault key is unchanged).
 - The raw editor has basic highlighting only; no line numbers.
 - Menu bar search covers env keys and secrets, not notes.
 - Not yet verified on a second physical Mac through iCloud Drive; verified

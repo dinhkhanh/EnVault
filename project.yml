@@ -5,6 +5,11 @@ options:
     macOS: "15.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
+configs:
+  Debug: debug
+  Release: release
+  Debug-iCloud: debug
+  Release-iCloud: release
 packages:
   eVaultKit:
     path: Packages/eVaultKit
@@ -23,12 +28,9 @@ targets:
         product: VaultSync
       - package: eVaultKit
         product: ToolKit
-    entitlements:
-      path: App/eVault.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.files.bookmarks.app-scope: true
+    configFiles:
+      Debug-iCloud: Config/Signing.xcconfig
+      Release-iCloud: Config/Signing.xcconfig
     info:
       path: App/Info.plist
       properties:
@@ -43,16 +45,33 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
-        CODE_SIGN_IDENTITY: "-"
-        CODE_SIGN_STYLE: Manual
-        DEVELOPMENT_TEAM: ""
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.2.0
+        CURRENT_PROJECT_VERSION: 2
         ENABLE_PREVIEWS: true
         SWIFT_EMIT_LOC_STRINGS: false
         DEAD_CODE_STRIPPING: true
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Unsigned local builds: folder sync only, no iCloud entitlements.
+        CODE_SIGN_ENTITLEMENTS: App/eVault.entitlements
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+      configs:
+        # Signed builds: iCloud/CloudKit + push entitlements. Team id comes from Config/Signing.xcconfig.
+        Debug-iCloud:
+          CODE_SIGN_ENTITLEMENTS: App/eVault-iCloud.entitlements
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
+          EVAULT_APS_ENVIRONMENT: development
+        Release-iCloud:
+          CODE_SIGN_ENTITLEMENTS: App/eVault-iCloud.entitlements
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
+          EVAULT_APS_ENVIRONMENT: production
 schemes:
   eVault:
     build:
@@ -60,5 +79,11 @@ schemes:
         eVault: all
     run:
       config: Debug
-    test:
-      config: Debug
+  eVault-iCloud:
+    build:
+      targets:
+        eVault: all
+    run:
+      config: Debug-iCloud
+    archive:
+      config: Release-iCloud

@@ -10,3 +10,6 @@ xcuserdata/
 .swiftpm/
 # macOS
 .DS_Store
+Config/Signing.xcconfig
+dist/
+build-icloud/
