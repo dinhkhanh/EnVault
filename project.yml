@@ -36,6 +36,8 @@ targets:
       properties:
         CFBundleDisplayName: eVault
         CFBundleName: eVault
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "15.0"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"

@@ -1,4 +1,4 @@
-.PHONY: gen build run test build-icloud run-icloud archive clean
+.PHONY: gen build run test release-unsigned build-icloud run-icloud archive clean
 
 # --- unsigned local builds (folder sync only) ---------------------------------
 gen: Config/Signing.xcconfig
@@ -12,6 +12,11 @@ run: build
 
 test:
 	cd Packages/eVaultKit && swift test
+
+# Release build without a Developer ID: ad-hoc signed, folder sync only.
+# Recipients must right-click > Open the first time (Gatekeeper).
+release-unsigned: gen
+	scripts/release-unsigned.sh
 
 # --- signed builds with iCloud sync (needs Config/Signing.xcconfig) -----------
 Config/Signing.xcconfig:

@@ -20,6 +20,15 @@ make test         # swift test for the packages
 `make gen` only regenerates the project; the `.xcodeproj` is git-ignored and
 comes from `project.yml`.
 
+### Unsigned release (no Developer ID yet)
+
+```sh
+make release-unsigned   # dist/eVault-<version>.zip and .dmg, ad-hoc signed
+```
+
+Gatekeeper blocks unsigned apps on first launch: right-click the app and
+choose Open once. Folder sync works; iCloud (CloudKit) mode needs the signed build.
+
 ### Signed build with iCloud sync
 
 With an Apple Developer account:
