@@ -8,26 +8,35 @@ struct MainView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
-            SidebarView(showNewProject: $showNewProject)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 230)
-        } content: {
+        Group {
             if let tool = model.selectedToolId.flatMap({ model.tools.tool(id: $0) }) {
-                ToolHostView(tool: tool)
-            } else if let project = model.selectedProject {
-                ItemListView(project: project, showNewItem: $showNewItem)
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                // Tools get the whole width: sidebar + tool.
+                NavigationSplitView {
+                    SidebarView(showNewProject: $showNewProject)
+                        .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+                } detail: {
+                    ToolHostView(tool: tool)
+                        .id(tool.id)
+                }
             } else {
-                ContentUnavailableView("No Project", systemImage: "folder", description: Text("Create a project to start storing env files."))
-            }
-        } detail: {
-            if model.selectedToolId != nil {
-                EmptyView()
-            } else if let item = model.selectedItem {
-                ItemDetailView(item: item)
-                    .id(item.id)
-            } else {
-                ContentUnavailableView("Nothing Selected", systemImage: "doc.text", description: Text("Select an item, or drop a .env file onto the list."))
+                NavigationSplitView {
+                    SidebarView(showNewProject: $showNewProject)
+                        .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+                } content: {
+                    if let project = model.selectedProject {
+                        ItemListView(project: project, showNewItem: $showNewItem)
+                            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                    } else {
+                        ContentUnavailableView("No Project", systemImage: "folder", description: Text("Create a project to start storing env files."))
+                    }
+                } detail: {
+                    if let item = model.selectedItem {
+                        ItemDetailView(item: item)
+                            .id(item.id)
+                    } else {
+                        ContentUnavailableView("Nothing Selected", systemImage: "doc.text", description: Text("Select an item, or drop a .env file onto the list."))
+                    }
+                }
             }
         }
         .sheet(isPresented: $showNewProject) { NewProjectSheet() }

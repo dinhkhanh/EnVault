@@ -7,14 +7,16 @@ struct ToolHostView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tool.title).font(.title2.bold())
-                Text(tool.subtitle).foregroundStyle(.secondary)
-            }
-            .padding(16)
+            Text(tool.subtitle)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.vertical, 10)
             Divider()
-            tool.makeView(context: model.toolContext)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            ScrollView {
+                tool.makeView(context: model.toolContext)
+                    .frame(maxWidth: 760, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
         }
         .navigationTitle(tool.title)
     }
