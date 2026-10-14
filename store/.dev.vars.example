@@ -1,0 +1,8 @@
+LICENSE_PRIVATE_KEY=<base64 seed of a throwaway pair; see test/helpers.ts testKeyPair()>
+LICENSE_PUBLIC_KEY=<its base64 public key>
+MAIL_MODE=log
+POLAR_WEBHOOK_SECRET=whsec_dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtMTIzNDU2Nzg=
+PADDLE_WEBHOOK_SECRET=pdl_ntfset_test
+PADDLE_API_KEY=unused
+ADMIN_TOKEN=local-admin-token
+POLAR_CHECKOUT_URL=https://buy.polar.sh/polar_cl_TEST

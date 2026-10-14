@@ -1,4 +1,4 @@
-.PHONY: gen build run test release-unsigned build-icloud run-icloud archive clean
+.PHONY: gen build run test release-unsigned build-icloud run-icloud archive clean revocations store-test
 
 # --- unsigned local builds (folder sync only) ---------------------------------
 gen: Config/Signing.xcconfig
@@ -34,3 +34,11 @@ archive: gen
 
 clean:
 	rm -rf build eVault.xcodeproj Packages/eVaultKit/.build dist
+
+# Pull refunded license ids into App/RevokedLicenses.swift (release scripts do this too).
+revocations:
+	scripts/sync-revocations.sh
+
+# Unit tests for the license store Worker (store/).
+store-test:
+	cd store && npm test

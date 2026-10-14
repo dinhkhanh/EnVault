@@ -116,19 +116,25 @@ override with `--vault DIR` or `EVAULT_DIR`.
 
 ## Licensing
 
+Selling runs through `store/`, a Cloudflare Worker: Polar checkout → webhook →
+key signed and emailed → refunds revoke → `scripts/sync-revocations.sh` bakes the
+revoked ids into the next release. Setup and day-to-day operation: `store/README.md`.
+Day to day: `scripts/store.sh list|issue|revoke|resend`.
+
+
 Licenses are Ed25519-signed keys verified offline with the public key in
 `App/LicensePublicKey.swift`. The private key is in the vendor's login
 keychain (item `dk.dinhkhanh.evault.license-signing`); back it up. Issue a key:
 
 ```sh
-scripts/issue-license.sh --email a@b.c --name "Ada" --plan pro --updates-until 2027-10-14
-scripts/list-licenses.sh [search]      # the vendor ledger
+scripts/store.sh issue --email a@b.c --name "Ada"      # via the store (normal path)
+scripts/issue-license.sh --email a@b.c --name "Ada"    # offline fallback, local ledger only
+scripts/list-licenses.sh [search]      # the local ledger
 ```
 
 Every issued key is appended to `~/Library/Application Support/eVault Vendor/licenses.jsonl`
 on the issuing Mac. That file and the keychain signing key are the vendor's
-only records; back both up. Keys cannot be revoked offline, so keep
-`--updates-until` short-ish and rely on it for lapsed customers.
+
 
 Free: 3 projects, folder sync, editor, history, Touch ID, CLI.
 Pro: unlimited projects, CloudKit sync, menu bar quick copy, developer tools.

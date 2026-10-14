@@ -54,6 +54,7 @@ targets:
         SUEnableInstallerLauncherService: true
         SUEnableDownloaderService: true
         SUScheduledCheckInterval: 86400
+        EVReleaseDate: $(EVAULT_RELEASE_DATE)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault
@@ -61,8 +62,10 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.3.0
-        CURRENT_PROJECT_VERSION: 4
+        MARKETING_VERSION: 0.3.1
+        CURRENT_PROJECT_VERSION: 5
+        # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
+        EVAULT_RELEASE_DATE: 2026-10-15
         ENABLE_PREVIEWS: true
         SWIFT_EMIT_LOC_STRINGS: false
         DEAD_CODE_STRIPPING: true

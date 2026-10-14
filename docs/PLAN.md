@@ -295,6 +295,8 @@ eVault/
 | 5 | Menu bar extra, `ToolRegistry` + 5 starter tools (env diff, random secret, UUID/ULID, JWT, base64/hex) | done |
 | 6 | `evault` CLI (`ls`, `get`, `pull`, `push`, `run`, `history`, `init`) | done |
 | 7 | CloudKit backend (`CloudMirror` + `CloudKitTransport`), signed `*-iCloud` configurations, push notifications, app icon, release/notarize script | done; CloudKit path verified against an in-memory transport and compiled with the entitled configuration, not yet run against a real iCloud account |
+| 8 | Recovery key, licensing, Sparkle, hygiene tools, shell, deploy, site (§14) | done |
+| 9 | Store Worker: Polar checkout, webhooks, email, refunds, revocations (§15) | built and tested locally; deployment waits on the Polar account |
 
 One deviation from §10: the four packages live as targets of a single
 SwiftPM package `Packages/eVaultKit` instead of four package directories.
@@ -317,10 +319,29 @@ Deliberately not added: analytics or crash SDKs. Both need a network
 entitlement, which would undo the "no network" guarantee. Apple's crash
 reporter covers crashes; usage questions get answered by talking to users.
 
+## 15. Phase 9 — selling (built 2026-10-15)
+
+Provider decision: **Polar** (merchant of record, lists Vietnam as a payout
+country, pays out in VND to a local bank), **Paddle** as fallback (USD payouts
+via Payoneer or a USD account). Lemon Squeezy rejected: stagnant since the
+Stripe acquisition, Vietnam bank payouts unconfirmed.
+
+| Piece | What exists |
+|---|---|
+| Store Worker | `store/`: Cloudflare Worker + D1. `/buy` redirect, Polar and Paddle webhooks (signature-verified, idempotent per event and per order), Ed25519 signing in WebCrypto compatible with `LicenseKit`, Resend email, `/resend` self-service, `/revocations.json`, bearer-token admin API. 12 unit tests plus a local end-to-end run against `wrangler dev`; keys cross-verified with `evault-license verify`. |
+| Revocation | No activation server, so refunds revoke in D1 and the id list is compiled into the next release (`App/RevokedLicenses.swift`, `scripts/sync-revocations.sh`, run by both release scripts). `LicenseVerifier` throws `.revoked`. |
+| Update window | Keys carry `updatesUntil` (12 months). The app compares it with its `EVReleaseDate` (Info.plist, from `EVAULT_RELEASE_DATE` in `project.yml`): a build released after the window runs as Free with a renew notice; older builds keep working. |
+| Ops | `scripts/store.sh list|issue|revoke|resend`; the keychain-only `issue-license.sh` stays as the offline fallback. |
+| Site/app | Buy button → `/buy`; "Lost your key?" → `/resend`; app purchase link fixed to the live site; License settings show the renew notice and the resend link. |
+
+Deploy checklist is in `store/README.md`. Vietnam-side tax reporting of the
+payouts is the seller's job; nothing in the pipeline depends on it.
+
 ## 13. Known gaps
 
-- Checkout is a mailto link until a payment provider (Lemon Squeezy or
-  Paddle) is connected; its order webhook should call `evault-license issue`.
+- The store Worker (`store/`) is written and tested locally but not deployed:
+  needs a Polar account (payout country Vietnam), the D1 database, secrets and
+  the custom domain `store.evault.dinhkhanh.dk` (§15).
 - CloudKit sync has not been run against a real iCloud account yet (no signing
   identity on the build machine). First real run: `make run-icloud`, create a
   vault in iCloud, then on a second Mac "Open Vault from iCloud…".

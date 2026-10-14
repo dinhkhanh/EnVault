@@ -54,11 +54,15 @@ struct LicenseSettings: View {
         Form {
             Section("Plan") {
                 if let lic = licenses.license {
-                    LabeledContent("Plan") { Text(lic.plan.rawValue.capitalized).bold() }
+                    LabeledContent("Plan") { Text(licenses.plan.rawValue.capitalized).bold() }
                     LabeledContent("Licensed to") { Text("\(lic.name) <\(lic.email)>") }
                     LabeledContent("Issued") { Text(lic.issuedAt, format: .dateTime.day().month().year()) }
                     if let u = lic.updatesUntil { LabeledContent("Updates until") { Text(u, format: .dateTime.day().month().year()) } }
                     if let x = lic.expiresAt { LabeledContent("Expires") { Text(x, format: .dateTime.day().month().year()) } }
+                    if let n = licenses.updatesNotice {
+                        Text(n).font(.callout).foregroundStyle(.orange)
+                        Link("Renew eVault Pro…", destination: LicenseManager.purchaseURL)
+                    }
                     Button("Remove License") { licenses.remove() }
                 } else {
                     LabeledContent("Plan") { Text(licenses.plan == .free ? "Free" : licenses.plan.rawValue.capitalized) }
@@ -77,6 +81,7 @@ struct LicenseSettings: View {
                     }
                     Text("Keys are verified on this Mac with a public key. No account, no server, no phone-home.")
                         .font(.caption).foregroundStyle(.secondary)
+                    Link("Lost your key? Get it by email…", destination: LicenseManager.resendKeyURL).font(.caption)
                 }
             }
         }

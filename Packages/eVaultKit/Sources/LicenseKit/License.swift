@@ -28,18 +28,26 @@ public struct License: Codable, Equatable, Sendable {
     }
 
     public var isExpired: Bool { expiresAt.map { $0 < Date() } ?? false }
+
+    /// Whether this license covers a build released on `date` (perpetual if `updatesUntil` is nil).
+    public func coversUpdates(releasedOn date: Date) -> Bool {
+        guard let u = updatesUntil else { return true }
+        return date <= u
+    }
 }
 
 public enum LicenseError: Error, Equatable, Sendable, LocalizedError {
     case malformed
     case badSignature
     case expired
+    case revoked
 
     public var errorDescription: String? {
         switch self {
         case .malformed: "That doesn't look like an eVault license key."
         case .badSignature: "This license key is not valid."
         case .expired: "This license has expired."
+        case .revoked: "This license key was revoked (refunded order)."
         }
     }
 }
@@ -82,16 +90,26 @@ public enum LicenseCodec {
 }
 
 /// Verifies keys against the vendor public key compiled into the app.
+/// `revoked` is the list of license ids refunded so far, shipped with each release
+/// (there is no activation server, so revocation rides on updates).
 public struct LicenseVerifier: Sendable {
     public let publicKey: Curve25519.Signing.PublicKey
+    public let revoked: Set<String>
 
-    public init(publicKey: Curve25519.Signing.PublicKey) { self.publicKey = publicKey }
-
-    /// From a base64 public key string (as printed by `evault-license keygen`).
-    public init(publicKeyBase64: String) throws {
-        guard let d = Data(base64Encoded: publicKeyBase64) else { throw LicenseError.malformed }
-        publicKey = try Curve25519.Signing.PublicKey(rawRepresentation: d)
+    public init(publicKey: Curve25519.Signing.PublicKey, revoked: Set<String> = []) {
+        self.publicKey = publicKey
+        self.revoked = Set(revoked.map { $0.uppercased() })
     }
 
-    public func verify(_ key: String) throws -> License { try LicenseCodec.decode(key, publicKey: publicKey) }
+    /// From a base64 public key string (as printed by `evault-license keygen`).
+    public init(publicKeyBase64: String, revoked: Set<String> = []) throws {
+        guard let d = Data(base64Encoded: publicKeyBase64) else { throw LicenseError.malformed }
+        self.init(publicKey: try Curve25519.Signing.PublicKey(rawRepresentation: d), revoked: revoked)
+    }
+
+    public func verify(_ key: String) throws -> License {
+        let lic = try LicenseCodec.decode(key, publicKey: publicKey)
+        if revoked.contains(lic.id.uuidString.uppercased()) { throw LicenseError.revoked }
+        return lic
+    }
 }

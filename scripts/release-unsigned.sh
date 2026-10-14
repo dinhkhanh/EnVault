@@ -3,6 +3,8 @@
 # Produces dist/eVault-<version>.zip and dist/eVault-<version>.dmg.
 set -eu
 cd "$(dirname "$0")/.."
+# Refunded keys stop working on this release: refresh the compiled-in list first.
+scripts/sync-revocations.sh
 VERSION=$(sed -n 's/.*MARKETING_VERSION: \(.*\)/\1/p' project.yml | head -1)
 OUT=dist
 rm -rf "$OUT" && mkdir -p "$OUT/dmg"

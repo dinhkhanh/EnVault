@@ -7,15 +7,25 @@ import LicenseKit
 @Observable
 final class LicenseManager {
     private static let defaultsKey = "dk.dinhkhanh.evault.licenseKey"
-    static let purchaseURL = URL(string: "https://evault.dinhkhanh.dk/#pricing")!
+    static let purchaseURL = URL(string: "https://dinhkhanh.github.io/eVault/#pricing")!
+    static let resendKeyURL = URL(string: "https://store.evault.dinhkhanh.dk/resend")!
 
     private(set) var entitlements: Entitlements = .free
     private(set) var licenseKey: String?
     var lastError: String?
+    /// Set when a stored key is valid but does not cover this release (updates window passed).
+    private(set) var updatesNotice: String?
     /// Which feature triggered the upgrade sheet, if any.
     var upgradePrompt: Feature?
 
-    private let verifier = try? LicenseVerifier(publicKeyBase64: LicensePublicKey.base64)
+    private let verifier = try? LicenseVerifier(publicKeyBase64: LicensePublicKey.base64, revoked: RevokedLicenses.ids)
+
+    /// Release date of this build, from Info.plist `EVReleaseDate` (set in project.yml).
+    static let releaseDate: Date = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        if let s = Bundle.main.object(forInfoDictionaryKey: "EVReleaseDate") as? String, let d = f.date(from: s) { return d }
+        return Date()
+    }()
 
     init() {
         #if DEBUG
@@ -47,10 +57,18 @@ final class LicenseManager {
         guard let verifier else { lastError = "License verification is not configured in this build."; return false }
         do {
             let lic = try verifier.verify(key)
-            entitlements = Entitlements(plan: lic.plan, license: lic)
             licenseKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             lastError = nil
             if persist { UserDefaults.standard.set(licenseKey, forKey: Self.defaultsKey) }
+            if lic.coversUpdates(releasedOn: Self.releaseDate) {
+                entitlements = Entitlements(plan: lic.plan, license: lic)
+                updatesNotice = nil
+            } else {
+                // The key stays stored (older versions still honour it); this build runs as Free.
+                entitlements = Entitlements(plan: .free, license: lic)
+                let f = DateFormatter(); f.dateStyle = .medium
+                updatesNotice = "This license covers updates until \(f.string(from: lic.updatesUntil ?? .distantPast)); this version was released on \(f.string(from: Self.releaseDate)). Renew to keep Pro on new versions, or use a version released before that date."
+            }
             return true
         } catch {
             lastError = error.localizedDescription
@@ -61,6 +79,7 @@ final class LicenseManager {
     func remove() {
         entitlements = .free
         licenseKey = nil
+        updatesNotice = nil
         UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
     }
 }

@@ -1,5 +1,7 @@
 #!/bin/sh
-# Issue a license key by hand and record it in the vendor ledger.
+# Issue a license key by hand, offline, and record it in the local vendor ledger.
+# Prefer `scripts/store.sh issue` once the store Worker is deployed: keys issued there land in
+# the same D1 ledger as paid orders and can be revoked/resent. Use this one when the store is down.
 #   scripts/issue-license.sh --email a@b.c --name "Ada" [--plan pro|team] [--seats N] [--updates-until YYYY-MM-DD]
 # Private key: login keychain item dk.dinhkhanh.evault.license-signing (from the initial keygen).
 # Ledger: ~/Library/Application Support/eVault Vendor/licenses.jsonl (one JSON object per key).

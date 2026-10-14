@@ -8,6 +8,8 @@
 #      (Developer ID builds use the Production container environment).
 set -eu
 cd "$(dirname "$0")/.."
+# Refunded keys stop working on this release: refresh the compiled-in list first.
+scripts/sync-revocations.sh
 VERSION=$(sed -n 's/.*MARKETING_VERSION: \(.*\)/\1/p' project.yml | head -1)
 OUT=dist
 rm -rf "$OUT" && mkdir -p "$OUT"

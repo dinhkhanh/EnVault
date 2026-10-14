@@ -39,6 +39,29 @@ import CryptoKit
         #expect(throws: LicenseError.expired) { try LicenseVerifier(publicKey: key.publicKey).verify(s) }
     }
 
+    @Test func revocationAndUpdateWindow() throws {
+        let lic = License(email: "a@b.c", name: "A", plan: .pro, updatesUntil: Date(timeIntervalSince1970: 1_800_000_000))
+        let s = try LicenseCodec.encode(lic, signingKey: key)
+        #expect(throws: LicenseError.revoked) { try LicenseVerifier(publicKey: key.publicKey, revoked: [lic.id.uuidString.lowercased()]).verify(s) }
+        #expect(try LicenseVerifier(publicKey: key.publicKey, revoked: [UUID().uuidString]).verify(s).id == lic.id)
+        #expect(lic.coversUpdates(releasedOn: Date(timeIntervalSince1970: 1_799_999_999)))
+        #expect(!lic.coversUpdates(releasedOn: Date(timeIntervalSince1970: 1_800_000_001)))
+        #expect(License(email: "a@b.c", name: "A", plan: .pro).coversUpdates(releasedOn: .distantFuture))
+    }
+
+    /// A key produced by the store Worker (store/src/license.ts) decodes here: second-precision
+    /// ISO dates, sorted keys, uppercase UUID. Signed with a throwaway test key.
+    @Test func workerIssuedKeyShape() throws {
+        let payload = #"{"email":"e2e@example.com","id":"3137FD97-77FD-48DF-B102-224AD30294A3","issuedAt":"2026-10-14T17:17:30Z","name":"E2E Tester","plan":"pro","seats":1,"updatesUntil":"2027-10-14T17:17:30Z"}"#
+        let data = Data(payload.utf8)
+        let sig = try key.signature(for: data)
+        let s = ["EVL1", LicenseCodec.base64url(data), LicenseCodec.base64url(sig)].joined(separator: ".")
+        let lic = try LicenseVerifier(publicKey: key.publicKey).verify(s)
+        #expect(lic.id.uuidString == "3137FD97-77FD-48DF-B102-224AD30294A3")
+        #expect(lic.updatesUntil != nil)
+        #expect(!lic.coversUpdates(releasedOn: Date(timeIntervalSince1970: 1_830_000_000))) // 2027-12-31
+    }
+
     @Test func entitlements() {
         let free = Entitlements.free
         #expect(!free.allows(.cloudKitSync))
