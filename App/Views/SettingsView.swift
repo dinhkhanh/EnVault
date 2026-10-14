@@ -29,6 +29,10 @@ struct GeneralSettings: View {
                 Text("15 seconds").tag(15); Text("30 seconds").tag(30); Text("1 minute").tag(60); Text("Never").tag(0)
             }
             Toggle("Mask values by default", isOn: $mask)
+            Section("Updates") {
+                Toggle("Check for updates automatically", isOn: Binding(get: { UpdaterService.shared.automaticallyChecks }, set: { UpdaterService.shared.automaticallyChecks = $0 }))
+                Button("Check Now") { UpdaterService.shared.checkForUpdates() }
+            }
         }
         .formStyle(.grouped)
     }

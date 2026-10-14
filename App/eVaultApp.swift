@@ -22,6 +22,9 @@ struct eVaultApp: App {
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { UpdaterService.shared.checkForUpdates() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Project…") { NotificationCenter.default.post(name: .newProject, object: nil) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])

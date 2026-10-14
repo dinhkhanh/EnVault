@@ -13,6 +13,9 @@ configs:
 packages:
   eVaultKit:
     path: Packages/eVaultKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.7.0
 targets:
   eVault:
     type: application
@@ -30,6 +33,8 @@ targets:
         product: ToolKit
       - package: eVaultKit
         product: LicenseKit
+      - package: Sparkle
+        product: Sparkle
     configFiles:
       Debug-iCloud: Config/Signing.xcconfig
       Release-iCloud: Config/Signing.xcconfig
@@ -44,6 +49,11 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"
         NSFaceIDUsageDescription: "eVault uses Touch ID to unlock your vault."
+        SUFeedURL: https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml
+        SUPublicEDKey: /DQqNs5Xtctf7m5I8HsyCCxdg58izjlM+N+Yxnhffc4=
+        SUEnableInstallerLauncherService: true
+        SUEnableDownloaderService: true
+        SUScheduledCheckInterval: 86400
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault

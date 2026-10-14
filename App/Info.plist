@@ -28,5 +28,15 @@
 	<string>eVault uses Touch ID to unlock your vault.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Dinh Khanh</string>
+	<key>SUEnableDownloaderService</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>/DQqNs5Xtctf7m5I8HsyCCxdg58izjlM+N+Yxnhffc4=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

@@ -19,4 +19,12 @@ ln -s /Applications "$OUT/dmg/Applications"
 hdiutil create -volname "eVault $VERSION" -srcfolder "$OUT/dmg" -ov -format UDZO "$OUT/eVault-$VERSION.dmg" >/dev/null
 rm -rf "$OUT/dmg"
 shasum -a 256 "$OUT"/eVault-$VERSION.* | tee "$OUT/SHA256SUMS"
+# Sparkle appcast: signs the zip with the EdDSA key from the keychain.
+GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
+if [ -n "$GA" ]; then
+  "$GA" --download-url-prefix "https://github.com/dinhkhanh/eVault/releases/download/v$VERSION/" "$OUT" >/dev/null
+  echo "appcast: $OUT/appcast.xml"
+else
+  echo "warning: generate_appcast not found; resolve packages first (make gen && xcodebuild -resolvePackageDependencies)"
+fi
 echo "Done: $OUT/eVault-$VERSION.zip and .dmg (unsigned: right-click > Open on first launch)"

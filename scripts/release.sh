@@ -21,4 +21,12 @@ ditto -c -k --keepParent "$OUT/export/eVault.app" "$OUT/eVault-$VERSION.zip"
 xcrun notarytool submit "$OUT/eVault-$VERSION.zip" --keychain-profile evault-notary --wait
 xcrun stapler staple "$OUT/export/eVault.app"
 ditto -c -k --keepParent "$OUT/export/eVault.app" "$OUT/eVault-$VERSION.zip"
+# Sparkle appcast: signs the zip with the EdDSA key from the keychain.
+GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
+if [ -n "$GA" ]; then
+  "$GA" --download-url-prefix "https://github.com/dinhkhanh/eVault/releases/download/v$VERSION/" "$OUT" >/dev/null
+  echo "appcast: $OUT/appcast.xml"
+else
+  echo "warning: generate_appcast not found; resolve packages first (make gen && xcodebuild -resolvePackageDependencies)"
+fi
 echo "Done: $OUT/eVault-$VERSION.zip"
