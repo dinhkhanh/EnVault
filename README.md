@@ -4,7 +4,7 @@ A native macOS app for developers: store `.env` files and secrets in an
 encrypted vault, get them back on any of your Macs through iCloud Drive (or any
 synced folder), and never let the sync transport see plaintext.
 
-Design and rationale: [docs/PLAN.md](docs/PLAN.md).
+Design and rationale: [docs/PLAN.md](docs/PLAN.md). Where things stand, blockers, next steps: [docs/STATUS.md](docs/STATUS.md).
 
 ## Build
 
@@ -61,6 +61,7 @@ Packages/eVaultKit/
   Sources/evault          command-line companion
   Tests/                  Swift Testing suites
 docs/PLAN.md              architecture, security model, roadmap
+docs/STATUS.md            current state, blockers, next actions, where secrets live
 ```
 
 ## Sync modes

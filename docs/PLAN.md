@@ -4,8 +4,9 @@ A native macOS app for developers to store `.env` files and other secrets in an
 encrypted local vault, and get them back on any of their Macs via iCloud (or any
 synced folder), without the sync transport ever seeing plaintext.
 
-Status: **phases 0–8 implemented on 2026-10-14** (see §11 and §14; §13 lists
-what is still open). Date: 2026-10-14.
+Status: **phases 0–9 implemented on 2026-10-14/15** (see §11, §14, §15; §13
+lists what is still open). Current state, blockers and next actions:
+[STATUS.md](STATUS.md). Last updated 2026-10-15.
 
 ---
 
