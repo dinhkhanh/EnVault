@@ -23,8 +23,11 @@ final class LicenseManager {
     /// Release date of this build, from Info.plist `EVReleaseDate` (set in project.yml).
     static let releaseDate: Date = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
-        if let s = Bundle.main.object(forInfoDictionaryKey: "EVReleaseDate") as? String, let d = f.date(from: s) { return d }
-        return Date()
+        // YAML may hand XcodeGen a date object; accept "yyyy-MM-dd" with anything after it.
+        if let s = Bundle.main.object(forInfoDictionaryKey: "EVReleaseDate") as? String, let d = f.date(from: String(s.prefix(10))) { return d }
+        if let d = Bundle.main.object(forInfoDictionaryKey: "EVReleaseDate") as? Date { return d }
+        // Unknown release date: never penalise a valid key for it.
+        return .distantPast
     }()
 
     init() {
