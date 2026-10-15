@@ -35,5 +35,5 @@ export function thanks(siteUrl: string, supportEmail: string): string {
   return page("Thank you", `
 <h1>Thank you for buying eVault Pro</h1>
 <p>Your license key is on its way by email. Paste it in eVault &gt; Settings &gt; License.</p>
-<p>No email after a few minutes? <a href="/resend">Resend it</a> or write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
+<p>It comes from evault@updates.dinhkhanh.dk with the subject &ldquo;Your eVault Pro purchase&rdquo;. Nothing after a few minutes? Check your spam folder (and mark it &ldquo;Not spam&rdquo;), <a href="/resend">resend it</a>, or write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
 }

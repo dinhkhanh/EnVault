@@ -21,6 +21,9 @@ test("polar order.paid issues one key, emails it, and is idempotent", async () =
   assert.equal(s.mailer.sent.length, 1);
   assert.equal(s.mailer.sent[0].to, "ada@example.com");
   assert.ok(s.mailer.sent[0].text.includes(row.key));
+  // replies reach a real inbox; the sending subdomain has no MX
+  assert.equal(s.mailer.sent[0].replyTo, "help@example.test");
+  assert.equal(s.mailer.sent[0].subject, "Your eVault Pro purchase");
   // same event redelivered
   out = await applyAction(s, "polar", "evt_1", ev.type, polarAction(ev));
   assert.equal(out.body, "duplicate event");
