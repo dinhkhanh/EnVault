@@ -7,13 +7,22 @@
 <meta name="description" content="eVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
 <meta property="og:title" content="eVault — encrypted .env storage for your Macs">
 <meta property="og:description" content="eVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
+<script>try{var t=localStorage.getItem("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
 <style>
-body{margin:0;background:#F6F7F9;overflow-x:hidden}
-a{color:#2448D8}a:hover{color:#16309E}
+:root{--bg:#F6F7F9;--surface:#FFFFFF;--ink:#111318;--on-ink:#FFFFFF;--text2:#3D4250;--muted:#4A5060;--muted2:#5A6070;--line:#E3E6EC;--line2:#EEF0F4;--border2:#D5D9E1;--chip:#E7ECFD;--link:#2448D8;--link-hover:#16309E;--panel:rgba(255,255,255,.97);--shadow:var(--shadow);--term-ring:transparent;color-scheme:light}
+:root[data-theme="dark"]{--bg:#0C0D11;--surface:#15171D;--ink:#ECEEF3;--on-ink:#0C0D11;--text2:#C3C8D4;--muted:#A3AABA;--muted2:#959CAD;--line:#252833;--line2:#1E2129;--border2:#363A47;--chip:#1E2747;--link:#8FA6FF;--link-hover:#B4C3FF;--panel:rgba(24,26,33,.97);--shadow:rgba(0,0,0,.55);--term-ring:#262A35;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0C0D11;--surface:#15171D;--ink:#ECEEF3;--on-ink:#0C0D11;--text2:#C3C8D4;--muted:#A3AABA;--muted2:#959CAD;--line:#252833;--line2:#1E2129;--border2:#363A47;--chip:#1E2747;--link:#8FA6FF;--link-hover:#B4C3FF;--panel:rgba(24,26,33,.97);--shadow:rgba(0,0,0,.55);--term-ring:#262A35;color-scheme:dark}}
+body{margin:0;background:var(--bg);overflow-x:hidden}
+a{color:var(--link)}a:hover{color:var(--link-hover)}
+.theme-toggle{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:9px;border:1px solid var(--border2);background:var(--surface);color:var(--ink);cursor:pointer;padding:0}
+.theme-toggle .sun{display:none}
+:root[data-theme="dark"] .theme-toggle .sun{display:block}:root[data-theme="dark"] .theme-toggle .moon{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .theme-toggle .sun{display:block}:root:not([data-theme="light"]) .theme-toggle .moon{display:none}}
 a:focus-visible{outline:2px solid #2F55E4;outline-offset:3px;border-radius:4px}
 code{font-family:'Geist Mono',ui-monospace,Menlo,monospace;font-size:.92em}
 html{scroll-behavior:smooth}
@@ -27,40 +36,44 @@ html{scroll-behavior:smooth}
 </style>
 </head>
 <body>
-<div style="font-family: 'Geist', -apple-system, system-ui, sans-serif; color: #111318; background: #F6F7F9; line-height: 1.55; font-size: 17px">
+<div style="font-family: 'Geist', -apple-system, system-ui, sans-serif; color: var(--ink); background: var(--bg); line-height: 1.55; font-size: 17px">
 
-<header style="border-bottom: 1px solid #E3E6EC; background: #FFFFFF">
+<header style="border-bottom: 1px solid var(--line); background: var(--surface)">
 <nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
-<a href="./" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #111318; font-weight: 700; font-size: 19px; margin-right: auto">
+<a href="./" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 700; font-size: 19px; margin-right: auto">
 <span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
 </span>
 eVault
 </a>
-<a href="#features" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Features</a>
-<a href="cli.html" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Command line</a>
-<a href="#security" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Security</a>
-<a href="#pricing" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Pricing</a>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #111318; font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+<a href="#features" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Features</a>
+<a href="cli.html" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Command line</a>
+<a href="#security" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Security</a>
+<a href="#pricing" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Pricing</a>
+<button type="button" class="theme-toggle" aria-label="Switch theme" aria-pressed="false">
+<svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"></path></svg>
+<svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+</button>
+<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
 </nav>
 </header>
 
 <section style="max-width: 1200px; margin: 0 auto; padding: 88px 24px 72px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
 <div style="flex: 1 1 460px; min-width: 0">
-<p style="margin: 0 0 20px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; color: #4A5060; text-transform: uppercase">Native macOS · v0.4 · Free to start</p>
+<p style="margin: 0 0 20px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; color: var(--muted); text-transform: uppercase">Native macOS · v0.4 · Free to start</p>
 <h1 style="margin: 0 0 22px; font-size: 60px; line-height: 1.04; letter-spacing: -.035em; font-weight: 700">Your .env files, encrypted, on every Mac you own.</h1>
-<p style="margin: 0 0 32px; font-size: 20px; color: #4A5060; max-width: 34em">A native vault for environment files and secrets. It syncs through your own iCloud, never through our servers, because there aren’t any. Copy a key from any app, unlock the CLI with Touch ID, and stop committing secrets by accident.</p>
+<p style="margin: 0 0 32px; font-size: 20px; color: var(--muted); max-width: 34em">A native vault for environment files and secrets. It syncs through your own iCloud, never through our servers, because there aren’t any. Copy a key from any app, unlock the CLI with Touch ID, and stop committing secrets by accident.</p>
 <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
 <a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px">
 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg>
 Download for macOS</a>
-<a href="#pricing" style="text-decoration: none; color: #111318; background: #FFFFFF; border: 1px solid #D5D9E1; font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center">Get Pro — $29 once</a>
+<a href="#pricing" style="text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border2); font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center">Get Pro — $29 once</a>
 </div>
-<p style="margin: 16px 0 0; font-size: 14px; color: #5A6070">macOS 14 or later. Free tier forever, no account. Signed and notarized by Apple.</p>
+<p style="margin: 16px 0 0; font-size: 14px; color: var(--muted2)">macOS 14 or later. Free tier forever, no account. Signed and notarized by Apple.</p>
 </div>
 
 <div class="hero-visual" style="flex: 1 1 480px; min-width: 0; position: relative; padding-bottom: 200px" aria-label="eVault quick copy panel above a terminal">
-<div style="background: #12141A; border-radius: 14px; padding: 18px 20px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #C9CEDA; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset">
+<div style="background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 14px; padding: 18px 20px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #C9CEDA; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset">
 <div style="display: flex; gap: 7px; margin-bottom: 14px" aria-hidden="true"><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span></div>
 <div><span style="color: #8FA6FF">~/code/shop</span> $ evault run shop .env.production -- npm start</div>
 <div style="color: #8A91A3">Approve in eVault (Touch ID)…</div>
@@ -71,47 +84,47 @@ Download for macOS</a>
 <div style="color: #F2A65A">src/billing.ts:12: Stripe key</div>
 <div style="color: #F2A65A">eVault blocked this commit: 1 possible secret.</div>
 </div>
-<div class="hero-panel" style="position: absolute; left: 6%; right: 0; bottom: 0; background: rgba(255,255,255,.97); border: 1px solid #DCE0E8; border-radius: 14px; box-shadow: 0 24px 60px rgba(17,19,24,.22)">
-<div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #E8EAF0">
-<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6070" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m20 20-4.5-4.5"></path></svg>
+<div class="hero-panel" style="position: absolute; left: 6%; right: 0; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 24px 60px var(--shadow)">
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line2)">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color: var(--muted2)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m20 20-4.5-4.5"></path></svg>
 <span style="font-size: 18px">stripe</span>
-<span style="margin-left: auto; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: #4A5060; border: 1px solid #D5D9E1; border-radius: 6px; padding: 2px 7px">⌥⌘E</span>
+<span style="margin-left: auto; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; color: var(--muted); border: 1px solid var(--border2); border-radius: 6px; padding: 2px 7px">⌥⌘E</span>
 </div>
 <div style="padding: 6px">
-<div style="display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; background: #E7ECFD">
+<div style="display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; background: var(--chip)">
 <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; font-weight: 500">STRIPE_KEY</span>
-<span style="font-size: 13px; color: #4A5060">shop › .env.production</span>
-<span style="margin-left: auto; font-size: 12px; color: #2448D8; font-weight: 600">↩ copy</span>
+<span style="font-size: 13px; color: var(--muted)">shop › .env.production</span>
+<span style="margin-left: auto; font-size: 12px; color: var(--link); font-weight: 600">↩ copy</span>
 </div>
 <div style="display: flex; align-items: center; gap: 12px; padding: 9px 10px">
 <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; font-weight: 500">STRIPE_WEBHOOK_SECRET</span>
-<span style="font-size: 13px; color: #4A5060">shop › .env.production</span>
+<span style="font-size: 13px; color: var(--muted)">shop › .env.production</span>
 </div>
 <div style="display: flex; align-items: center; gap: 12px; padding: 9px 10px">
 <span style="font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; font-weight: 500">STRIPE_KEY</span>
-<span style="font-size: 13px; color: #4A5060">shop › .env.local</span>
+<span style="font-size: 13px; color: var(--muted)">shop › .env.local</span>
 </div>
 </div>
-<div style="padding: 8px 16px; border-top: 1px solid #E8EAF0; font-size: 12px; color: #5A6070">↩ value   ⌥↩ export line   ⌘↩ KEY=value   esc close</div>
+<div style="padding: 8px 16px; border-top: 1px solid var(--line2); font-size: 12px; color: var(--muted2)">↩ value   ⌥↩ export line   ⌘↩ KEY=value   esc close</div>
 </div>
 </div>
 </section>
 
-<section aria-labelledby="ways" style="background: #FFFFFF; border-top: 1px solid #E3E6EC; border-bottom: 1px solid #E3E6EC">
+<section aria-labelledby="ways" style="background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line)">
 <div style="max-width: 1200px; margin: 0 auto; padding: 64px 24px">
-<h2 id="ways" style="margin: 0 0 32px; font-size: 15px; font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; color: #4A5060; font-weight: 500">Three ways to reach a secret</h2>
+<h2 id="ways" style="margin: 0 0 32px; font-size: 15px; font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 500">Three ways to reach a secret</h2>
 <div style="display: flex; flex-wrap: wrap; gap: 40px">
 <div style="flex: 1 1 280px; min-width: 0">
 <p style="margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em">In the app</p>
-<p style="margin: 0; color: #4A5060">Projects, env files, secrets and notes. An editor with history, line numbers and warnings, and a key-by-key comparison with your other environments.</p>
+<p style="margin: 0; color: var(--muted)">Projects, env files, secrets and notes. An editor with history, line numbers and warnings, and a key-by-key comparison with your other environments.</p>
 </div>
 <div style="flex: 1 1 280px; min-width: 0">
 <p style="margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em">Over any app, with ⌥⌘E</p>
-<p style="margin: 0; color: #4A5060">A search panel above whatever you are doing. Type part of a key, press Return, paste. The clipboard clears itself and clipboard managers skip it.</p>
+<p style="margin: 0; color: var(--muted)">A search panel above whatever you are doing. Type part of a key, press Return, paste. The clipboard clears itself and clipboard managers skip it.</p>
 </div>
 <div style="flex: 1 1 280px; min-width: 0">
 <p style="margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em">In Terminal</p>
-<p style="margin: 0; color: #4A5060">The <code>evault</code> command ships inside the app. It asks eVault for the key and you approve with Touch ID, so you never type the passphrase into a shell.</p>
+<p style="margin: 0; color: var(--muted)">The <code>evault</code> command ships inside the app. It asks eVault for the key and you approve with Touch ID, so you never type the passphrase into a shell.</p>
 </div>
 </div>
 </div>
@@ -119,95 +132,95 @@ Download for macOS</a>
 
 <section id="features" aria-labelledby="features-h" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 40px">
 <h2 id="features-h" style="margin: 0 0 12px; font-size: 44px; line-height: 1.1; letter-spacing: -.03em">Everything a .env file should have had.</h2>
-<p style="margin: 0 0 48px; font-size: 19px; color: #4A5060; max-width: 40em">New in 0.4: quick copy over any app, Touch ID for the command line, importing whole project folders, files kept in sync on disk, and a commit hook that stops leaks.</p>
+<p style="margin: 0 0 48px; font-size: 19px; color: var(--muted); max-width: 40em">New in 0.4: quick copy over any app, Touch ID for the command line, importing whole project folders, files kept in sync on disk, and a commit hook that stops leaks.</p>
 <div style="display: flex; flex-wrap: wrap; gap: 16px">
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M7 10h6"></path><path d="M7 14h10"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
-<span style="font-size: 12px; font-weight: 600; color: #4A5060; border: 1px solid #D5D9E1; padding: 1px 8px; border-radius: 99px">Pro</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 1px 8px; border-radius: 99px">Pro</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Quick copy over any app</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Press ⌥⌘E anywhere. Search keys, secrets, notes and values, with the ones you copy most at the top. Return copies the value, ⌥Return an <code>export</code> line, ⌘Return <code>KEY=value</code>.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Press ⌥⌘E anywhere. Search keys, secrets, notes and values, with the ones you copy most at the top. Return copies the value, ⌥Return an <code>export</code> line, ⌘Return <code>KEY=value</code>.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 4 4-4 4"></path><path d="M12 17h7"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Touch ID for the command line</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">When eVault is running, <code>evault</code> asks the app for the key and you approve with Touch ID. Install it from Settings in one click; app updates update it too.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">When eVault is running, <code>evault</code> asks the app for the key and you approve with Touch ID. Install it from Settings in one click; app updates update it too.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path><path d="M12 10v6"></path><path d="m9 13 3 3 3-3"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Import your whole projects folder</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Point eVault at ~/Projects. Each folder becomes a project with its .env files; templates like .env.example are skipped. Also imports Doppler, 1Password items, JSON and .env.vault.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Point eVault at ~/Projects. Each folder becomes a project with its .env files; templates like .env.example are skipped. Also imports Doppler, 1Password items, JSON and .env.vault.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3L20 9"></path><path d="M20 4v5h-5"></path><path d="M20 12a8 8 0 0 1-14 5.3L4 15"></path><path d="M4 20v-5h5"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
-<span style="font-size: 12px; font-weight: 600; color: #4A5060; border: 1px solid #D5D9E1; padding: 1px 8px; border-radius: 99px">Pro</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 1px 8px; border-radius: 99px">Pro</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">.env kept in sync in the project</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Link an item to a project folder and eVault rewrites the file whenever it changes, here, on another Mac or from the CLI. Edits you made on disk are never overwritten without asking.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Link an item to a project folder and eVault rewrites the file whenever it changes, here, on another Mac or from the CLI. Edits you made on disk are never overwritten without asking.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2"></circle><circle cx="6" cy="18" r="2"></circle><circle cx="18" cy="9" r="2"></circle><path d="M6 8v8"></path><path d="M18 11c0 4-6 3-10 6"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Secrets stay out of git</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px"><code>evault protect</code> adds a pre-commit hook that stops commits containing API keys, tokens, private keys or a real .env file. Mark a false positive with <code>evault:allow</code>.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px"><code>evault protect</code> adds a pre-commit hook that stops commits containing API keys, tokens, private keys or a real .env file. Mark a false positive with <code>evault:allow</code>.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12"></path><path d="M8 12h12"></path><path d="M8 18h7"></path><path d="M4 6h.01"></path><path d="M4 12h.01"></path><path d="M4 18h.01"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #2448D8; background: #E7ECFD; padding: 2px 8px; border-radius: 99px">New</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">An editor that catches mistakes</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Line numbers and warnings for duplicate keys, empty or placeholder values and broken lines. See which keys .env.production has that .env.local lacks, and add them in one step.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Line numbers and warnings for duplicate keys, empty or placeholder values and broken lines. See which keys .env.production has that .env.local lacks, and add them in one step.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></svg>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Every change kept</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Each edit is a new revision you can diff and restore, with the Mac that made it. Keys whose value hasn’t changed in 90 days are flagged for rotation.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Each edit is a new revision you can diff and restore, with the Mac that made it. Keys whose value hasn’t changed in 90 days are flagged for rotation.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"></path><path d="M3 12h4"></path><path d="M17 12h4"></path><path d="m15 9 3 3-3 3"></path><path d="m9 9-3 3 3 3"></path></svg>
-<span style="font-size: 12px; font-weight: 600; color: #4A5060; border: 1px solid #D5D9E1; padding: 1px 8px; border-radius: 99px">Pro</span>
+<span style="font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 1px 8px; border-radius: 99px">Pro</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Variables load when you cd</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Link a folder to an env file and the shell hook (zsh, bash or fish) exports its variables when you enter and unsets them when you leave.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Link a folder to an env file and the shell hook (zsh, bash or fish) exports its variables when you enter and unsets them when you leave.</p>
 </article>
 
-<article style="flex: 1 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"></path><path d="m7 9 5-5 5 5"></path><path d="M4 20h16"></path></svg>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Deploy without copy-paste</h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Push an env file to Vercel, Cloudflare Workers or GitHub Actions secrets with <code>evault deploy</code>, using the vendor CLIs and logins you already have.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Push an env file to Vercel, Cloudflare Workers or GitHub Actions secrets with <code>evault deploy</code>, using the vendor CLIs and logins you already have.</p>
 </article>
 
 </div>
-<p style="margin: 28px 0 0; color: #4A5060; font-size: 16px">Plus, in Pro: env diff, .env.example generator, secret scan, JWT decoder, UUID and password generators.</p>
+<p style="margin: 28px 0 0; color: var(--muted); font-size: 16px">Plus, in Pro: env diff, .env.example generator, secret scan, JWT decoder, UUID and password generators.</p>
 </section>
 
-<section id="security" aria-labelledby="security-h" style="background: #12141A; color: #E8EAF0; margin-top: 72px">
+<section id="security" aria-labelledby="security-h" style="background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); color: #E8EAF0; margin-top: 72px">
 <div style="max-width: 1200px; margin: 0 auto; padding: 96px 24px">
 <p style="margin: 0 0 14px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #8FA6FF">Zero-knowledge by construction</p>
 <h2 id="security-h" style="margin: 0 0 48px; font-size: 44px; line-height: 1.1; letter-spacing: -.03em; max-width: 18em">We can’t read your vault. Neither can iCloud.</h2>
@@ -243,11 +256,11 @@ Download for macOS</a>
 <section aria-labelledby="cli-h" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center">
 <div style="flex: 1 1 360px; min-width: 0">
 <h2 id="cli-h" style="margin: 0 0 14px; font-size: 44px; line-height: 1.1; letter-spacing: -.03em">Built for the terminal too.</h2>
-<p style="margin: 0 0 24px; font-size: 19px; color: #4A5060">Run a command with an environment injected, pull a file, import from Doppler or 1Password, deploy to Vercel. The same vault, the same Touch ID.</p>
+<p style="margin: 0 0 24px; font-size: 19px; color: var(--muted)">Run a command with an environment injected, pull a file, import from Doppler or 1Password, deploy to Vercel. The same vault, the same Touch ID.</p>
 <a href="cli.html" style="font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px">Full command reference
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></a>
 </div>
-<div style="flex: 1.4 1 520px; min-width: 0; overflow-x: auto; background: #12141A; border-radius: 14px; padding: 24px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.9; color: #C9CEDA; white-space: pre">$ evault run shop .env.production -- npm start  <span style="color: #8A91A3"># inject for one command</span>
+<div style="flex: 1.4 1 520px; min-width: 0; overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 14px; padding: 24px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.9; color: #C9CEDA; white-space: pre">$ evault run shop .env.production -- npm start  <span style="color: #8A91A3"># inject for one command</span>
 $ evault link shop .env.local                   <span style="color: #8A91A3"># load on cd (with the hook)</span>
 $ evault import shop .env.prod --doppler        <span style="color: #8A91A3"># or --1password, JSON, .env.vault</span>
 $ evault protect                                <span style="color: #8A91A3"># block secrets in commits</span>
@@ -255,18 +268,18 @@ $ evault deploy vercel shop .env.production     <span style="color: #8A91A3"># o
 $ evault status                                 <span style="color: #8A91A3"># is the app there, locked?</span></div>
 </section>
 
-<section aria-labelledby="sync-h" style="background: #FFFFFF; border-top: 1px solid #E3E6EC; border-bottom: 1px solid #E3E6EC">
+<section aria-labelledby="sync-h" style="background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line)">
 <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px">
 <h2 id="sync-h" style="margin: 0 0 12px; font-size: 36px; letter-spacing: -.025em">A vault is a folder.</h2>
-<p style="margin: 0 0 36px; font-size: 18px; color: #4A5060; max-width: 44em"><code>vault.json</code> holds your key-derivation settings and the vault key, wrapped by your passphrase. Every change writes a new <code>.evr</code> file that is never touched again. Choose how it travels:</p>
+<p style="margin: 0 0 36px; font-size: 18px; color: var(--muted); max-width: 44em"><code>vault.json</code> holds your key-derivation settings and the vault key, wrapped by your passphrase. Every change writes a new <code>.evr</code> file that is never touched again. Choose how it travels:</p>
 <div style="display: flex; flex-wrap: wrap; gap: 16px">
-<div style="flex: 1 1 320px; min-width: 0; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
-<h3 style="margin: 0 0 8px; font-size: 20px">Folder <span style="font-size: 13px; font-weight: 500; color: #4A5060">· Free</span></h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">Keep the vault in iCloud Drive, Dropbox, Syncthing or a git repo. No account, nothing to set up.</p>
+<div style="flex: 1 1 320px; min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 26px">
+<h3 style="margin: 0 0 8px; font-size: 20px">Folder <span style="font-size: 13px; font-weight: 500; color: var(--muted)">· Free</span></h3>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Keep the vault in iCloud Drive, Dropbox, Syncthing or a git repo. No account, nothing to set up.</p>
 </div>
-<div style="flex: 1 1 320px; min-width: 0; border: 1px solid #E3E6EC; border-radius: 14px; padding: 26px">
-<h3 style="margin: 0 0 8px; font-size: 20px">iCloud <span style="font-size: 13px; font-weight: 500; color: #4A5060">· Pro</span></h3>
-<p style="margin: 0; color: #4A5060; font-size: 16px">The vault lives in the app and mirrors to your private CloudKit database. Your other Macs on the same Apple Account open it with the passphrase.</p>
+<div style="flex: 1 1 320px; min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 26px">
+<h3 style="margin: 0 0 8px; font-size: 20px">iCloud <span style="font-size: 13px; font-weight: 500; color: var(--muted)">· Pro</span></h3>
+<p style="margin: 0; color: var(--muted); font-size: 16px">The vault lives in the app and mirrors to your private CloudKit database. Your other Macs on the same Apple Account open it with the passphrase.</p>
 </div>
 </div>
 </div>
@@ -274,13 +287,13 @@ $ evault status                                 <span style="color: #8A91A3"># i
 
 <section id="pricing" aria-labelledby="pricing-h" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px">
 <h2 id="pricing-h" style="margin: 0 0 12px; font-size: 44px; line-height: 1.1; letter-spacing: -.03em">Pay once. Keep it.</h2>
-<p style="margin: 0 0 44px; font-size: 19px; color: #4A5060">The free tier stays free. Pro is a one-time purchase with a year of updates.</p>
+<p style="margin: 0 0 44px; font-size: 19px; color: var(--muted)">The free tier stays free. Pro is a one-time purchase with a year of updates.</p>
 <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch">
 
-<div style="flex: 1 1 320px; min-width: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 16px; padding: 30px; display: flex; flex-direction: column">
+<div style="flex: 1 1 320px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 30px; display: flex; flex-direction: column">
 <h3 style="margin: 0; font-size: 20px">Free</h3>
 <p style="margin: 10px 0 20px; font-size: 44px; font-weight: 700; letter-spacing: -.03em">$0</p>
-<ul style="margin: 0 0 28px; padding-left: 20px; color: #3D4250; font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
+<ul style="margin: 0 0 28px; padding-left: 20px; color: var(--text2); font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
 <li>3 projects, unlimited env files</li>
 <li>Folder sync: iCloud Drive, Dropbox, git</li>
 <li>Editor with history, restore and warnings</li>
@@ -289,13 +302,13 @@ $ evault status                                 <span style="color: #8A91A3"># i
 <li>Import projects, Doppler, 1Password, .env.vault</li>
 <li>Commit hook that blocks secrets</li>
 </ul>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; text-align: center; color: #111318; border: 1px solid #D5D9E1; font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Download</a>
+<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Download</a>
 </div>
 
-<div style="flex: 1 1 320px; min-width: 0; background: #FFFFFF; border: 2px solid #2F55E4; border-radius: 16px; padding: 29px; display: flex; flex-direction: column">
+<div style="flex: 1 1 320px; min-width: 0; background: var(--surface); border: 2px solid #2F55E4; border-radius: 16px; padding: 29px; display: flex; flex-direction: column">
 <h3 style="margin: 0; font-size: 20px">Pro</h3>
-<p style="margin: 10px 0 20px; font-size: 44px; font-weight: 700; letter-spacing: -.03em">$29 <span style="font-size: 15px; font-weight: 500; color: #4A5060; letter-spacing: 0">one-time</span></p>
-<ul style="margin: 0 0 28px; padding-left: 20px; color: #3D4250; font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
+<p style="margin: 10px 0 20px; font-size: 44px; font-weight: 700; letter-spacing: -.03em">$29 <span style="font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: 0">one-time</span></p>
+<ul style="margin: 0 0 28px; padding-left: 20px; color: var(--text2); font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
 <li>Everything in Free</li>
 <li>Unlimited projects</li>
 <li>iCloud sync with CloudKit</li>
@@ -306,27 +319,27 @@ $ evault status                                 <span style="color: #8A91A3"># i
 <li>Updates for one year</li>
 </ul>
 <a href="https://store.evault.dinhkhanh.dk/buy?utm_source=site" style="text-decoration: none; text-align: center; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Buy Pro</a>
-<p style="margin: 14px 0 0; font-size: 13px; color: #5A6070">Checkout by <a href="https://polar.sh">Polar</a>. Your key arrives by email within a minute. 14-day refunds. <a href="https://store.evault.dinhkhanh.dk/resend">Lost your key?</a></p>
+<p style="margin: 14px 0 0; font-size: 13px; color: var(--muted2)">Checkout by <a href="https://polar.sh">Polar</a>. Your key arrives by email within a minute. 14-day refunds. <a href="https://store.evault.dinhkhanh.dk/resend">Lost your key?</a></p>
 </div>
 
-<div style="flex: 1 1 320px; min-width: 0; background: #FFFFFF; border: 1px dashed #C9CEDA; border-radius: 16px; padding: 30px; display: flex; flex-direction: column">
+<div style="flex: 1 1 320px; min-width: 0; background: var(--surface); border: 1px dashed var(--border2); border-radius: 16px; padding: 30px; display: flex; flex-direction: column">
 <h3 style="margin: 0; font-size: 20px">Team</h3>
-<p style="margin: 10px 0 20px; font-size: 44px; font-weight: 700; letter-spacing: -.03em; color: #4A5060">Soon</p>
-<ul style="margin: 0 0 28px; padding-left: 20px; color: #3D4250; font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
+<p style="margin: 10px 0 20px; font-size: 44px; font-weight: 700; letter-spacing: -.03em; color: var(--muted)">Soon</p>
+<ul style="margin: 0 0 28px; padding-left: 20px; color: var(--text2); font-size: 16px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
 <li>Share projects with teammates</li>
 <li>Per-member keys, no shared passphrase</li>
 <li>Audit log of who pulled what</li>
 <li>Rotation reminders</li>
 </ul>
-<a href="mailto:tran@dinhkhanh.dk?subject=eVault%20Team" style="text-decoration: none; text-align: center; color: #111318; border: 1px solid #D5D9E1; font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Join the waitlist</a>
+<a href="mailto:tran@dinhkhanh.dk?subject=eVault%20Team" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Join the waitlist</a>
 </div>
 
 </div>
 </section>
 
-<footer style="border-top: 1px solid #E3E6EC; background: #FFFFFF">
-<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: #4A5060">
-<span style="font-weight: 700; color: #111318; margin-right: auto">eVault</span>
+<footer style="border-top: 1px solid var(--line); background: var(--surface)">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: var(--muted)">
+<span style="font-weight: 700; color: var(--ink); margin-right: auto">eVault</span>
 <a href="cli.html">Command line</a>
 <a href="privacy.html">Privacy</a>
 <a href="https://github.com/dinhkhanh/eVault/blob/main/docs/PLAN.md">Threat model</a>
@@ -337,5 +350,13 @@ $ evault status                                 <span style="color: #8A91A3"># i
 </footer>
 
 </div>
+<script>
+(function(){var r=document.documentElement,m=matchMedia("(prefers-color-scheme: dark)");
+function dark(){return(r.dataset.theme||(m.matches?"dark":"light"))==="dark"}
+document.querySelectorAll(".theme-toggle").forEach(function(b){
+function sync(){b.setAttribute("aria-pressed",String(dark()));b.setAttribute("aria-label",dark()?"Switch to light theme":"Switch to dark theme")}
+sync();m.addEventListener("change",sync);
+b.addEventListener("click",function(){var t=dark()?"light":"dark";r.dataset.theme=t;try{localStorage.setItem("theme",t)}catch(e){}sync()})})})();
+</script>
 </body>
 </html>
