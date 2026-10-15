@@ -21,7 +21,7 @@ POLAR_CHECKOUT_URL = ""
 PADDLE_CHECKOUT_URL = ""
 CHECKOUT_PROVIDER = "polar"
 # Resend sender; the domain must be verified in Resend.
-FROM_EMAIL = "eVault <evault@dinhkhanh.dk>"
+FROM_EMAIL = "eVault <evault@updates.dinhkhanh.dk>"
 SUPPORT_EMAIL = "tran@dinhkhanh.dk"
 UPDATES_MONTHS = "12"
 # "resend" sends real mail; "log" prints to the worker log (local dev).
