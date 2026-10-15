@@ -151,4 +151,35 @@ private let mac2 = DeviceIdentity(id: UUID(), name: "Mac 2")
         for (k, v) in before { #expect(after[k] == v) }
         #expect(after.count == before.count + 2)
     }
+
+    @Test func folderUnlockReadsInBatchesAndReportsProgress() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "evault-test-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let storage = LocalFolderStorage(root: dir)
+        let store = try await VaultStore.create(storage: storage, passphrase: "pw", device: mac1, kdf: fastKDF)
+        let p = try await store.createProject(name: "P")
+        for i in 0..<30 {
+            let item = try await store.createItem(in: p.id, name: "i\(i)", payload: .envFile(text: "A=0"))
+            for r in 1...4 { _ = try await store.updateItem(item.id, payload: .envFile(text: "A=\(r)")) }
+        }
+
+        let reopened = try await VaultStore.open(storage: storage, device: mac1)
+        let reports = Reports()
+        try await reopened.unlock(passphrase: "pw") { done, total in reports.add(done, total) }
+        let seen = reports.all
+        #expect(seen.first?.0 == 0)
+        #expect(seen.last.map { $0.0 == $0.1 } == true)
+        #expect(seen.last?.1 == 1 + 30 * 5)   // project meta + 30 items x 5 revisions
+        let items = await reopened.items(in: p.id)
+        #expect(items.count == 30)
+        #expect(items.allSatisfy { $0.revisionCount == 5 && $0.payload == .envFile(text: "A=4") })
+    }
+}
+
+private final class Reports: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [(Int, Int)] = []
+    func add(_ done: Int, _ total: Int) { lock.withLock { list.append((done, total)) } }
+    var all: [(Int, Int)] { lock.withLock { list } }
 }

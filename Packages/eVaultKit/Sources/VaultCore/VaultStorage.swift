@@ -27,6 +27,17 @@ public protocol VaultStorage: Sendable {
     func delete(_ path: VaultPath) async throws
     /// Names of the entries directly inside `directory`. Empty if it doesn't exist.
     func list(_ directory: VaultPath) async throws -> [String]
+    /// Reads several files, in order. Implementations can make this much
+    /// cheaper than one `read` per file.
+    func readMany(_ paths: [VaultPath]) async throws -> [Data]
+}
+
+extension VaultStorage {
+    public func readMany(_ paths: [VaultPath]) async throws -> [Data] {
+        var out: [Data] = []
+        for p in paths { out.append(try await read(p)) }
+        return out
+    }
 }
 
 /// Plain filesystem implementation. Uses `NSFileCoordinator` so it is safe to
@@ -45,6 +56,20 @@ public struct LocalFolderStorage: VaultStorage {
         let u = url(path)
         try ensureDownloaded(u)
         return try coordinated(reading: u) { try Data(contentsOf: $0) }
+    }
+
+    /// One file-coordination claim for the whole batch: per-file coordination
+    /// costs about a millisecond each, which dominated unlocking big vaults.
+    public func readMany(_ paths: [VaultPath]) async throws -> [Data] {
+        let urls = paths.map(url)
+        for u in urls { try ensureDownloaded(u) }
+        let intents = urls.map { NSFileAccessIntent.readingIntent(with: $0) }
+        return try await withCheckedThrowingContinuation { c in
+            NSFileCoordinator(filePresenter: nil).coordinate(with: intents, queue: OperationQueue()) { error in
+                if let error { c.resume(throwing: VaultError.io(error.localizedDescription)); return }
+                c.resume(with: Result { try intents.map { try Data(contentsOf: $0.url) } })
+            }
+        }
     }
 
     public func writeNew(_ path: VaultPath, data: Data) async throws {

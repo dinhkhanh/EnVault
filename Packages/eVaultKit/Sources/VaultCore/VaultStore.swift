@@ -61,18 +61,18 @@ public actor VaultStore {
     /// Unlocks with the passphrase, indexes everything, and returns the vault
     /// key so the caller may cache it (e.g. in the Keychain behind Touch ID).
     @discardableResult
-    public func unlock(passphrase: String) async throws -> VaultKey {
+    public func unlock(passphrase: String, progress: Progress? = nil) async throws -> VaultKey {
         let vk = try KeyHierarchy.unlock(header: header, passphrase: passphrase)
-        try await unlock(vaultKey: vk)
+        try await unlock(vaultKey: vk, progress: progress)
         return vk
     }
 
     /// Unlocks with a cached vault key. The key is verified against the first
     /// revision found; an empty vault accepts any key, which is harmless.
-    public func unlock(vaultKey vk: VaultKey) async throws {
+    public func unlock(vaultKey vk: VaultKey, progress: Progress? = nil) async throws {
         vaultKey = vk
         do {
-            try await refresh()
+            try await refresh(progress: progress)
         } catch {
             vaultKey = nil
             clearIndex()
@@ -93,12 +93,22 @@ public actor VaultStore {
 
     // MARK: - Indexing
 
+    /// Progress callback for long scans: (revisions decrypted, revisions found).
+    public typealias Progress = @Sendable (_ done: Int, _ total: Int) -> Void
+
+    private enum Pending: Sendable {
+        case project(VaultPath, ownerId: UUID, revisionId: ULID)
+        case item(VaultPath, ownerId: UUID, revisionId: ULID)
+        var path: VaultPath { switch self { case .project(let p, _, _), .item(let p, _, _): p } }
+    }
+
     /// Scans storage for revision files not yet indexed and decrypts them.
+    /// Files are read in batches: per-file reads dominate, especially in iCloud Drive.
     /// Returns true when anything new was found.
     @discardableResult
-    public func refresh() async throws -> Bool {
+    public func refresh(progress: Progress? = nil) async throws -> Bool {
         guard let vk = vaultKey else { throw VaultError.locked }
-        var changed = false
+        var pending: [Pending] = []
         let projectsDir = VaultPath("projects")
         for pid in try await storage.list(projectsDir) {
             guard let projectId = UUID(uuidString: pid) else { continue }
@@ -106,10 +116,7 @@ public actor VaultStore {
             for file in try await storage.list(pdir.appending("meta")) {
                 let path = pdir.appending("meta").appending(file)
                 guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
-                let rev = try RevisionFile.decode(ProjectRevision.self, from: try await storage.read(path), vaultId: vaultId, scope: .project, ownerId: projectId, revisionId: rid, key: vk)
-                insert(rev)
-                indexedPaths.insert(path.string)
-                changed = true
+                pending.append(.project(path, ownerId: projectId, revisionId: rid))
             }
             let itemsDir = pdir.appending("items")
             for iid in try await storage.list(itemsDir) {
@@ -118,14 +125,32 @@ public actor VaultStore {
                 for file in try await storage.list(idir) {
                     let path = idir.appending(file)
                     guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
-                    let rev = try RevisionFile.decode(ItemRevision.self, from: try await storage.read(path), vaultId: vaultId, scope: .item, ownerId: itemId, revisionId: rid, key: vk)
-                    insert(rev)
-                    indexedPaths.insert(path.string)
-                    changed = true
+                    pending.append(.item(path, ownerId: itemId, revisionId: rid))
                 }
             }
         }
-        return changed
+        guard !pending.isEmpty else { return false }
+
+        let total = pending.count
+        var done = 0
+        progress?(0, total)
+        for start in stride(from: 0, to: total, by: 100) {
+            let batch = Array(pending[start..<min(start + 100, total)])
+            let files = try await storage.readMany(batch.map(\.path))
+            for (p, data) in zip(batch, files) {
+                switch p {
+                case .project(let path, let owner, let rid):
+                    insert(try RevisionFile.decode(ProjectRevision.self, from: data, vaultId: vaultId, scope: .project, ownerId: owner, revisionId: rid, key: vk))
+                    indexedPaths.insert(path.string)
+                case .item(let path, let owner, let rid):
+                    insert(try RevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: owner, revisionId: rid, key: vk))
+                    indexedPaths.insert(path.string)
+                }
+            }
+            done += batch.count
+            progress?(done, total)
+        }
+        return true
     }
 
     private func revisionId(fromFileName name: String) -> ULID? {
@@ -303,9 +328,9 @@ public actor VaultStore {
     /// Unlocks with the recovery key. Follow with `resetPassphrase` so the
     /// user has a passphrase again.
     @discardableResult
-    public func unlock(recoveryKey: String) async throws -> VaultKey {
+    public func unlock(recoveryKey: String, progress: Progress? = nil) async throws -> VaultKey {
         let vk = try KeyHierarchy.unlock(header: header, recoveryKey: recoveryKey)
-        try await unlock(vaultKey: vk)
+        try await unlock(vaultKey: vk, progress: progress)
         return vk
     }
 

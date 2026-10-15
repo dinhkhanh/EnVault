@@ -34,6 +34,13 @@ final class AppModel {
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
     private(set) var hasRecoveryKey = false
+    /// Non-nil while an unlock runs; drives the lock screen's progress.
+    private(set) var unlockProgress: UnlockProgress?
+
+    enum UnlockProgress: Equatable {
+        case checking                                // deriving the key from the passphrase
+        case decrypting(done: Int, total: Int)       // reading and decrypting revisions
+    }
     /// A freshly generated recovery key the UI must show once, then clear.
     var pendingRecoveryKey: String?
     /// Set after a recovery-key unlock: the user must choose a new passphrase.
@@ -311,9 +318,11 @@ final class AppModel {
     // MARK: - Lock / unlock
 
     func unlock(passphrase: String, rememberWithBiometrics: Bool) async {
-        guard let store else { return }
+        guard let store, unlockProgress == nil else { return }
+        unlockProgress = .checking
+        defer { unlockProgress = nil }
         do {
-            let vk = try await store.unlock(passphrase: passphrase)
+            let vk = try await store.unlock(passphrase: passphrase, progress: reportUnlockProgress())
             var keychainError: String?
             if rememberWithBiometrics, let vaultId {
                 do {
@@ -332,13 +341,24 @@ final class AppModel {
     }
 
     func unlockWithBiometrics() async {
-        guard let store, let vaultId else { return }
+        guard let store, let vaultId, unlockProgress == nil else { return }
         do {
             guard let vk = try keychain.load(vaultId: vaultId) else { return } // cancelled or none
-            try await store.unlock(vaultKey: vk)
+            unlockProgress = .checking
+            defer { unlockProgress = nil }
+            try await store.unlock(vaultKey: vk, progress: reportUnlockProgress())
             await becameUnlocked()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func reportUnlockProgress() -> VaultStore.Progress {
+        { [weak self] done, total in
+            Task { @MainActor in
+                guard let self, self.unlockProgress != nil else { return }
+                self.unlockProgress = .decrypting(done: done, total: total)
+            }
         }
     }
 
@@ -366,9 +386,11 @@ final class AppModel {
     }
 
     func unlock(recoveryKey: String) async {
-        guard let store else { return }
+        guard let store, unlockProgress == nil else { return }
+        unlockProgress = .checking
+        defer { unlockProgress = nil }
         do {
-            try await store.unlock(recoveryKey: recoveryKey)
+            try await store.unlock(recoveryKey: recoveryKey, progress: reportUnlockProgress())
             await becameUnlocked()
             needsPassphraseReset = true
         } catch {

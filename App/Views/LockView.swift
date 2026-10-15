@@ -10,6 +10,8 @@ struct LockView: View {
     @State private var recoveryKey = ""
     @FocusState private var focused: Bool
 
+    private var working: Bool { busy || model.unlockProgress != nil }
+
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(.tint)
@@ -30,18 +32,20 @@ struct LockView: View {
                         .font(.system(.body, design: .monospaced))
                         .focused($focused)
                         .onSubmit(submitRecovery)
+                        .disabled(working)
                     HStack {
                         Button("Back to passphrase") { useRecovery = false }
                         Spacer()
-                        Button("Unlock with Recovery Key", action: submitRecovery)
+                        Button(action: submitRecovery) { unlockLabel("Unlock with Recovery Key") }
                             .buttonStyle(.borderedProminent)
-                            .disabled(RecoveryKey.normalize(recoveryKey) == nil || busy)
+                            .disabled(RecoveryKey.normalize(recoveryKey) == nil || working)
                     }
                 } else {
                 SecureField("Passphrase", text: $passphrase)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
                     .onSubmit(submit)
+                    .disabled(working)
                 if model.biometricsAvailable && !model.hasBiometricKey {
                     Toggle("Remember on this Mac and unlock with Touch ID", isOn: $remember)
                         .font(.callout)
@@ -51,11 +55,12 @@ struct LockView: View {
                         Button { Task { await model.unlockWithBiometrics() } } label: {
                             Label("Touch ID", systemImage: "touchid")
                         }
+                        .disabled(working)
                     }
                     Spacer()
-                    Button("Unlock", action: submit)
+                    Button(action: submit) { unlockLabel("Unlock") }
                         .buttonStyle(.borderedProminent)
-                        .disabled(passphrase.isEmpty || busy)
+                        .disabled(passphrase.isEmpty || working)
                 }
                 if model.hasRecoveryKey {
                     Button("Forgot passphrase? Use recovery key") { useRecovery = true; model.errorMessage = nil }
@@ -65,7 +70,9 @@ struct LockView: View {
             }
             .frame(width: 360)
 
-            if let e = model.errorMessage {
+            if let p = model.unlockProgress {
+                progressView(p).frame(width: 360)
+            } else if let e = model.errorMessage {
                 Text(e).foregroundStyle(.red).font(.callout)
             }
             Button("Use a different vault…") { model.closeVault() }
@@ -79,8 +86,27 @@ struct LockView: View {
         }
     }
 
+    private func unlockLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            if working { ProgressView().controlSize(.small) }
+            Text(working ? "Unlocking…" : title)
+        }
+    }
+
+    @ViewBuilder private func progressView(_ p: AppModel.UnlockProgress) -> some View {
+        switch p {
+        case .checking:
+            Text("Checking key…").font(.callout).foregroundStyle(.secondary)
+        case .decrypting(let done, let total):
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: Double(done), total: Double(max(total, 1)))
+                Text("Decrypting vault… \(done) of \(total) revisions").font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+    }
+
     private func submitRecovery() {
-        guard RecoveryKey.normalize(recoveryKey) != nil else { return }
+        guard RecoveryKey.normalize(recoveryKey) != nil, !working else { return }
         busy = true
         let k = recoveryKey
         Task {
@@ -91,7 +117,7 @@ struct LockView: View {
     }
 
     private func submit() {
-        guard !passphrase.isEmpty else { return }
+        guard !passphrase.isEmpty, !working else { return }
         busy = true
         let p = passphrase
         Task {
