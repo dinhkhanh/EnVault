@@ -28,7 +28,7 @@ this is the "where are we" page.
 | Item | Blocked on | Unblocks |
 |---|---|---|
 | Signed, notarized builds; `make archive`; CloudKit against a real account; Touch ID via data-protection keychain | Apple Developer account activation (team KJ8A3B7BM7), then sign into Xcode | Real Pro iCloud sync, Gatekeeper-clean installs |
-| Store deployment | Polar account (org, product, checkout link, webhook secret); Cloudflare login; D1 id; Resend verified sending domain; `store.evault.dinhkhanh.dk` | Taking money |
+| Store deployment | Polar account (org, product, checkout link, webhook secret); Worker secrets; Resend verified sending domain; `store.evault.dinhkhanh.dk`. Done: D1 `evault-store` created with tables in the account that owns the dinhkhanh.dk zone (pinned in `wrangler.toml`) | Taking money |
 | Buy button on the site | Store deployment | same |
 
 ## Next actions (in order)
