@@ -8,7 +8,7 @@ this is the "where are we" page.
 
 | What | Where | State |
 |---|---|---|
-| App v0.3.10 (**Developer ID signed, notarized**, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.10): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.10 (build 14). 0.3.10 only prompts Touch ID while eVault is frontmost, once per lock. 0.3.9 fixes Touch ID unlock in signed builds (0.3.7–0.3.8 never found the saved key after relaunch). 0.3.8 redesigns the license key input (multi-line box, Paste, live status; wrapped keys accepted). 0.3.7 was the first signed build: iCloud (CloudKit, Production) available to Pro, no right-click > Open. 0.3.6 introduced the current license (`LR48…`) and Sparkle (`SRLH…`) keys; 0.3.2–0.3.5 installs must reinstall by hand |
+| App v0.4.0 (**Developer ID signed, notarized**, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.4.0): dmg, zip, SHA256SUMS, appcast.xml | 0.4.0 (build 15): CLI bundled in the app (`Contents/Helpers/evault`, installed from Settings › Command Line) and unlocked through the app with Touch ID (Mach-port agent); `evault import` (JSON, Doppler, 1Password, .env.vault), `evault protect` / `scan --staged` pre-commit hook; quick copy panel on a global shortcut (⌥⌘E) searching keys, secrets, notes and values with recents; Import Projects from Folder on first run; env files kept in sync in project folders (Pro); editor line numbers, lint warnings, key comparison with sibling files. 0.3.10 only prompts Touch ID while eVault is frontmost, once per lock. 0.3.9 fixes Touch ID unlock in signed builds (0.3.7–0.3.8 never found the saved key after relaunch). 0.3.8 redesigns the license key input (multi-line box, Paste, live status; wrapped keys accepted). 0.3.7 was the first signed build: iCloud (CloudKit, Production) available to Pro, no right-click > Open. 0.3.6 introduced the current license (`LR48…`) and Sparkle (`SRLH…`) keys; 0.3.2–0.3.5 installs must reinstall by hand |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 52 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
@@ -27,7 +27,6 @@ this is the "where are we" page.
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
-| CloudKit sync verified across two Macs | A vault created in iCloud on one Mac, opened on the other (same Apple Account) | Telling customers iCloud sync works |
 | First real sale verified | One purchase through the site's Buy button (then refund it in Polar): webhook → key → email → activates in 0.3.6 | Announcing |
 | Buy button on the site | nothing: live since 2026-10-15 (production checkout, real charges) | — |
 
@@ -66,4 +65,4 @@ Restore on a new Mac or after a keychain reset:
 
 ## Known gaps
 
-See [PLAN.md §13](PLAN.md#13-known-gaps). Highlights: CloudKit untested against a real account; ad-hoc builds use the legacy keychain fallback; raw editor has basic highlighting only; no second physical Mac verified through iCloud Drive yet.
+See [PLAN.md §13](PLAN.md#13-known-gaps). Highlights: ad-hoc builds use the legacy keychain fallback; no second physical Mac verified through iCloud Drive (folder mode) yet. CloudKit sync confirmed working by the owner on 2026-10-15.
