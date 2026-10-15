@@ -12,7 +12,7 @@ this is the "where are we" page.
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 52 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
-| Store Worker (Polar checkout, webhooks, email, refunds, resend, admin) | `store/` | **deployed** 2026-10-15 at https://store.evault.dinhkhanh.dk (D1, `LICENSE_PRIVATE_KEY`, `ADMIN_TOKEN`, `RESEND_API_KEY` set; mail from verified `updates.dinhkhanh.dk`). `/buy` answers 503 until `POLAR_CHECKOUT_URL` is set |
+| Store Worker (Polar checkout, webhooks, email, refunds, resend, admin) | `store/` | **deployed** 2026-10-15 at https://store.evault.dinhkhanh.dk (D1, `LICENSE_PRIVATE_KEY`, `ADMIN_TOKEN`, `RESEND_API_KEY` set; mail from verified `updates.dinhkhanh.dk`). `/buy` redirects to the production Polar checkout link; Polar webhook secret set and signature checks verified live |
 | Revocation list + 12-month update window in the app | `App/RevokedLicenses.swift`, `LicenseManager` | shipped in 0.3.1 (list empty) |
 
 ## Decisions in force
@@ -28,14 +28,14 @@ this is the "where are we" page.
 | Item | Blocked on | Unblocks |
 |---|---|---|
 | Signed, notarized builds; `make archive`; CloudKit against a real account; Touch ID via data-protection keychain | Apple Developer account activation (team KJ8A3B7BM7), then sign into Xcode | Real Pro iCloud sync, Gatekeeper-clean installs |
-| Taking money | Polar account (org, product, checkout link, webhook secret → `POLAR_CHECKOUT_URL`, `POLAR_WEBHOOK_SECRET`) | Sales |
-| Buy button on the site | `POLAR_CHECKOUT_URL` | same |
+| First real sale verified | One purchase through the site's Buy button (then refund it in Polar): webhook → key → email → activates in 0.3.6 | Announcing |
+| Buy button on the site | nothing: live since 2026-10-15 (production checkout, real charges) | — |
 
 ## Next actions (in order)
 
-1. Polar: create org (payout country Vietnam, bank in your registered name), product "eVault Pro" $29 one-time with metadata `plan = pro`, checkout link with success URL `https://store.evault.dinhkhanh.dk/thanks`.
-2. Store is deployed. Remaining: `POLAR_CHECKOUT_URL` in `wrangler.toml` + redeploy, `wrangler secret put POLAR_WEBHOOK_SECRET`, Polar webhook endpoint `https://store.evault.dinhkhanh.dk/webhooks/polar`.
-3. Sandbox purchase on Polar → key arrives → activates in the app. Then announce.
+1. Done 2026-10-15: Polar org, product "eVault Pro" $29, production checkout link (in `wrangler.toml`), webhook `https://store.evault.dinhkhanh.dk/webhooks/polar` (secret in the Worker).
+2. Done 2026-10-15: store deployed with all secrets (license key, admin token, Resend, Polar webhook).
+3. Buy once through the site, check the key email and activation in 0.3.6, refund in Polar and check the key turns revoked (`scripts/store.sh list`). Then announce.
 4. When the Apple account activates: sign into Xcode, `make run-icloud`, deploy the CloudKit schema to Production, `make archive`, release a signed build.
 5. Later: Team plan (subscription with seats), iOS companion, Mac App Store or Setapp.
 
