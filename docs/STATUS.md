@@ -8,7 +8,7 @@ this is the "where are we" page.
 
 | What | Where | State |
 |---|---|---|
-| App v0.3.2 (unsigned, ad-hoc) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.2): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.2 (build 6). New license and Sparkle keys; 0.3.1 installs must reinstall by hand |
+| App v0.3.3 (unsigned, ad-hoc) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.3): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.3 (build 7). Adds URL encode/decode and password generator tools. Keys rotated in 0.3.2; 0.3.1 installs must reinstall by hand |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 51 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
