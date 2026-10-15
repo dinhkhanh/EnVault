@@ -8,7 +8,7 @@ this is the "where are we" page.
 
 | What | Where | State |
 |---|---|---|
-| App v0.3.1 (unsigned, ad-hoc) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.1): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.1 (build 5) |
+| App v0.3.2 (unsigned, ad-hoc) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.2): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.2 (build 6). New license and Sparkle keys; 0.3.1 installs must reinstall by hand |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 51 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
@@ -44,15 +44,20 @@ this is the "where are we" page.
 
 | Secret | Location |
 |---|---|
-| License signing key (Ed25519 private) | login keychain `dk.dinhkhanh.evault.license-signing`; also becomes the Worker secret `LICENSE_PRIVATE_KEY` |
+| License signing key (Ed25519 private) | login keychain `dk.dinhkhanh.evault.license-signing`; backup in password manager; also becomes the Worker secret `LICENSE_PRIVATE_KEY` |
 | License public key | `App/LicensePublicKey.swift`, `store/wrangler.toml` (`LICENSE_PUBLIC_KEY`) |
-| Sparkle EdDSA key | login keychain (from `generate_keys`); public key in `project.yml` (`SUPublicEDKey`) |
+| Sparkle EdDSA key | login keychain, account `ed25519` (from `generate_keys`); backup in password manager; public key in `project.yml` (`SUPublicEDKey`) |
 | Store admin token | Worker secret `ADMIN_TOKEN`; keychain `dk.dinhkhanh.evault.store-admin` |
 | Polar / Paddle / Resend secrets | Worker secrets only |
 | Apple team id | git-ignored `Config/Signing.xcconfig` |
 | Offline license ledger | `~/Library/Application Support/eVault Vendor/licenses.jsonl` (fallback only; D1 is the ledger of record) |
 
 Back up both keychain keys. Losing the license key means no new keys can be issued; losing the Sparkle key means existing installs cannot update.
+This already happened once: both originals went missing and both pairs were rotated in 0.3.2 (2026-10-15), before any sale. Keys from the old license pair no longer verify.
+
+Restore on a new Mac or after a keychain reset:
+- License key: `security add-generic-password -s dk.dinhkhanh.evault.license-signing -a evault -w '<key>'`
+- Sparkle key: save it to a file, then `build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys -f <file>` (export with `-x <file>`)
 
 ## Routine operations
 
