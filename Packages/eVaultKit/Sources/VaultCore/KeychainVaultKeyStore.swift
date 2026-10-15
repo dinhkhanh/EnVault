@@ -95,12 +95,22 @@ public struct KeychainVaultKeyStore: Sendable {
         }
     }
 
+    /// Whether a key is cached, without prompting. Reads attributes only, which the
+    /// biometry access control does not guard. (`kSecUseAuthenticationUISkip` would
+    /// silently skip the protected item and report it missing.)
     public func hasCachedKey(vaultId: UUID) -> Bool {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
         var q = baseQuery(vaultId, dataProtection: true)
-        q[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip
-        let status = SecItemCopyMatching(q as CFDictionary, nil)
-        if status == errSecSuccess || status == errSecInteractionNotAllowed { return true }
-        return hasLegacyItem(vaultId)
+        q[kSecReturnAttributes as String] = true
+        q[kSecUseAuthenticationContext as String] = ctx
+        switch SecItemCopyMatching(q as CFDictionary, nil) {
+        case errSecSuccess, errSecInteractionNotAllowed: return true
+        // Ad-hoc build: only the legacy keychain exists. A signed build ignores legacy
+        // items (load never reads them there), so they must not count as cached.
+        case Self.missingEntitlement: return hasLegacyItem(vaultId)
+        default: return false
+        }
     }
 
     private func hasLegacyItem(_ vaultId: UUID) -> Bool {

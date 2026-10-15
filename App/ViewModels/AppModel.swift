@@ -343,7 +343,13 @@ final class AppModel {
     func unlockWithBiometrics() async {
         guard let store, let vaultId, unlockProgress == nil else { return }
         do {
-            guard let vk = try keychain.load(vaultId: vaultId) else { return } // cancelled or none
+            // Off the main actor: the Touch ID sheet blocks the calling thread until answered.
+            let keychain = keychain
+            guard let vk = try await Task.detached(operation: { try keychain.load(vaultId: vaultId) }).value else {
+                // Cancelled, or the item is gone (e.g. fingerprints re-enrolled): offer "Remember" again if so.
+                hasBiometricKey = keychain.hasCachedKey(vaultId: vaultId)
+                return
+            }
             unlockProgress = .checking
             defer { unlockProgress = nil }
             try await store.unlock(vaultKey: vk, progress: reportUnlockProgress())

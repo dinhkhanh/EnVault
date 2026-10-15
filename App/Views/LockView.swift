@@ -4,7 +4,8 @@ import VaultCore
 struct LockView: View {
     @Environment(AppModel.self) private var model
     @State private var passphrase = ""
-    @State private var remember = false
+    /// Starts checked if Touch ID was enabled before, so a lost keychain item is re-saved on the next passphrase unlock.
+    @State private var remember = UserDefaults.standard.bool(forKey: Prefs.biometricUnlock)
     @State private var busy = false
     @State private var useRecovery = false
     @State private var recoveryKey = ""
