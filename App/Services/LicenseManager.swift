@@ -60,7 +60,7 @@ final class LicenseManager {
         guard let verifier else { lastError = "License verification is not configured in this build."; return false }
         do {
             let lic = try verifier.verify(key)
-            licenseKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            licenseKey = LicenseCodec.normalize(key)
             lastError = nil
             if persist { UserDefaults.standard.set(licenseKey, forKey: Self.defaultsKey) }
             if lic.coversUpdates(releasedOn: Self.releaseDate) {

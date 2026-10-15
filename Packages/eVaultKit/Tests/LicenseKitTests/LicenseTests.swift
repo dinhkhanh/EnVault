@@ -17,6 +17,15 @@ import CryptoKit
         // via base64 public key, with surrounding whitespace in the key
         let v = try LicenseVerifier(publicKeyBase64: key.publicKey.rawRepresentation.base64EncodedString())
         #expect(try v.verify("  \(s)\n").id == lic.id)
+        // wrapped across lines by a mail client
+        let wrapped = stride(from: 0, to: s.count, by: 60).map { i in
+            String(s.dropFirst(i).prefix(60))
+        }.joined(separator: "\r\n ")
+        #expect(try v.verify(wrapped).id == lic.id)
+        #expect(LicenseCodec.looksLikeKey(wrapped))
+        #expect(!LicenseCodec.looksLikeKey(String(s.dropLast(10))))  // cut off mid-signature
+        #expect(!LicenseCodec.looksLikeKey(s.components(separatedBy: ".").dropLast().joined(separator: ".")))
+        #expect(!LicenseCodec.looksLikeKey("EVL1.…"))
     }
 
     @Test func tamperingFails() throws {

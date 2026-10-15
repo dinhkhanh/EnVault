@@ -69,8 +69,19 @@ public enum LicenseCodec {
         return [prefix, base64url(payload), base64url(sig)].joined(separator: ".")
     }
 
+    /// Drops all whitespace, so a key that a mail client wrapped across lines still decodes.
+    public static func normalize(_ key: String) -> String {
+        String(key.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) })
+    }
+
+    /// Cheap shape check for live input feedback; says nothing about the signature.
+    public static func looksLikeKey(_ key: String) -> Bool {
+        let parts = normalize(key).split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 3 && parts[0] == prefix && parts[1].count >= 40 && parts[2].count >= 80
+    }
+
     public static func decode(_ key: String, publicKey: Curve25519.Signing.PublicKey) throws -> License {
-        let parts = key.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
+        let parts = normalize(key).split(separator: ".")
         guard parts.count == 3, parts[0] == prefix,
               let payload = unbase64url(String(parts[1])), let sig = unbase64url(String(parts[2])) else { throw LicenseError.malformed }
         guard publicKey.isValidSignature(sig, for: payload) else { throw LicenseError.badSignature }

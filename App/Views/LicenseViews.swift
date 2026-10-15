@@ -23,9 +23,7 @@ struct UpgradeSheet: View {
                     .font(.callout).foregroundStyle(.secondary).padding(.top, 4)
             }
             if showKeyField {
-                TextField("Paste license key (EVL1.…)", text: $key)
-                    .textFieldStyle(.roundedBorder).font(.system(.body, design: .monospaced))
-                if let e = licenses.lastError { Text(e).foregroundStyle(.red).font(.callout) }
+                LicenseKeyField(key: $key, autofocus: true) { if licenses.apply(key) { dismiss() } }
             }
             HStack {
                 Button("Not now") { dismiss() }
@@ -34,7 +32,7 @@ struct UpgradeSheet: View {
                     Button("Activate") { if licenses.apply(key) { dismiss() } }
                         .buttonStyle(.borderedProminent).disabled(key.isEmpty)
                 } else {
-                    Button("I have a license key") { showKeyField = true }
+                    Button("I have a license key") { licenses.lastError = nil; showKeyField = true }
                     Link(destination: LicenseManager.purchaseURL) { Text("Get Pro") }
                         .buttonStyle(.borderedProminent)
                 }
@@ -73,9 +71,8 @@ struct LicenseSettings: View {
             }
             if licenses.license == nil {
                 Section("Activate") {
-                    TextField("License key (EVL1.…)", text: $key).font(.system(.body, design: .monospaced))
+                    LicenseKeyField(key: $key) { if licenses.apply(key) { key = "" } }
                     HStack {
-                        if let e = licenses.lastError { Text(e).foregroundStyle(.red).font(.callout) }
                         Spacer()
                         Button("Activate") { if licenses.apply(key) { key = "" } }.disabled(key.isEmpty)
                     }
@@ -86,5 +83,104 @@ struct LicenseSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Multi-line box for pasting a license key. A titled, bordered field with a prose prompt
+/// (not a key-shaped placeholder that reads like a value), the whole key visible, and a status
+/// line that says whether what's in the box is complete before the user hits Activate.
+struct LicenseKeyField: View {
+    @Environment(LicenseManager.self) private var licenses
+    @Binding var key: String
+    var autofocus = false
+    var onSubmit: () -> Void
+    @FocusState private var focused: Bool
+
+    private enum Status { case empty, incomplete, complete, rejected(String) }
+
+    private var status: Status {
+        if let e = licenses.lastError { return .rejected(e) }
+        if key.isEmpty { return .empty }
+        return LicenseCodec.looksLikeKey(key) ? .complete : .incomplete
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("License key").font(.headline)
+                Spacer()
+                Button { paste() } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                    .controlSize(.small)
+                    .help("Paste the key from the clipboard")
+            }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $key)
+                    .font(.system(.callout, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .focused($focused)
+                    .padding(.trailing, 16)  // room for the clear button
+                    .onKeyPress(.return) {
+                        if !key.isEmpty { onSubmit() }
+                        return .handled
+                    }
+                if key.isEmpty {
+                    Text("Paste the key from your purchase email here")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(8)
+            .frame(height: 84)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .topTrailing) {
+                if !key.isEmpty {
+                    Button { key = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .padding(6)
+                        .help("Clear")
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(borderColor, lineWidth: focused ? 2 : 1))
+            statusLine.font(.callout)
+        }
+        .onChange(of: key) { _, new in
+            // Mail clients wrap long keys; whitespace is never part of one.
+            let n = LicenseCodec.normalize(new)
+            if n != new { key = n }
+            licenses.lastError = nil
+        }
+        .onAppear { if autofocus { focused = true } }
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        switch status {
+        case .empty:
+            Label("Starts with EVL1. and is one long line. Copy all of it.", systemImage: "info.circle")
+                .foregroundStyle(.secondary)
+        case .incomplete:
+            Label("Looks incomplete. Make sure you copied the whole key.", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        case .complete:
+            Label("Key looks complete. Activate to verify it on this Mac.", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .rejected(let message):
+            Label(message, systemImage: "xmark.octagon.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
+    private var borderColor: Color {
+        switch status {
+        case .empty, .complete: focused ? .accentColor : Color(nsColor: .separatorColor)
+        case .incomplete: .orange
+        case .rejected: .red
+        }
+    }
+
+    private func paste() {
+        if let s = NSPasteboard.general.string(forType: .string) { key = LicenseCodec.normalize(s) }
+        focused = true
     }
 }
