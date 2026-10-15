@@ -9,7 +9,14 @@
 <meta property="og:description" content="eVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
-<script>try{var t=localStorage.getItem("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:image" content="https://dinhkhanh.github.io/eVault/icon-512.png">
+<script>
+/* A saved manual theme applies only while it differs from the system's; one that matches is dropped. */
+try{var t=localStorage.getItem("theme"),s=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t===s)localStorage.removeItem("theme");else if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
@@ -351,12 +358,18 @@ $ evault status                                 <span style="color: #8A91A3"># i
 
 </div>
 <script>
-(function(){var r=document.documentElement,m=matchMedia("(prefers-color-scheme: dark)");
-function dark(){return(r.dataset.theme||(m.matches?"dark":"light"))==="dark"}
-document.querySelectorAll(".theme-toggle").forEach(function(b){
-function sync(){b.setAttribute("aria-pressed",String(dark()));b.setAttribute("aria-label",dark()?"Switch to light theme":"Switch to dark theme")}
-sync();m.addEventListener("change",sync);
-b.addEventListener("click",function(){var t=dark()?"light":"dark";r.dataset.theme=t;try{localStorage.setItem("theme",t)}catch(e){}sync()})})})();
+/* Theme: follows the system; the toggle overrides it. Switching back to the system's
+   theme, or the system appearance changing, returns to following the system. */
+(function(){var r=document.documentElement,m=matchMedia("(prefers-color-scheme: dark)"),K="theme",bs=document.querySelectorAll(".theme-toggle");
+function sys(){return m.matches?"dark":"light"}
+function cur(){return r.dataset.theme||sys()}
+function store(t){try{t?localStorage.setItem(K,t):localStorage.removeItem(K)}catch(e){}}
+function follow(){delete r.dataset.theme}
+function sync(){var d=cur()==="dark";bs.forEach(function(b){b.setAttribute("aria-pressed",String(d));b.setAttribute("aria-label",d?"Switch to light theme":"Switch to dark theme");b.title=(r.dataset.theme?"Your choice: ":"Following your system: ")+(d?"dark":"light")})}
+bs.forEach(function(b){b.addEventListener("click",function(){var t=cur()==="dark"?"light":"dark";if(t===sys()){follow();store(null)}else{r.dataset.theme=t;store(t)}sync()})});
+m.addEventListener("change",function(){follow();store(null);sync()});
+addEventListener("storage",function(e){if(e.key!==K)return;if(e.newValue==="dark"||e.newValue==="light")r.dataset.theme=e.newValue;else follow();sync()});
+sync()})();
 </script>
 </body>
 </html>
