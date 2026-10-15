@@ -7,8 +7,10 @@ extension ToolRegistry {
         EnvExampleTool(),
         SecretScanTool(),
         RandomSecretTool(),
+        PasswordGeneratorTool(),
         UUIDTool(),
         JWTDecoderTool(),
         Base64Tool(),
+        URLEncodeTool(),
     ])
 }
