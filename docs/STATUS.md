@@ -12,7 +12,7 @@ this is the "where are we" page.
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 52 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
-| Store Worker (Polar checkout, webhooks, email, refunds, resend, admin) | `store/` | **deployed** 2026-10-15 at https://store.evault.dinhkhanh.dk (D1, `LICENSE_PRIVATE_KEY`, `ADMIN_TOKEN` set). `/buy` answers 503 until `POLAR_CHECKOUT_URL` is set; no email until `RESEND_API_KEY` is set |
+| Store Worker (Polar checkout, webhooks, email, refunds, resend, admin) | `store/` | **deployed** 2026-10-15 at https://store.evault.dinhkhanh.dk (D1, `LICENSE_PRIVATE_KEY`, `ADMIN_TOKEN`, `RESEND_API_KEY` set; mail from verified `updates.dinhkhanh.dk`). `/buy` answers 503 until `POLAR_CHECKOUT_URL` is set |
 | Revocation list + 12-month update window in the app | `App/RevokedLicenses.swift`, `LicenseManager` | shipped in 0.3.1 (list empty) |
 
 ## Decisions in force
@@ -28,17 +28,16 @@ this is the "where are we" page.
 | Item | Blocked on | Unblocks |
 |---|---|---|
 | Signed, notarized builds; `make archive`; CloudKit against a real account; Touch ID via data-protection keychain | Apple Developer account activation (team KJ8A3B7BM7), then sign into Xcode | Real Pro iCloud sync, Gatekeeper-clean installs |
-| Taking money | Polar account (org, product, checkout link, webhook secret → `POLAR_CHECKOUT_URL`, `POLAR_WEBHOOK_SECRET`); `RESEND_API_KEY` for `updates.dinhkhanh.dk` (its DNS already points at a different Resend account than the one first connected) | Sales |
-| Buy button on the site | Taking money | Polar account (org, product, checkout link, webhook secret → `POLAR_CHECKOUT_URL`, `POLAR_WEBHOOK_SECRET`); `RESEND_API_KEY` for `updates.dinhkhanh.dk` (its DNS already points at a different Resend account than the one first connected) | Sales |
+| Taking money | Polar account (org, product, checkout link, webhook secret → `POLAR_CHECKOUT_URL`, `POLAR_WEBHOOK_SECRET`) | Sales |
+| Buy button on the site | `POLAR_CHECKOUT_URL` | same |
 
 ## Next actions (in order)
 
 1. Polar: create org (payout country Vietnam, bank in your registered name), product "eVault Pro" $29 one-time with metadata `plan = pro`, checkout link with success URL `https://store.evault.dinhkhanh.dk/thanks`.
 2. Store is deployed. Remaining: `POLAR_CHECKOUT_URL` in `wrangler.toml` + redeploy, `wrangler secret put POLAR_WEBHOOK_SECRET`, Polar webhook endpoint `https://store.evault.dinhkhanh.dk/webhooks/polar`.
-3. Resend: `wrangler secret put RESEND_API_KEY` with a sending key for `updates.dinhkhanh.dk` (`FROM_EMAIL` is `evault@updates.dinhkhanh.dk`).
-4. Sandbox purchase on Polar → key arrives → activates in the app. Then announce.
-5. When the Apple account activates: sign into Xcode, `make run-icloud`, deploy the CloudKit schema to Production, `make archive`, release a signed build.
-6. Later: Team plan (subscription with seats), iOS companion, Mac App Store or Setapp.
+3. Sandbox purchase on Polar → key arrives → activates in the app. Then announce.
+4. When the Apple account activates: sign into Xcode, `make run-icloud`, deploy the CloudKit schema to Production, `make archive`, release a signed build.
+5. Later: Team plan (subscription with seats), iOS companion, Mac App Store or Setapp.
 
 ## Vendor secrets (never in the repo)
 
@@ -48,7 +47,7 @@ this is the "where are we" page.
 | License public key | `App/LicensePublicKey.swift`, `store/wrangler.toml` (`LICENSE_PUBLIC_KEY`) |
 | Sparkle EdDSA key | login keychain, account `ed25519` (from `generate_keys`); backup in password manager; public key in `project.yml` (`SUPublicEDKey`) |
 | Store admin token | Worker secret `ADMIN_TOKEN`; keychain `dk.dinhkhanh.evault.store-admin` |
-| Polar / Paddle / Resend secrets | Worker secrets only |
+| Polar / Paddle / Resend secrets | Worker secrets only (Resend key "evault-store (Cloudflare Worker)", sending-only, scoped to `updates.dinhkhanh.dk`) |
 | Apple team id | git-ignored `Config/Signing.xcconfig` |
 | Offline license ledger | `~/Library/Application Support/eVault Vendor/licenses.jsonl` (fallback only; D1 is the ledger of record) |
 
