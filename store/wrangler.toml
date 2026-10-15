@@ -13,7 +13,7 @@ database_id = "df3eae6c-9d89-4cd2-8313-8db53cae2334"
 
 [vars]
 # Public half of the license signing key; must match App/LicensePublicKey.swift.
-LICENSE_PUBLIC_KEY = "Oh6BDufPhc5jL0Xt6jLrt+nIexZSqmbhqs4uNN0UBLc="
+LICENSE_PUBLIC_KEY = "LR48ZIUF9ljixUBXir7O99t37u+/fRkIiGBPkDpaTP4="
 SITE_URL = "https://dinhkhanh.github.io/eVault/"
 # Polar checkout link for eVault Pro (dashboard > Checkout Links). /buy redirects here.
 POLAR_CHECKOUT_URL = ""
