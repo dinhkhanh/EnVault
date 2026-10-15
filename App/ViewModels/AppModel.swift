@@ -33,6 +33,9 @@ final class AppModel {
     var errorMessage: String?
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
+    /// Set when the vault opens locked or gets locked; the next time eVault is (or becomes)
+    /// the active app, Touch ID is offered once. Never prompts while another app is in front.
+    @ObservationIgnored private var touchIDOfferArmed = false
     private(set) var hasRecoveryKey = false
     /// Non-nil while an unlock runs; drives the lock screen's progress.
     private(set) var unlockProgress: UnlockProgress?
@@ -137,6 +140,8 @@ final class AppModel {
             hasRecoveryKey = await s.hasRecoveryKey
             phase = .locked
             errorMessage = nil
+            touchIDOfferArmed = true
+            offerTouchIDIfAppropriate()
             startWatching()
             if mode == .iCloud { startCloud() }
         } catch {
@@ -294,7 +299,19 @@ final class AppModel {
     func remotePushReceived() { Task { await syncNow() } }
 
     /// The app became active: catch up in case a push was missed.
-    func appActivated() { if mirror != nil { Task { await syncNow() } } }
+    func appActivated() {
+        offerTouchIDIfAppropriate()
+        if mirror != nil { Task { await syncNow() } }
+    }
+
+    /// Prompts Touch ID if the vault is locked, a key is cached, eVault is frontmost, and
+    /// this lock hasn't been offered yet. Auto-lock in the background therefore waits for
+    /// the user to come back; a manual lock doesn't re-prompt until they leave and return.
+    func offerTouchIDIfAppropriate() {
+        guard touchIDOfferArmed, NSApp.isActive, phase == .locked, hasBiometricKey, unlockProgress == nil else { return }
+        touchIDOfferArmed = false
+        Task { await unlockWithBiometrics() }
+    }
 
     /// Local files changed (our own writes): push soon, coalesced.
     private func schedulePush() {
@@ -426,10 +443,12 @@ final class AppModel {
         items = []
         selectedItemId = nil
         phase = .locked
+        touchIDOfferArmed = true
     }
 
     private func becameUnlocked() async {
         phase = .unlocked
+        touchIDOfferArmed = false
         errorMessage = nil
         await reload()
         if selectedProjectId == nil { selectedProjectId = projects.first?.id }

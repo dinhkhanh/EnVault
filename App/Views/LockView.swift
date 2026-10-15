@@ -42,7 +42,7 @@ struct LockView: View {
                             .disabled(RecoveryKey.normalize(recoveryKey) == nil || working)
                     }
                 } else {
-                SecureField("Passphrase", text: $passphrase)
+                SecureField(model.hasBiometricKey ? "Passphrase, or press Return for Touch ID" : "Passphrase", text: $passphrase)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
                     .onSubmit(submit)
@@ -81,10 +81,7 @@ struct LockView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            focused = true
-            if model.hasBiometricKey { Task { await model.unlockWithBiometrics() } }
-        }
+        .onAppear { focused = true }
     }
 
     private func unlockLabel(_ title: String) -> some View {
@@ -118,7 +115,11 @@ struct LockView: View {
     }
 
     private func submit() {
-        guard !passphrase.isEmpty, !working else { return }
+        guard !working else { return }
+        if passphrase.isEmpty {
+            if model.hasBiometricKey { Task { await model.unlockWithBiometrics() } }
+            return
+        }
         busy = true
         let p = passphrase
         Task {
