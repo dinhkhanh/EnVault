@@ -50,7 +50,7 @@ targets:
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"
         NSFaceIDUsageDescription: "eVault uses Touch ID to unlock your vault."
         SUFeedURL: https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml
-        SUPublicEDKey: sEM9s89FUeuB1ut18cfEKD4AWekFEM7RxciQC+kLOw8=
+        SUPublicEDKey: SRLHhBqtlIsBvuqpk/ONBFaAS629idQVYwoebgfGd/E=
         SUEnableInstallerLauncherService: true
         SUEnableDownloaderService: true
         SUScheduledCheckInterval: 86400
@@ -62,8 +62,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.3.5
-        CURRENT_PROJECT_VERSION: 9
+        MARKETING_VERSION: 0.3.6
+        CURRENT_PROJECT_VERSION: 10
         # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
         EVAULT_RELEASE_DATE: "2026-10-15"
         ENABLE_PREVIEWS: true

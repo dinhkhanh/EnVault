@@ -8,7 +8,7 @@ this is the "where are we" page.
 
 | What | Where | State |
 |---|---|---|
-| App v0.3.5 (unsigned, ad-hoc, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.5): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.5 (build 9). Batched unlock with progress and temporary unmask with auto re-mask since 0.3.5; macOS 14 support since 0.3.4; URL encode/decode and password generator since 0.3.3. Keys rotated in 0.3.2; 0.3.1 installs must reinstall by hand |
+| App v0.3.6 (unsigned, ad-hoc, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.6): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.6 (build 10). **New license key (`LR48…`) and Sparkle key (`SRLH…`) in 0.3.6: 0.3.2–0.3.5 installs cannot auto-update and must reinstall by hand.** Batched unlock and temporary unmask since 0.3.5; macOS 14 since 0.3.4; URL encode/decode and password generator since 0.3.3 |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 52 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
@@ -52,7 +52,7 @@ this is the "where are we" page.
 | Offline license ledger | `~/Library/Application Support/eVault Vendor/licenses.jsonl` (fallback only; D1 is the ledger of record) |
 
 Back up both keychain keys. Losing the license key means no new keys can be issued; losing the Sparkle key means existing installs cannot update.
-This already happened once: both originals went missing and both pairs were rotated in 0.3.2 (2026-10-15), before any sale. Keys from the old license pair no longer verify.
+Rotations so far, all before any sale: 0.3.2 rotated both pairs on another machine (`Oh6B…`/`sEM9…`) because the originals looked missing there; those private halves never reached this Mac, so 0.3.6 (2026-10-15) rotated both again here. Keys are per machine: before releasing or issuing, check the keychain's public key against the repo (`generate_keys -p` vs `SUPublicEDKey`; the license seed vs `App/LicensePublicKey.swift`). Retired keys kept in the keychain: license `dk.dinhkhanh.evault.license-signing.old-2026-10-14`, Sparkle account `ed25519-old-2026-10-14` (both the pre-0.3.2 pairs).
 
 Restore on a new Mac or after a keychain reset:
 - License key: `security add-generic-password -s dk.dinhkhanh.evault.license-signing -a evault -w '<key>'`
