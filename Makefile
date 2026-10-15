@@ -24,7 +24,7 @@ Config/Signing.xcconfig:
 	@echo ">> Created Config/Signing.xcconfig — put your team id in it for iCloud builds."
 
 build-icloud: gen
-	xcodebuild -project eVault.xcodeproj -scheme eVault-iCloud -configuration Debug-iCloud -derivedDataPath build -allowProvisioningUpdates build | tail -3
+	xcodebuild -project eVault.xcodeproj -scheme eVault-iCloud -configuration Debug-iCloud -derivedDataPath build -allowProvisioningUpdates -allowProvisioningDeviceRegistration build | tail -3
 
 run-icloud: build-icloud
 	open build/Build/Products/Debug-iCloud/eVault.app

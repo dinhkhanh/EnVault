@@ -27,7 +27,7 @@ this is the "where are we" page.
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
-| Signed, notarized builds; `make archive`; CloudKit against a real account; Touch ID via data-protection keychain | Apple Developer account activation (team KJ8A3B7BM7), then sign into Xcode | Real Pro iCloud sync, Gatekeeper-clean installs |
+| Signed, notarized release with iCloud (`make archive`); CloudKit schema in Production | Apple account is active (team KJ8A3B7BM7, GCE MEDIA); both Macs registered, Apple Development + Developer ID certificates on this Mac, `make run-icloud` builds and launches (2026-10-15). Remaining: test CloudKit sync on a real account, deploy the schema to Production, notarization credentials, then `make archive` | Pro iCloud sync for customers, Gatekeeper-clean installs |
 | First real sale verified | One purchase through the site's Buy button (then refund it in Polar): webhook → key → email → activates in 0.3.6 | Announcing |
 | Buy button on the site | nothing: live since 2026-10-15 (production checkout, real charges) | — |
 
