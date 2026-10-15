@@ -56,10 +56,9 @@ struct MCPServer {
                 do {
                     let text = try await call(name, arguments, s)
                     reply(id, ["content": [["type": "text", "text": text]], "isError": false])
-                } catch let e as CLIError {
-                    reply(id, ["content": [["type": "text", "text": "\(e.code.name): \(e.description)"]], "isError": true])
                 } catch {
-                    reply(id, ["content": [["type": "text", "text": "error: \(error.localizedDescription)"]], "isError": true])
+                    let e = CLIError.from(error)
+                    reply(id, ["content": [["type": "text", "text": "\(e.code.name): \(e.description)"]], "isError": true])
                 }
             default:
                 send(["jsonrpc": "2.0", "id": id, "error": ["code": -32601, "message": "method not found"]])

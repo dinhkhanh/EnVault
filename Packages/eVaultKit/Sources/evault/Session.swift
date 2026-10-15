@@ -30,6 +30,15 @@ struct CLIError: Error, CustomStringConvertible {
     let description: String
     var code: ExitCode
     init(_ d: String, code: ExitCode = .error) { description = d; self.code = code }
+
+    /// Any error as a CLIError: the app's refusals keep their meaning.
+    static func from(_ error: Error) -> CLIError {
+        switch error {
+        case let e as CLIError: e
+        case let f as Agent.Failure: CLIError("eVault: \(f.message)", code: f.denied ? .denied : .error)
+        default: CLIError(error.localizedDescription)
+        }
+    }
 }
 
 // MARK: - Output
@@ -62,9 +71,35 @@ struct Session {
     /// Only `evault unlock`'s cached key; nothing that could prompt (shell hooks).
     var cachedOnly = false
 
+    /// An iCloud-mode vault lives in the app's sandbox container, which macOS
+    /// won't let Terminal (or an editor, or an MCP host) read without asking.
+    var isInAppContainer: Bool {
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+        return root.standardizedFileURL.path.hasPrefix(home + "/Library/Containers/dk.dinhkhanh.evault/")
+    }
+
+    /// The vault's files: read directly, or through the app for a vault in its container.
+    func storage() throws -> any VaultStorage {
+        guard isInAppContainer, useApp else { return LocalFolderStorage(root: root) }
+        guard let app = appAgent(launch: true) else {
+            throw CLIError("this vault is kept inside the eVault app (iCloud mode): open eVault so evault can read it", code: .needsUser)
+        }
+        // Just launched: give it a moment to open the vault.
+        var info = try? app.info()
+        for _ in 0..<50 where info?.vaultPath == nil {
+            usleep(200_000)
+            info = try? app.info()
+        }
+        guard let path = info?.vaultPath else { throw CLIError("eVault has no vault open", code: .needsUser) }
+        guard URL(fileURLWithPath: path).standardizedFileURL.path == root.standardizedFileURL.path else {
+            throw CLIError("eVault has a different vault open (\(path)); open this one in eVault", code: .needsUser)
+        }
+        return AppVaultStorage(agent: agent)
+    }
+
     func open() async throws -> VaultStore {
         let me = DeviceIdentity.current()
-        return try await VaultStore.open(storage: LocalFolderStorage(root: root),
+        return try await VaultStore.open(storage: try storage(),
                                          device: DeviceIdentity(id: me.id, name: me.name + (agent == nil ? " (cli)" : " (\(agent!))")))
     }
 

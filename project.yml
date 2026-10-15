@@ -70,8 +70,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.5.0
-        CURRENT_PROJECT_VERSION: 16
+        MARKETING_VERSION: 0.5.1
+        CURRENT_PROJECT_VERSION: 17
         # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
         EVAULT_RELEASE_DATE: "2026-10-16"
         ENABLE_PREVIEWS: true

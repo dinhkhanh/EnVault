@@ -719,6 +719,10 @@ final class AppModel {
             authorize: { [weak self] request in
                 guard let self else { throw Agent.Failure("eVault is quitting") }
                 return try await self.authorizeCLI(request)
+            },
+            storage: { [weak self] agent in
+                guard let self else { throw Agent.Failure("eVault is quitting") }
+                return try self.vaultStorageForCLI(agent: agent)
             })
         agentRunning = server.start()
         agent = server
@@ -784,6 +788,19 @@ final class AppModel {
         }
         log(r, .approved)
         return key
+    }
+
+    /// The open vault's files for the CLI, which can't read this app's
+    /// container itself in iCloud mode. Ciphertext; the key is a separate request.
+    private func vaultStorageForCLI(agent: String?) throws -> any VaultStorage {
+        guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
+            throw Agent.Failure("the command line is turned off in eVault Settings › Command Line", denied: true)
+        }
+        if agent != nil, !Prefs.agentPolicy.enabled {
+            throw Agent.Failure("AI agents are turned off in eVault Settings › AI Agents", denied: true)
+        }
+        guard store != nil, let vaultURL else { throw Agent.Failure("no vault is open in eVault") }
+        return LocalFolderStorage(root: vaultURL)
     }
 
     /// Completes "eVault is trying to …" in the Touch ID prompt.

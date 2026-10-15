@@ -2,7 +2,8 @@ import Testing
 import Foundation
 @testable import VaultCore
 
-@Suite struct AgentTests {
+/// Serialized: the app runs one agent server, and the port callback finds it through `AgentServer.current`.
+@Suite(.serialized) struct AgentTests {
     @Test func detectsAgentsFromEnvironment() {
         #expect(AIAgents.detect([:]) == nil)
         #expect(AIAgents.detect(["CLAUDECODE": "1"]) == "Claude Code")
@@ -52,5 +53,50 @@ import Foundation
 
         let info = try await Task.detached { try AgentClient(name: name)!.info() }.value
         #expect(info.agents == AIAgents.Policy())
+    }
+
+    @MainActor @Test func vaultThroughTheApp() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("evault-proxy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let local = LocalFolderStorage(root: dir)
+        let created = try await VaultStore.create(storage: local, passphrase: "pw-123456", kdf: .random(iterations: 1_000))
+        _ = try await created.createProject(name: "api")
+
+        let name = "dk.dinhkhanh.evault.agent.test-\(UUID().uuidString.prefix(8))"
+        final class Agents: @unchecked Sendable { var seen: [String?] = [] }
+        let agents = Agents()
+        let server = AgentServer(
+            info: { Agent.Info(vaultId: nil, vaultPath: dir.path, mode: "icloud", locked: true, appVersion: "test", cliPath: nil) },
+            authorize: { _ in throw Agent.Failure("no") },
+            storage: { agent in
+                agents.seen.append(agent)
+                if agent == "Blocked" { throw Agent.Failure("agents off", denied: true) }
+                return local
+            })
+        #expect(server.start(name: name))
+        defer { server.stop() }
+
+        let proxy = AppVaultStorage(agent: "Claude Code", portName: name)
+        try await Task.detached {
+            let store = try await VaultStore.open(storage: proxy)
+            _ = try await store.unlock(passphrase: "pw-123456")
+            #expect(await store.projects().map(\.name) == ["api"])
+            // New revisions are create-only writes: allowed.
+            let p = try #require(await store.projects().first)
+            _ = try await store.createItem(in: p.id, name: ".env", payload: .envFile(text: "A=1\n"))
+        }.value
+        let check = try await VaultStore.open(storage: local)
+        _ = try await check.unlock(passphrase: "pw-123456")
+        #expect(await check.allItems().map(\.name) == [".env"])
+        #expect(agents.seen.contains("Claude Code"))
+
+        // Replacing, deleting and leaving the folder are refused.
+        await #expect(throws: (any Error).self) { try await proxy.writeReplace(VaultPath("vault.json"), data: Data()) }
+        await #expect(throws: (any Error).self) { try await proxy.read(VaultPath("..", "etc", "passwd")) }
+        let blocked = AppVaultStorage(agent: "Blocked", portName: name)
+        let denial = await Task.detached { () -> Agent.Failure? in
+            do { _ = try await blocked.exists(VaultPath("vault.json")); return nil } catch { return error as? Agent.Failure }
+        }.value
+        #expect(denial?.denied == true)
     }
 }

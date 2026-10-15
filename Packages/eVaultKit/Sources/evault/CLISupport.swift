@@ -211,4 +211,4 @@ enum StagedScan {
 }
 
 /// Matches the app's MARKETING_VERSION; scripts/release.sh checks they agree.
-let evaultVersion = "0.5.0"
+let evaultVersion = "0.5.1"

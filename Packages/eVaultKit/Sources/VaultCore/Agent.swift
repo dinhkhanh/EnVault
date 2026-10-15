@@ -12,7 +12,7 @@ public enum Agent {
     public static let portName = "dk.dinhkhanh.evault.agent"
 
     public struct Request: Codable, Sendable {
-        public enum Op: String, Codable, Sendable { case info, requestKey, poll }
+        public enum Op: String, Codable, Sendable { case info, requestKey, poll, storage }
         public var op: Op
         public var vaultId: UUID?
         public var requestId: UUID?
@@ -24,6 +24,10 @@ public enum Agent {
         public var purpose: String?
         /// What will be touched, for the prompt and the activity log ("api/prod.env").
         public var detail: String?
+        /// `storage`: the file operation (`AppVaultStorage.Op`), "/"-joined vault paths, and data to write.
+        public var storageOp: String?
+        public var paths: [String]?
+        public var data: Data?
 
         public init(op: Op, vaultId: UUID? = nil, requestId: UUID? = nil, client: String? = nil,
                     agent: String? = nil, purpose: String? = nil, detail: String? = nil) {
@@ -69,6 +73,10 @@ public enum Agent {
         public var key: Data?
         /// The user or a setting said no: the CLI must not fall back to another way in.
         public var denied: Bool?
+        /// `storage` results.
+        public var files: [Data]?
+        public var exists: Bool?
+        public var names: [String]?
 
         public init(ok: Bool, error: String? = nil, info: Info? = nil, requestId: UUID? = nil, state: State? = nil, key: Data? = nil, denied: Bool? = nil) {
             self.ok = ok; self.error = error; self.info = info; self.requestId = requestId; self.state = state; self.key = key
@@ -140,9 +148,13 @@ public struct AgentClient {
 public final class AgentServer {
     public typealias InfoProvider = @MainActor () -> Agent.Info
     public typealias Authorizer = @MainActor (Agent.KeyRequest) async throws -> VaultKey
+    /// The open vault's storage, for a CLI that can't read the app's container.
+    /// Gets the requesting AI agent (nil for a person); throws to refuse.
+    public typealias StorageProvider = @MainActor (_ agent: String?) throws -> any VaultStorage
 
     private let info: InfoProvider
     private let authorize: Authorizer
+    private let storage: StorageProvider?
     private var port: CFMessagePort?
     private var source: CFRunLoopSource?
 
@@ -152,9 +164,10 @@ public final class AgentServer {
     /// The running server; the C callback has no context to find it otherwise.
     fileprivate static var current: AgentServer?
 
-    public init(info: @escaping InfoProvider, authorize: @escaping Authorizer) {
+    public init(info: @escaping InfoProvider, authorize: @escaping Authorizer, storage: StorageProvider? = nil) {
         self.info = info
         self.authorize = authorize
+        self.storage = storage
     }
 
     /// Registers the port. False if the name is taken (another eVault is running)
@@ -219,6 +232,8 @@ public final class AgentServer {
                 }
             }
             return Agent.Response(ok: true, requestId: id, state: .pending)
+        case .storage:
+            return serveStorage(req)
         case .poll:
             guard let id = req.requestId, let r = requests[id] else { return .failure("unknown request") }
             switch r.outcome {
@@ -234,6 +249,65 @@ public final class AgentServer {
         }
     }
 
+    /// File access to the open vault on behalf of the CLI. The files are
+    /// ciphertext; the key still needs `requestKey`. Only reads and create-only
+    /// writes (new revisions) are served, so a caller can add history but never
+    /// replace or delete anything. The reply is synchronous: the work is a few
+    /// local file reads.
+    private func serveStorage(_ req: Agent.Request) -> Agent.Response {
+        guard let provider = storage else { return .failure("this version of eVault can't serve vault files") }
+        guard let op = req.storageOp.flatMap(AppVaultStorage.Op.init(rawValue:)) else { return .failure("bad storage request") }
+        let paths = (req.paths ?? []).compactMap(Self.vaultPath)
+        guard !paths.isEmpty, paths.count == req.paths?.count else { return .failure("bad vault path") }
+        if op == .writeNew, req.data == nil { return .failure("nothing to write") }
+        let store: any VaultStorage
+        do {
+            store = try provider(req.agent.map { Self.sanitize($0, fallback: "AI agent") })
+        } catch let f as Agent.Failure {
+            return .failure(f.message, denied: f.denied)
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+        let box = StorageResult()
+        let done = DispatchSemaphore(value: 0)
+        let data = req.data
+        Task.detached {
+            do {
+                var r = Agent.Response(ok: true)
+                switch op {
+                case .exists: r.exists = try await store.exists(paths[0])
+                case .read: r.files = [try await store.read(paths[0])]
+                case .readMany: r.files = try await store.readMany(paths)
+                case .list: r.names = try await store.list(paths[0])
+                case .writeNew: try await store.writeNew(paths[0], data: data ?? Data())
+                }
+                box.set(r)
+            } catch {
+                box.set(.failure(error.localizedDescription))
+            }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 50) == .success else { return .failure("eVault took too long reading the vault") }
+        return box.value ?? .failure("no result")
+    }
+
+    /// "projects/<id>/items/…" → a VaultPath, rejecting anything that could leave the vault folder.
+    static func vaultPath(_ s: String) -> VaultPath? {
+        if s.isEmpty { return VaultPath([]) }
+        let parts = s.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let ok = parts.allSatisfy { p in
+            !p.isEmpty && p != "." && p != ".." && p.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || "._-".unicodeScalars.contains($0) }
+        }
+        return ok ? VaultPath(parts) : nil
+    }
+
+    private final class StorageResult: @unchecked Sendable {
+        private let lock = NSLock()
+        private var r: Agent.Response?
+        func set(_ v: Agent.Response) { lock.withLock { r = v } }
+        var value: Agent.Response? { lock.withLock { r } }
+    }
+
     /// The client label is untrusted text that ends up in a system prompt.
     static func sanitize(_ s: String, fallback: String = "evault") -> String {
         let cleaned = s.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || " -_./:@".unicodeScalars.contains($0) }
@@ -247,4 +321,60 @@ private func agentCallback(_ port: CFMessagePort?, _ msgid: Int32, _ data: CFDat
     let output: Data? = MainActor.assumeIsolated { AgentServer.current?.handle(input) }
     // The port releases the reply after sending it.
     return output.map { Unmanaged.passRetained($0 as CFData) }
+}
+
+// MARK: - Vault files through the app (CLI side)
+
+/// Reads the vault the eVault app has open through the app itself. In iCloud
+/// mode the vault lives in the app's sandbox container, which macOS doesn't
+/// let other programs read (Terminal, an editor, an MCP host) without the
+/// "access data from other apps" permission. Ciphertext only; read-mostly:
+/// the app refuses to replace or delete files for the CLI.
+public struct AppVaultStorage: VaultStorage {
+    public enum Op: String, Codable, Sendable { case exists, read, readMany, list, writeNew }
+
+    public let agent: String?
+    public let portName: String
+
+    public init(agent: String?, portName: String = Agent.portName) {
+        self.agent = agent
+        self.portName = portName
+    }
+
+    private func call(_ op: Op, _ paths: [VaultPath], data: Data? = nil) throws -> Agent.Response {
+        guard let client = AgentClient(name: portName) else { throw Agent.Failure("eVault quit; open it again") }
+        var req = Agent.Request(op: .storage, agent: agent)
+        req.storageOp = op.rawValue
+        req.paths = paths.map(\.string)
+        req.data = data
+        let r = try client.send(req, timeout: 60)
+        guard r.ok else { throw Agent.Failure(r.error ?? "eVault refused", denied: r.denied == true) }
+        return r
+    }
+
+    public func exists(_ path: VaultPath) async throws -> Bool { try call(.exists, [path]).exists ?? false }
+
+    public func read(_ path: VaultPath) async throws -> Data {
+        guard let d = try call(.read, [path]).files?.first else { throw VaultError.io("eVault returned no data for \(path)") }
+        return d
+    }
+
+    public func readMany(_ paths: [VaultPath]) async throws -> [Data] {
+        guard !paths.isEmpty else { return [] }
+        let files = try call(.readMany, paths).files ?? []
+        guard files.count == paths.count else { throw VaultError.io("eVault returned \(files.count) of \(paths.count) files") }
+        return files
+    }
+
+    public func writeNew(_ path: VaultPath, data: Data) async throws { _ = try call(.writeNew, [path], data: data) }
+
+    public func writeReplace(_ path: VaultPath, data: Data) async throws {
+        throw VaultError.io("the command line can't replace \(path) in an iCloud vault; do this in the eVault app")
+    }
+
+    public func delete(_ path: VaultPath) async throws {
+        throw VaultError.io("the command line can't delete files in an iCloud vault; do this in the eVault app")
+    }
+
+    public func list(_ directory: VaultPath) async throws -> [String] { try call(.list, [directory]).names ?? [] }
 }

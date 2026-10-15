@@ -108,11 +108,21 @@ func output<T: Encodable>(_ text: @autoclosure () -> String, json value: @autocl
     if json { Out.json(value()) } else { print(text()) }
 }
 
-/// Default vault: --vault / $EVAULT_DIR, else the vault the running app has
-/// open, else the iCloud Drive folder, else the single iCloud-synced vault
-/// managed by the eVault app (in its container).
+/// Default vault: --vault / $EVAULT_DIR, else the vault the eVault app has open
+/// (starting it if needed), else the iCloud Drive folder, else the single
+/// iCloud-synced vault managed by the eVault app (in its container).
 func defaultVaultDir(askApp: Bool) -> String {
     if askApp, useApp, let info = try? AgentClient()?.info(), let path = info.vaultPath { return path }
+    // Not running: start it and use the vault it opens. Its iCloud-mode vault is
+    // in its container, which this process may not be allowed to list, and an
+    // older iCloud Drive vault must not win over the one the app uses.
+    if askApp, useApp, let app = Session(root: URL(fileURLWithPath: "/"), agent: aiAgent, useApp: true, client: "evault",
+                                         interactive: false).appAgent(launch: true) {
+        for _ in 0..<50 {
+            if let path = try? app.info().vaultPath { return path }
+            usleep(200_000)
+        }
+    }
     let drive = "\(home)/Library/Mobile Documents/com~apple~CloudDocs/eVault"
     if FileManager.default.fileExists(atPath: drive + "/vault.json") { return drive }
     let appVaults = "\(home)/Library/Containers/dk.dinhkhanh.evault/Data/Library/Application Support/eVault/Vaults"
@@ -307,7 +317,7 @@ do {
 
     case "unlock":
         refuseForAgent("`evault unlock` caches the vault key for every later command; ask the user to run it in their own terminal")
-        let store = try await VaultStore.open(storage: LocalFolderStorage(root: root))
+        let store = try await session.open()
         let vaultId = await store.vaultId
         var vk: VaultKey?
         if !args.contains("--passphrase"), Session.envPassphrase == nil,
@@ -319,7 +329,7 @@ do {
         print("vault key cached in the login keychain; run `evault lock` to forget it")
 
     case "lock":
-        let store = try await VaultStore.open(storage: LocalFolderStorage(root: root))
+        let store = try await session.open()
         CLIKeyCache.remove(vaultId: await store.vaultId)
         print("forgotten")
 
@@ -454,8 +464,7 @@ do {
     default:
         usageError()
     }
-} catch let e as CLIError {
-    fail(json ? e.description : "error: \(e.description)", e.code)
 } catch {
-    fail(json ? error.localizedDescription : "error: \(error.localizedDescription)")
+    let e = CLIError.from(error)
+    fail(json ? e.description : "error: \(e.description)", e.code)
 }
