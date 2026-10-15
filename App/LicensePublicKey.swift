@@ -4,5 +4,5 @@ import Foundation
 /// The matching private key lives in the vendor's keychain
 /// (item "dk.dinhkhanh.evault.license-signing"), never in the repo.
 enum LicensePublicKey {
-    static let base64 = "3rR8Aw9MhLHLQWrWAVqgHn5Ik5UVi9mqzdZed3hOLuI="
+    static let base64 = "Oh6BDufPhc5jL0Xt6jLrt+nIexZSqmbhqs4uNN0UBLc="
 }
