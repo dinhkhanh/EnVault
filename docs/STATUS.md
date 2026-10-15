@@ -8,7 +8,7 @@ this is the "where are we" page.
 
 | What | Where | State |
 |---|---|---|
-| App v0.3.6 (unsigned, ad-hoc, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.6): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.6 (build 10). **New license key (`LR48…`) and Sparkle key (`SRLH…`) in 0.3.6: 0.3.2–0.3.5 installs cannot auto-update and must reinstall by hand.** Batched unlock and temporary unmask since 0.3.5; macOS 14 since 0.3.4; URL encode/decode and password generator since 0.3.3 |
+| App v0.3.7 (**Developer ID signed, notarized**, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.3.7): dmg, zip, SHA256SUMS, appcast.xml | live; Sparkle feed resolves to 0.3.7 (build 11). First signed build: iCloud (CloudKit, Production) available to Pro, no right-click > Open. 0.3.6 introduced the current license (`LR48…`) and Sparkle (`SRLH…`) keys; 0.3.2–0.3.5 installs must reinstall by hand |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 52 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
@@ -27,7 +27,7 @@ this is the "where are we" page.
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
-| Signed, notarized release with iCloud (`make archive`); CloudKit schema in Production | Apple account is active (team KJ8A3B7BM7, GCE MEDIA); both Macs registered, Apple Development + Developer ID certificates on this Mac, `make run-icloud` builds and launches (2026-10-15). Remaining: test CloudKit sync on a real account, deploy the schema to Production, notarization credentials, then `make archive` | Pro iCloud sync for customers, Gatekeeper-clean installs |
+| CloudKit sync verified across two Macs | A vault created in iCloud on one Mac, opened on the other (same Apple Account) | Telling customers iCloud sync works |
 | First real sale verified | One purchase through the site's Buy button (then refund it in Polar): webhook → key → email → activates in 0.3.6 | Announcing |
 | Buy button on the site | nothing: live since 2026-10-15 (production checkout, real charges) | — |
 
@@ -36,7 +36,7 @@ this is the "where are we" page.
 1. Done 2026-10-15: Polar org, product "eVault Pro" $29, production checkout link (in `wrangler.toml`), webhook `https://store.evault.dinhkhanh.dk/webhooks/polar` (secret in the Worker).
 2. Done 2026-10-15: store deployed with all secrets (license key, admin token, Resend, Polar webhook).
 3. Buy once through the site, check the key email and activation in 0.3.6, refund in Polar and check the key turns revoked (`scripts/store.sh list`). Then announce.
-4. When the Apple account activates: sign into Xcode, `make run-icloud`, deploy the CloudKit schema to Production, `make archive`, release a signed build.
+4. Done 2026-10-15: Apple account active, CloudKit schema in Production, `make archive` (Developer ID, notarized; notary profile `evault-notary` in the keychain) shipped 0.3.7. Releases from now on: `make archive`, not `release-unsigned`.
 5. Later: Team plan (subscription with seats), iOS companion, Mac App Store or Setapp.
 
 ## Vendor secrets (never in the repo)
@@ -60,7 +60,7 @@ Restore on a new Mac or after a keychain reset:
 
 ## Routine operations
 
-- Release: bump `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, `EVAULT_RELEASE_DATE` (quoted) in `project.yml`; `make release-unsigned` (or `make archive` when signed); tag `vX.Y.Z`; `gh release create` with dmg, zip, SHA256SUMS, appcast.xml. The release scripts pull revoked ids from the store first.
+- Release: bump `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, `EVAULT_RELEASE_DATE` (quoted) in `project.yml`; `make archive` (signed, notarized; `make release-unsigned` only as a fallback); tag `vX.Y.Z`; `gh release create` with dmg, zip, SHA256SUMS, appcast.xml. The release scripts pull revoked ids from the store first.
 - Customers: `scripts/store.sh list [query]`, `issue --email E --name N`, `revoke --email E --reason R`, `resend --email E`. Self-service: `/resend` on the store.
 - Tests: `make test` (Swift), `make store-test` (Worker).
 
