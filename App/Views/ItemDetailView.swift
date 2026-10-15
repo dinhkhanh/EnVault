@@ -80,6 +80,14 @@ struct EnvFileView: View {
     @State private var draft: String
     @State private var exportConfirm: URL?
     @State private var keyAges: [String: Date] = [:]
+    /// Temporary, per-editor override of the "Mask values by default" setting;
+    /// never written back to it. Starts from the setting each time an item opens.
+    @State private var masked = UserDefaults.standard.bool(forKey: Prefs.maskValues)
+
+    /// True while the user has unmasked values that the setting would mask.
+    private var revealedAll: Binding<Bool> {
+        Binding(get: { maskValues && !masked }, set: { masked = !$0 })
+    }
 
     init(item: Item, text: String) {
         self.item = item
@@ -97,8 +105,8 @@ struct EnvFileView: View {
                     .pickerStyle(.segmented).frame(width: 160)
                 Spacer()
                 if mode == .table {
-                    Toggle(isOn: $maskValues) { Label("Mask", systemImage: maskValues ? "eye.slash" : "eye") }
-                        .toggleStyle(.button).help("Mask values")
+                    Toggle(isOn: $masked) { Label("Mask", systemImage: masked ? "eye.slash" : "eye") }
+                        .toggleStyle(.button).help(masked ? "Show values for now" : "Mask values")
                     AddKeyButton { key, value in
                         Task { await model.updateItem(item.id, payload: .envFile(text: doc.setting(key, to: value).text)) }
                     }
@@ -122,7 +130,7 @@ struct EnvFileView: View {
 
             switch mode {
             case .table:
-                EnvTableView(doc: doc, masked: maskValues, keyAges: keyAges) { key, value in
+                EnvTableView(doc: doc, masked: masked, keyAges: keyAges) { key, value in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.setting(key, to: value).text)) }
                 } onDelete: { key in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.removing(key).text)) }
@@ -132,6 +140,8 @@ struct EnvFileView: View {
             }
         }
         .onChange(of: text) { _, new in if !dirty || mode == .table { draft = new } }
+        .onChange(of: maskValues) { _, new in masked = new }
+        .autoMask(revealedAll)
         .task(id: item.revisionId) {
             let revs = await model.history(of: item.id).compactMap { r -> (date: Date, text: String)? in
                 guard case .envFile(let t) = r.payload else { return nil }
@@ -234,6 +244,7 @@ struct SecretView: View {
                         SecureField("", text: $draftValue).font(.system(.body, design: .monospaced))
                     }
                     Button { revealed.toggle() } label: { Image(systemName: revealed ? "eye.slash" : "eye") }.buttonStyle(.borderless)
+                        .autoMask($revealed)
                     Button { ClipboardService.shared.copy(value) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("Copy")
                 }
             }

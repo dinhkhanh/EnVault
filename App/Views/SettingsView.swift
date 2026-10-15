@@ -17,6 +17,7 @@ struct GeneralSettings: View {
     @AppStorage(Prefs.autoLockMinutes) private var autoLock = 15
     @AppStorage(Prefs.clipboardClearSeconds) private var clipboard = 30
     @AppStorage(Prefs.maskValues) private var mask = true
+    @AppStorage(Prefs.autoMaskSeconds) private var autoMask = 30
     @AppStorage(Prefs.lockOnSleep) private var lockOnSleep = true
 
     var body: some View {
@@ -29,6 +30,10 @@ struct GeneralSettings: View {
                 Text("15 seconds").tag(15); Text("30 seconds").tag(30); Text("1 minute").tag(60); Text("Never").tag(0)
             }
             Toggle("Mask values by default", isOn: $mask)
+            Picker("Mask again after revealing", selection: $autoMask) {
+                Text("10 seconds").tag(10); Text("30 seconds").tag(30); Text("1 minute").tag(60); Text("5 minutes").tag(300); Text("Never").tag(0)
+            }
+            .disabled(!mask)
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: Binding(get: { UpdaterService.shared.automaticallyChecks }, set: { UpdaterService.shared.automaticallyChecks = $0 }))
                 Button("Check Now") { UpdaterService.shared.checkForUpdates() }

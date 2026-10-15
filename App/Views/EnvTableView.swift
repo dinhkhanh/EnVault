@@ -107,6 +107,7 @@ struct EnvEntryRow: View {
             }
             .buttonStyle(.borderless)
             .opacity(hovering || editing ? 1 : 0.35)
+            .autoMask($revealed)
         }
         .padding(.horizontal, 16).padding(.vertical, 4)
         .background(hovering ? Color.primary.opacity(0.04) : .clear)
