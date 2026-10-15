@@ -167,7 +167,7 @@ so the app still has no network entitlement.
 
 ## Website
 
-`docs/` is served by GitHub Pages: landing page, pricing, privacy policy.
+`docs/` is served by GitHub Pages: landing page with pricing (`index.html`), command-line reference (`cli.html`), privacy policy. The design lives on a canvas; keep the two in step.
 
 ## Adding a tool
 

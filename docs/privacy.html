@@ -4,36 +4,84 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>eVault — Privacy</title>
+<meta name="description" content="eVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
+<meta property="og:title" content="eVault — Privacy">
+<meta property="og:description" content="eVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
 <style>
-  :root { --bg:#fff; --fg:#111; --muted:#5b6170; --accent:#3b5cf5; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0e1016; --fg:#f2f3f7; --muted:#9aa1b2; --accent:#6f88ff; } }
-  body { margin:0; font:16px/1.65 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  main { max-width:720px; margin:0 auto; padding:48px 20px 80px; }
-  h1 { letter-spacing:-.02em; } h2 { margin-top:32px; }
-  a { color:var(--accent); } p, li { color:var(--fg); } .muted { color:var(--muted); }
+body{margin:0;background:#F6F7F9;overflow-x:hidden}
+a{color:#2448D8}a:hover{color:#16309E}
+a:focus-visible{outline:2px solid #2F55E4;outline-offset:3px;border-radius:4px}
+code{font-family:'Geist Mono',ui-monospace,Menlo,monospace;font-size:.92em}
+html{scroll-behavior:smooth}
+@media (max-width:640px){
+  h1{font-size:40px !important}
+  h2:not(#ways){font-size:30px !important}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 </head>
 <body>
-<main>
-  <p><a href="./">← eVault</a></p>
-  <h1>Privacy</h1>
-  <p class="muted">Last updated 14 October 2026</p>
+<div style="font-family: 'Geist', -apple-system, system-ui, sans-serif; color: #111318; background: #F6F7F9; line-height: 1.65; font-size: 17px">
 
-  <h2>What eVault stores</h2>
-  <p>Your secrets are encrypted on your Mac with a key derived from your passphrase. They are written only to the vault folder you choose or, in iCloud mode, to your own private CloudKit database. eVault has no servers and no accounts. We cannot read your vault and cannot reset your passphrase.</p>
+<header style="border-bottom: 1px solid #E3E6EC; background: #FFFFFF">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<a href="./" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #111318; font-weight: 700; font-size: 19px; margin-right: auto">
+<span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
+</span>
+eVault
+</a>
+<a href="./#features" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Features</a>
+<a href="cli.html" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Command line</a>
+<a href="./#security" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Security</a>
+<a href="./#pricing" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Pricing</a>
+<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #111318; font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+</nav>
+</header>
 
-  <h2>Network access</h2>
-  <p>The app is sandboxed without a network entitlement. Sync is performed by macOS (iCloud Drive or CloudKit). Update checks are performed by the Sparkle framework's helper service and fetch a signed update feed from GitHub; they send no personal data. The command-line tool only talks to third-party services (Vercel, Cloudflare, GitHub) when you run a <code>deploy</code> command, using their own CLIs and your own credentials.</p>
+<main style="max-width: 760px; margin: 0 auto; padding: 72px 24px 96px">
+<h1 style="margin: 0 0 8px; font-size: 52px; line-height: 1.06; letter-spacing: -.035em">Privacy</h1>
+<p style="margin: 0 0 40px; color: #5A6070; font-size: 15px">Last updated 15 October 2026</p>
 
-  <h2>Licenses</h2>
-  <p>License keys are verified offline with a public key embedded in the app. No activation server, no usage tracking. The key contains the name and email entered at purchase so you can identify it; it is stored only on your Mac.</p>
-  <p>Purchases are processed by <a href="https://polar.sh">Polar</a>, the merchant of record, which handles payment details, invoices and VAT under its own privacy policy. Our store keeps the name, email, order id and issued key so we can re-send a key or revoke it after a refund. Refunded keys are listed by id (not by name or email) in later app versions so they stop working.</p>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 22px 24px; margin-bottom: 48px">
+<p style="margin: 0; font-size: 18px">The short version: your secrets are encrypted on your Mac, eVault has no servers and no accounts, and the app cannot reach the network. We can’t read your vault and can’t reset your passphrase.</p>
+</div>
 
-  <h2>Analytics and crash reports</h2>
-  <p>eVault contains no analytics SDK. Crash reports go through Apple's standard crash reporter, under your macOS settings, and we only see them if you choose to share them with Apple and Apple shares them with us.</p>
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">What eVault stores</h2>
+<p style="margin: 0 0 36px; color: #3D4250">Your secrets are encrypted on your Mac with a key derived from your passphrase. They are written only to the vault folder you choose or, in iCloud mode, to your own private CloudKit database. If you ask eVault to keep an env file in sync with a project folder, it writes that file there, readable only by your user account, and nowhere else.</p>
 
-  <h2>Contact</h2>
-  <p><a href="mailto:tran@dinhkhanh.dk">tran@dinhkhanh.dk</a></p>
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Network access</h2>
+<p style="margin: 0 0 36px; color: #3D4250">The app is sandboxed without a network entitlement. Sync is done by macOS (iCloud Drive or CloudKit). Update checks are done by the Sparkle framework’s helper service, which fetches a signed update feed from GitHub and sends no personal data.</p>
+
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">The command-line tool</h2>
+<p style="margin: 0 0 14px; color: #3D4250">When you run <code>evault</code> while the app is open, the two talk over a local macOS channel on your Mac; nothing goes over the network. The app hands the vault key to the command only after you approve in a Touch ID or password prompt. You can turn this off in Settings › Command Line.</p>
+<p style="margin: 0 0 36px; color: #3D4250"><code>evault</code> contacts other services only when you ask it to, through their own command-line tools and your own logins: Vercel, Cloudflare and GitHub for <code>deploy</code>; Doppler and 1Password for <code>import</code>.</p>
+
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Licenses and purchases</h2>
+<p style="margin: 0 0 14px; color: #3D4250">License keys are checked offline against a public key built into the app. No activation server, no usage tracking. The key contains the name and email entered at purchase so you can recognise it, and is stored only on your Mac.</p>
+<p style="margin: 0 0 36px; color: #3D4250">Purchases go through <a href="https://polar.sh">Polar</a>, the merchant of record, which handles payment details, invoices and VAT under its own privacy policy. Our store keeps the name, email, order id and issued key so we can re-send or revoke a key after a refund. Refunded keys are listed by id, not by name or email, in later app versions so they stop working.</p>
+
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Analytics and crash reports</h2>
+<p style="margin: 0 0 36px; color: #3D4250">eVault contains no analytics SDK. Crash reports go through Apple’s standard crash reporter, under your macOS settings; we see them only if you share them with Apple and Apple shares them with developers.</p>
+
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Contact</h2>
+<p style="margin: 0; color: #3D4250"><a href="mailto:tran@dinhkhanh.dk">tran@dinhkhanh.dk</a></p>
 </main>
+
+<footer style="border-top: 1px solid #E3E6EC; background: #FFFFFF">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: #4A5060">
+<span style="font-weight: 700; color: #111318; margin-right: auto">eVault</span>
+<a href="./">Home</a>
+<a href="cli.html">Command line</a>
+<a href="https://github.com/dinhkhanh/eVault/issues">Support</a>
+<span>© 2026 Dinh Khanh</span>
+</div>
+</footer>
+
+</div>
 </body>
 </html>

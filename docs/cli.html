@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eVault — command line reference</title>
+<meta name="description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<meta property="og:title" content="eVault — command line reference">
+<meta property="og:description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#F6F7F9;overflow-x:hidden}
+a{color:#2448D8}a:hover{color:#16309E}
+a:focus-visible{outline:2px solid #2F55E4;outline-offset:3px;border-radius:4px}
+code{font-family:'Geist Mono',ui-monospace,Menlo,monospace;font-size:.92em}
+html{scroll-behavior:smooth}
+@media (max-width:640px){
+  h1{font-size:40px !important}
+  h2:not(#ways){font-size:30px !important}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div style="font-family: 'Geist', -apple-system, system-ui, sans-serif; color: #111318; background: #F6F7F9; line-height: 1.55; font-size: 17px">
+
+<header style="border-bottom: 1px solid #E3E6EC; background: #FFFFFF">
+<nav aria-label="Main" style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px">
+<a href="./" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #111318; font-weight: 700; font-size: 19px; margin-right: auto">
+<span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
+</span>
+eVault
+</a>
+<a href="./#features" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Features</a>
+<a href="cli.html" aria-current="page" style="text-decoration: none; color: #111318; font-size: 15px; font-weight: 600">Command line</a>
+<a href="./#security" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Security</a>
+<a href="./#pricing" style="text-decoration: none; color: #3D4250; font-size: 15px; font-weight: 500">Pricing</a>
+<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #111318; font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+</nav>
+</header>
+
+<section style="max-width: 1200px; margin: 0 auto; padding: 72px 24px 40px">
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #4A5060">Reference · evault 0.4</p>
+<h1 style="margin: 0 0 18px; font-size: 52px; line-height: 1.06; letter-spacing: -.035em">The evault command</h1>
+<p style="margin: 0; font-size: 19px; color: #4A5060; max-width: 40em">It ships inside eVault.app and reads the same vault as the app. While eVault is running, it gets the key from the app after you approve with Touch ID, so you never type the passphrase into a shell.</p>
+</section>
+
+<div style="max-width: 1200px; margin: 0 auto; padding: 0 24px 96px; display: flex; flex-wrap: wrap; gap: 32px 56px; align-items: flex-start">
+
+<nav aria-label="On this page" style="flex: 1 1 200px; min-width: 0">
+<p style="margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #4A5060; text-transform: uppercase; letter-spacing: .04em">On this page</p>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<a href="#install" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Install</a>
+<a href="#unlock" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Unlocking</a>
+<a href="#everyday" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Everyday</a>
+<a href="#shell" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Shell integration</a>
+<a href="#import" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Import</a>
+<a href="#git" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Keeping secrets out of git</a>
+<a href="#deploy" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Deploy</a>
+<a href="#env" style="text-decoration: none; color: #3D4250; padding: 8px 0; min-height: 40px; box-sizing: border-box">Options and variables</a>
+</div>
+</nav>
+
+<main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 56px">
+
+<section id="install" aria-labelledby="install-h">
+<h2 id="install-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Install</h2>
+<p style="margin: 0 0 18px; color: #3D4250">In eVault, open <strong>Settings › Command Line › Install evault Command</strong> and pick a folder on your PATH (Homebrew’s <code>bin</code> works). It adds a link into the app, so app updates update the command. Or in Terminal:</p>
+<div style="overflow-x: auto; background: #12141A; border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre">$ sudo ln -sf /Applications/eVault.app/Contents/Helpers/evault /usr/local/bin/evault
+$ evault status</div>
+</section>
+
+<section id="unlock" aria-labelledby="unlock-h">
+<h2 id="unlock-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Unlocking</h2>
+<p style="margin: 0 0 18px; color: #3D4250">A command that needs the key tries, in order:</p>
+<ol style="margin: 0 0 20px; padding-left: 22px; color: #3D4250; display: flex; flex-direction: column; gap: 6px">
+<li>the key cached by <code>evault unlock</code></li>
+<li><code>$EVAULT_PASSPHRASE</code>, if set</li>
+<li>the running eVault app: it shows a Touch ID prompt and hands over the key for that one command (it starts the app in the background if needed)</li>
+<li>a passphrase prompt</li>
+</ol>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault status</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Is the app running, which vault is open, locked or not.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault unlock [--passphrase]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Cache the key in your login keychain, for shell hooks. Uses Touch ID through the app unless you pass <code>--passphrase</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault lock</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Forget the cached key.</span></div>
+</div>
+</section>
+
+<section id="everyday" aria-labelledby="everyday-h">
+<h2 id="everyday-h" style="margin: 0 0 16px; font-size: 28px; letter-spacing: -.02em">Everyday</h2>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault ls</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">List projects and their items.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault get &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Print an item’s contents.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault run &lt;project&gt; &lt;item&gt; -- CMD</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Run a command with the file’s variables set. Nothing is written to disk.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault pull &lt;project&gt; &lt;item&gt; [-o PATH]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Write the env file to disk, readable only by you.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault push &lt;project&gt; &lt;item&gt; &lt;FILE&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Create or update an item from a file; creates the project if needed.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault history &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">List revisions, with the Mac that made each.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault example &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Print a .env.example: same keys and comments, secrets blanked.</span></div>
+</div>
+</section>
+
+<section id="shell" aria-labelledby="shell-h">
+<h2 id="shell-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Shell integration <span style="font-size: 13px; font-weight: 600; color: #4A5060; border: 1px solid #D5D9E1; padding: 2px 8px; border-radius: 99px; vertical-align: middle; letter-spacing: 0">Pro</span></h2>
+<p style="margin: 0 0 18px; color: #3D4250">Link a folder to an env file; the hook exports its variables when you <code>cd</code> in and unsets them when you leave. Run <code>evault unlock</code> once so the hook never has to ask.</p>
+<div style="overflow-x: auto; background: #12141A; border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre; margin-bottom: 18px"><span style="color: #8A91A3"># ~/.zshrc  (bash: ~/.bashrc · fish: evault hook fish | source)</span>
+eval "$(evault hook zsh)"
+
+$ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault link &lt;project&gt; &lt;item&gt; [DIR]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Bind a folder (default: the current one) to an env file.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault unlink [DIR] · evault links</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Remove a binding, or list them.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault env [--fish]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Print <code>export</code> lines for the file linked to this folder.</span></div>
+</div>
+</section>
+
+<section id="import" aria-labelledby="import-h">
+<h2 id="import-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Import</h2>
+<p style="margin: 0 0 18px; color: #3D4250">Bring secrets in from wherever they live now. An item with the same name is updated, not duplicated.</p>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault import &lt;project&gt; &lt;item&gt; &lt;FILE|-&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">A .env file, JSON (flat, Doppler or a 1Password item) or a .env.vault, decrypted with <code>$DOTENV_KEY</code>. <code>-</code> reads stdin.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">… --doppler [-- doppler args]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">From <code>doppler secrets download</code>, e.g. <code>-- --project shop --config prd</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">… --1password &lt;item&gt; [-- op args]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">From <code>op item get</code>; each field becomes a variable.</span></div>
+</div>
+<p style="margin: 14px 0 0; font-size: 15px; color: #5A6070">GitHub Actions secrets can’t be imported: GitHub never returns their values.</p>
+</section>
+
+<section id="git" aria-labelledby="git-h">
+<h2 id="git-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Keeping secrets out of git</h2>
+<p style="margin: 0 0 18px; color: #3D4250">The pre-commit hook scans what you are about to commit for AWS, GitHub, Stripe, Slack, OpenAI and Google keys, private key blocks, JWTs, secret-looking assignments and real .env files. Add <code>evault:allow</code> to a line that is a false positive; <code>git commit --no-verify</code> skips the check once.</p>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault protect [DIR] [--remove]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Install or remove the hook. Keeps any hook you already have and honours <code>core.hooksPath</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault scan --staged</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">What the hook runs: scan the staged files.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault scan [DIR]</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Scan a whole source tree, skipping node_modules, build folders and binaries.</span></div>
+</div>
+</section>
+
+<section id="deploy" aria-labelledby="deploy-h">
+<h2 id="deploy-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Deploy</h2>
+<p style="margin: 0 0 18px; color: #3D4250">Uses the vendors’ own CLIs and the logins you already have. <code>--dry-run</code> prints what would run.</p>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault deploy vercel &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px"><code>--target production|preview|development</code></span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">evault deploy cloudflare &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Worker secrets via <code>wrangler secret bulk</code>; pass wrangler options after <code>--</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault deploy github &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Actions secrets via <code>gh secret set</code>; <code>--repo owner/name</code>.</span></div>
+</div>
+</section>
+
+<section id="env" aria-labelledby="env-h">
+<h2 id="env-h" style="margin: 0 0 16px; font-size: 28px; letter-spacing: -.02em">Options and variables</h2>
+<div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">--vault DIR · $EVAULT_DIR</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Which vault. Default: the one open in the app, else the eVault folder in iCloud Drive.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">$EVAULT_PASSPHRASE</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Passphrase for scripts and CI.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid #EEF0F4"><code style="flex: 0 1 300px; font-weight: 500">EVAULT_NO_APP=1</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Never ask the eVault app; use the cache or the passphrase.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">$DOTENV_KEY</code><span style="flex: 1 1 260px; color: #4A5060; font-size: 16px">Decrypts a .env.vault on import.</span></div>
+</div>
+</section>
+
+</main>
+</div>
+
+<footer style="border-top: 1px solid #E3E6EC; background: #FFFFFF">
+<div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: #4A5060">
+<span style="font-weight: 700; color: #111318; margin-right: auto">eVault</span>
+<a href="./">Home</a>
+<a href="privacy.html">Privacy</a>
+<a href="https://github.com/dinhkhanh/eVault/issues">Support</a>
+<span>© 2026 Dinh Khanh</span>
+</div>
+</footer>
+
+</div>
+</body>
+</html>
