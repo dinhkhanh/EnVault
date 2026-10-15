@@ -86,7 +86,8 @@ targets:
         Release-iCloud:
           CODE_SIGN_ENTITLEMENTS: App/eVault-iCloud.entitlements
           CODE_SIGN_STYLE: Automatic
-          CODE_SIGN_IDENTITY: "Developer ID Application"
+          # Automatic signing archives with Apple Development; the export (method developer-id) re-signs with Developer ID.
+          CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
           EVAULT_APS_ENVIRONMENT: production
 schemes:
