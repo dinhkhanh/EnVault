@@ -51,7 +51,7 @@ entitlements, and is zero-knowledge by construction. CloudKit becomes a second
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  eVault.app (SwiftUI, macOS 15+)                                 │
+│  eVault.app (SwiftUI, macOS 14+)                                 │
 │  ┌──────────────┐ ┌────────────────┐ ┌─────────────────────────┐ │
 │  │ Vault UI     │ │ Menu bar extra │ │ Tools (plugin registry) │ │
 │  └──────┬───────┘ └───────┬────────┘ └───────────┬─────────────┘ │
@@ -279,7 +279,7 @@ eVault/
 - Swift 6 language mode, strict concurrency, `VaultStore` as an actor.
 - Tests: Swift Testing for packages (crypto round-trips, KDF vectors, dotenv
   parser fixtures, sync merge scenarios incl. two-device offline edits).
-- Deployment target macOS 15. Unsigned/ad-hoc-signed local builds work for
+- Deployment target macOS 14. Unsigned/ad-hoc-signed local builds work for
   personal use; Developer ID signing when distributing.
 
 ---
@@ -363,5 +363,5 @@ payouts is the seller's job; nothing in the pipeline depends on it.
 
 1. Sync v1 = encrypted folder in iCloud Drive; CloudKit as a later backend.
 2. XcodeGen generates the `.xcodeproj` from the checked-in `project.yml`.
-3. Minimum macOS 15.
+3. Minimum macOS 14 (lowered from 15 in 0.3.4; 13 would need the state layer moved off @Observable).
 4. App name eVault, bundle id `dk.dinhkhanh.evault`.

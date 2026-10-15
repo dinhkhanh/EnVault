@@ -2,7 +2,7 @@ name: eVault
 options:
   bundleIdPrefix: dk.dinhkhanh
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "14.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 configs:
@@ -45,7 +45,7 @@ targets:
         CFBundleName: eVault
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        LSMinimumSystemVersion: "15.0"
+        LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"
         NSFaceIDUsageDescription: "eVault uses Touch ID to unlock your vault."

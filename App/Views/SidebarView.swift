@@ -160,7 +160,11 @@ struct SyncStatusLabel: View {
         Button { Task { await model.syncNow() } } label: {
             switch model.syncStatus {
             case .syncing:
-                Label("Syncing…", systemImage: "arrow.triangle.2.circlepath.icloud").symbolEffect(.rotate, isActive: true)
+                if #available(macOS 15, *) {
+                    Label("Syncing…", systemImage: "arrow.triangle.2.circlepath.icloud").symbolEffect(.rotate, isActive: true)
+                } else {
+                    Label("Syncing…", systemImage: "arrow.triangle.2.circlepath.icloud").symbolEffect(.pulse, isActive: true)
+                }
             case .error(let e):
                 Label("Sync error", systemImage: "exclamationmark.icloud").foregroundStyle(.red).help(e)
             case .idle:

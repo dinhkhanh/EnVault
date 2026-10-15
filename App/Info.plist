@@ -25,7 +25,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>15.0</string>
+	<string>14.0</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>eVault uses Touch ID to unlock your vault.</string>
 	<key>NSHumanReadableCopyright</key>

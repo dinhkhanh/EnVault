@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "eVaultKit",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "VaultCore", targets: ["VaultCore"]),
         .library(name: "EnvKit", targets: ["EnvKit"]),
