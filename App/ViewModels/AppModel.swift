@@ -86,6 +86,23 @@ final class AppModel {
     /// Lets the `evault` CLI unlock through this app. False when another eVault already holds the port.
     private(set) var agentRunning = false
     @ObservationIgnored private var agent: AgentServer?
+    /// Requests from the command line and AI agents since launch, newest first (no values).
+    private(set) var agentActivity: [AgentActivity] = []
+    /// Per AI agent: approved until. Cleared when the vault locks.
+    @ObservationIgnored private var agentGrants: [String: Date] = [:]
+
+    struct AgentActivity: Identifiable {
+        enum Outcome { case approved, allowed, refused }
+        let id = UUID()
+        let date = Date()
+        /// The AI agent, or nil for a person in Terminal.
+        let agent: String?
+        let client: String
+        let detail: String?
+        let purpose: AIAgents.Purpose
+        let outcome: Outcome
+        var note: String?
+    }
     /// A `.env.vault` dropped in, waiting for its DOTENV_KEY.
     var pendingVaultImport: PendingVaultImport?
 
@@ -473,6 +490,7 @@ final class AppModel {
         selectedItemId = nil
         phase = .locked
         touchIDOfferArmed = true
+        agentGrants = [:]
     }
 
     private func becameUnlocked() async {
@@ -696,44 +714,92 @@ final class AppModel {
             info: { [weak self] in
                 Agent.Info(vaultId: self?.vaultId, vaultPath: self?.vaultURL?.path(percentEncoded: false),
                            mode: self?.syncMode == .iCloud ? "icloud" : "folder", locked: self?.phase != .unlocked,
-                           appVersion: Bundle.main.shortVersion, cliPath: CLIService.bundledCLI.path)
+                           appVersion: Bundle.main.shortVersion, cliPath: CLIService.bundledCLI.path, agents: Prefs.agentPolicy)
             },
-            authorize: { [weak self] vaultId, client in
+            authorize: { [weak self] request in
                 guard let self else { throw Agent.Failure("eVault is quitting") }
-                return try await self.authorizeCLI(vaultId: vaultId, client: client)
+                return try await self.authorizeCLI(request)
             })
         agentRunning = server.start()
         agent = server
     }
 
     /// Hands the vault key to the `evault` CLI after the user approves with
-    /// Touch ID (or the login password when the app is unlocked).
-    private func authorizeCLI(vaultId requested: UUID, client: String) async throws -> VaultKey {
+    /// Touch ID (or the login password when the app is unlocked). AI agents
+    /// are held to Settings › AI Agents, and one approval can cover their
+    /// next commands for a few minutes, except reading values when set to ask.
+    private func authorizeCLI(_ r: Agent.KeyRequest) async throws -> VaultKey {
+        let isAgent = r.agent != nil
+        func refuse(_ message: String, denied: Bool = true) -> Agent.Failure {
+            log(r, .refused, note: message)
+            return Agent.Failure(message, denied: denied)
+        }
         guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
-            throw Agent.Failure("unlocking the CLI through the app is turned off in eVault Settings › Command Line")
+            throw refuse("unlocking the CLI through the app is turned off in eVault Settings › Command Line", denied: isAgent)
         }
         // Launched by the CLI a moment ago: let the vault finish opening.
         for _ in 0..<50 where phase == .loading { try? await Task.sleep(for: .milliseconds(200)) }
-        guard let store, let vaultId else { throw Agent.Failure("no vault is open in eVault") }
-        guard requested == vaultId else { throw Agent.Failure("eVault has a different vault open; pass --vault for this one") }
-        let reason = "allow “\(client)” in Terminal to unlock your vault"
-        if phase == .unlocked, let key = await store.currentVaultKey() {
+        guard let store, let vaultId else { throw refuse("no vault is open in eVault", denied: false) }
+        guard r.vaultId == vaultId else { throw refuse("eVault has a different vault open; pass --vault for this one", denied: false) }
+
+        var policy = Prefs.agentPolicy
+        if let agent = r.agent {
+            guard policy.enabled else { throw refuse("AI agents are turned off in eVault Settings › AI Agents") }
+            if r.purpose == .reveal, policy.values == .never {
+                throw refuse("eVault doesn't show secret values to AI agents (Settings › AI Agents); use `evault run` instead")
+            }
+            if r.purpose == .write, !policy.writes {
+                throw refuse("AI agents may not change env files (Settings › AI Agents)")
+            }
+            let mustAsk = r.purpose == .reveal && policy.values == .ask
+            if !mustAsk, phase == .unlocked, let until = agentGrants[agent], until > Date(), let key = await store.currentVaultKey() {
+                log(r, .allowed)
+                return key
+            }
+        } else {
+            policy.approvalMinutes = 0
+        }
+
+        let reason = Self.approvalReason(r)
+        let key: VaultKey
+        if phase == .unlocked, let k = await store.currentVaultKey() {
             let ctx = LAContext()
             do {
                 try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
             } catch {
-                throw Agent.Failure("not approved")
+                throw refuse("not approved", denied: isAgent)
             }
-            return key
-        }
-        if hasBiometricKey {
+            key = k
+        } else if hasBiometricKey {
             let keychain = keychain
-            guard let key = try await Task.detached(operation: { try keychain.load(vaultId: vaultId, reason: reason) }).value else {
-                throw Agent.Failure("not approved")
+            guard let k = try? await Task.detached(operation: { try keychain.load(vaultId: vaultId, reason: reason) }).value else {
+                throw refuse("not approved", denied: isAgent)
             }
-            return key
+            key = k
+        } else {
+            throw refuse("eVault is locked and Touch ID unlock is off; unlock the app first", denied: false)
         }
-        throw Agent.Failure("eVault is locked and Touch ID unlock is off; unlock the app first")
+        if let agent = r.agent, policy.approvalMinutes > 0 {
+            agentGrants[agent] = Date().addingTimeInterval(TimeInterval(policy.approvalMinutes * 60))
+        }
+        log(r, .approved)
+        return key
+    }
+
+    /// Completes "eVault is trying to …" in the Touch ID prompt.
+    private static func approvalReason(_ r: Agent.KeyRequest) -> String {
+        let what = r.detail.map { "“\($0)”" } ?? "your vault"
+        guard let agent = r.agent else { return "allow “\(r.client)” in Terminal to unlock your vault" }
+        switch r.purpose {
+        case .use: return "let \(agent) use \(what) (\(r.client))"
+        case .write: return "let \(agent) change \(what) (\(r.client))"
+        case .reveal: return "show \(agent) the secret values in \(what) (\(r.client))"
+        }
+    }
+
+    private func log(_ r: Agent.KeyRequest, _ outcome: AgentActivity.Outcome, note: String? = nil) {
+        agentActivity.insert(AgentActivity(agent: r.agent, client: r.client, detail: r.detail, purpose: r.purpose, outcome: outcome, note: note), at: 0)
+        if agentActivity.count > 100 { agentActivity.removeLast(agentActivity.count - 100) }
     }
 
     // MARK: - Tools

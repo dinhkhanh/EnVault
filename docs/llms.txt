@@ -1,0 +1,18 @@
+# eVault
+
+> eVault is a native macOS app for secrets and .env files, with an `evault` command-line tool and an MCP server for AI coding agents. Vaults are end-to-end encrypted and sync through iCloud. Agents can use secrets (run commands with an env file loaded, list variable names, add or rotate keys) without seeing the values; reading a value needs the user's Touch ID approval.
+
+## For AI agents
+
+- Connect over MCP: `claude mcp add evault -- evault mcp` (Claude Code), `codex mcp add evault -- evault mcp` (Codex); other clients: command `evault`, args `["mcp"]`. Tools: status, list_items, list_keys, run_command, set_keys, unset_keys, get_values, scan.
+- Or use the shell: `evault ls --json`, `evault keys <project> <item> --json`, `evault run <project> <item> -- <cmd>` (output redacted), `evault set <project> <item> KEY=value` (`KEY=-` reads stdin, `--generate KEY` stores a random secret unseen), `evault unset <project> <item> KEY`.
+- Never write secret values into files, code, commits, logs or chat. `evault get`, `pull`, `env` and `run --no-redact` reveal values and ask the user; use them only when asked.
+- Exit codes: 1 error, 2 scan found secrets, 3 not found, 4 needs the user (unlock or approve: tell them), 5 refused (don't retry), 64 usage.
+- `evault agent-guide` prints these instructions for AGENTS.md / CLAUDE.md; `evault agent-guide --skill` prints a Claude Code skill.
+
+## Docs
+
+- [Command line reference](https://dinhkhanh.github.io/eVault/cli.html): every command, unlocking, AI agents, shell integration, import, git hook, deploy
+- [Home](https://dinhkhanh.github.io/eVault/): features, security model, pricing
+- [Privacy](https://dinhkhanh.github.io/eVault/privacy.html)
+- [Source](https://github.com/dinhkhanh/eVault)

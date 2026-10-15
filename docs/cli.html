@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>eVault — command line reference</title>
-<meta name="description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<meta name="description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
 <meta property="og:title" content="eVault — command line reference">
-<meta property="og:description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<meta property="og:description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
@@ -64,7 +64,7 @@ eVault
 </header>
 
 <section style="max-width: 1200px; margin: 0 auto; padding: 72px 24px 40px">
-<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted)">Reference · evault 0.4</p>
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted)">Reference · evault 0.5</p>
 <h1 style="margin: 0 0 18px; font-size: 52px; line-height: 1.06; letter-spacing: -.035em">The evault command</h1>
 <p style="margin: 0; font-size: 19px; color: var(--muted); max-width: 40em">It ships inside eVault.app and reads the same vault as the app. While eVault is running, it gets the key from the app after you approve with Touch ID, so you never type the passphrase into a shell.</p>
 </section>
@@ -77,6 +77,7 @@ eVault
 <a href="#install" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Install</a>
 <a href="#unlock" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Unlocking</a>
 <a href="#everyday" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Everyday</a>
+<a href="#agents" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">AI agents</a>
 <a href="#shell" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Shell integration</a>
 <a href="#import" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Import</a>
 <a href="#git" style="text-decoration: none; color: var(--text2); padding: 8px 0; min-height: 40px; box-sizing: border-box">Keeping secrets out of git</a>
@@ -115,12 +116,41 @@ $ evault status</div>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault ls</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List projects and their items.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault get &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print an item’s contents.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault run &lt;project&gt; &lt;item&gt; -- CMD</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Run a command with the file’s variables set. Nothing is written to disk.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault run &lt;project&gt; &lt;item&gt; -- CMD</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Run a command with the file’s variables set. Nothing is written to disk. <code>--redact</code> replaces secret values in its output with <code>[redacted:KEY]</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault keys &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List the variable names in an env file, without values.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault pull &lt;project&gt; &lt;item&gt; [-o PATH]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Write the env file to disk, readable only by you.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault push &lt;project&gt; &lt;item&gt; &lt;FILE&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Create or update an item from a file; creates the project if needed.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault set &lt;project&gt; &lt;item&gt; KEY=VALUE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Set variables, creating the file if needed. <code>KEY=-</code> reads the value from stdin; <code>--generate KEY</code> stores a new random secret without printing it.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault unset &lt;project&gt; &lt;item&gt; KEY</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Remove variables. Every change is a new revision.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault history &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List revisions, with the Mac that made each.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault example &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print a .env.example: same keys and comments, secrets blanked.</span></div>
 </div>
+</section>
+
+<section id="agents" aria-labelledby="agents-h">
+<h2 id="agents-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">AI agents</h2>
+<p style="margin: 0 0 18px; color: var(--text2)">Claude Code, Cursor, Codex and other coding agents can use your secrets without reading them. Connect eVault as an MCP server, or let the agent use the <code>evault</code> command directly. Either way it can run tests, migrations and scripts with an env file loaded, see variable names, and add or rotate keys. Secret values in command output are replaced with <code>[redacted:KEY]</code>.</p>
+<div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre; margin-bottom: 18px"><span style="color: #8A91A3"># Claude Code · Codex</span>
+$ claude mcp add evault -- evault mcp
+$ codex mcp add evault -- evault mcp
+<span style="color: #8A91A3"># Cursor and others: an MCP server with command "evault", args ["mcp"]</span>
+
+<span style="color: #8A91A3"># agents that only use the shell: add the guide to AGENTS.md or CLAUDE.md</span>
+$ evault agent-guide &gt;&gt; AGENTS.md
+$ evault agent-guide --skill &gt; ~/.claude/skills/evault/SKILL.md</div>
+<p style="margin: 0 0 18px; color: var(--text2)">The command knows it is talking to an agent from the environment the agent sets (<code>CLAUDECODE</code>, <code>CURSOR_AGENT</code>, <code>GEMINI_CLI</code>, <code>CODEX_SANDBOX</code>, or <code>EVAULT_AGENT=name</code> for others). Then:</p>
+<ul style="margin: 0 0 20px; padding-left: 22px; color: var(--text2); display: flex; flex-direction: column; gap: 6px">
+<li>it never asks for the passphrase; it exits with code 4 when the user has to unlock or approve something</li>
+<li><code>evault run</code> redacts output unless the agent passes <code>--no-redact</code></li>
+<li>reading values (<code>get</code>, <code>pull</code>, <code>env</code>, <code>run --no-redact</code>, <code>deploy</code>) asks you with Touch ID, naming the agent and the file</li>
+<li>it goes through the app, so <strong>Settings › AI Agents</strong> applies: whether agents may see values (ask, never, allow), change env files, and how long one approval lasts. The same tab lists recent requests.</li>
+</ul>
+<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault mcp</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Serve eVault over MCP (stdio). Tools: <code>status</code>, <code>list_items</code>, <code>list_keys</code>, <code>run_command</code>, <code>set_keys</code>, <code>unset_keys</code>, <code>get_values</code> (asks you), <code>scan</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault agent-guide [--skill]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print instructions for agents, as Markdown or as a Claude Code skill.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">--json</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Machine-readable output for <code>ls</code>, <code>keys</code>, <code>status</code>, <code>history</code>, <code>links</code>, <code>scan</code> and changes. Errors become <code>{"error", "code"}</code> on stderr.</span></div>
+</div>
+<p style="margin: 0; font-size: 15px; color: var(--muted2)">These rules keep a well-meaning agent from pasting a key into a chat, a log or a commit. They are not a sandbox: an agent with a shell can do whatever your account can.</p>
 </section>
 
 <section id="shell" aria-labelledby="shell-h">
@@ -174,6 +204,8 @@ $ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">--vault DIR · $EVAULT_DIR</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Which vault. Default: the one open in the app, else the eVault folder in iCloud Drive.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">$EVAULT_PASSPHRASE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Passphrase for scripts and CI.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">EVAULT_NO_APP=1</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Never ask the eVault app; use the cache or the passphrase.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">EVAULT_AGENT=name · =0</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Treat the caller as an AI agent with that name, or (<code>0</code>) as a person.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">Exit codes</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">1 error · 2 <code>scan</code> found secrets · 3 not found · 4 needs you (locked, approval) · 5 refused · 64 usage</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">$DOTENV_KEY</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Decrypts a .env.vault on import.</span></div>
 </div>
 </section>

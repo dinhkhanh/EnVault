@@ -131,6 +131,29 @@ credentials you already have. `--dry-run` prints what would run.
 The vault folder is the one the running app has open, else
 `~/Library/Mobile Documents/com~apple~CloudDocs/eVault`; override with `--vault DIR` or `EVAULT_DIR`.
 
+### AI agents
+
+Agents (Claude Code, Cursor, Codex…) use secrets without reading them. The CLI
+recognises one from its environment (`CLAUDECODE`, `CURSOR_AGENT`, `GEMINI_CLI`,
+`CODEX_SANDBOX`, or `EVAULT_AGENT=name`; `EVAULT_AGENT=0` opts out) and then never
+prompts, redacts `run` output (`[redacted:KEY]`), refuses `init`/`unlock`, and
+asks the app for every key so Settings › AI Agents applies: values ask/never/allow
+(get, pull, env, `run --no-redact`, deploy), writes on/off, and how long one Touch ID
+approval covers that agent. Without the app, agents may use `evault unlock`'s cached
+key but never read values. `evault mcp` serves the same over MCP (stdio,
+`Sources/evault/MCPServer.swift`); `evault agent-guide [--skill]` prints the
+instructions in `VaultCore/AIAgents.swift`. Redaction lives in `EnvKit/EnvRedactor.swift`.
+
+```sh
+claude mcp add evault -- evault mcp
+evault keys my-saas .env.local --json
+evault run my-saas .env.local -- npm test          # redacted for agents; --redact for anyone
+evault set my-saas .env.local --generate SESSION_SECRET
+```
+
+`--json` works for ls, keys, status, history, links, scan, version and changes. Exit
+codes: 1 error, 2 scan findings, 3 not found, 4 needs the user, 5 refused, 64 usage.
+
 ## Licensing
 
 Selling runs through `store/`, a Cloudflare Worker: Polar checkout → webhook →

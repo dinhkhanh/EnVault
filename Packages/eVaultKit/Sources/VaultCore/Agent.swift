@@ -18,10 +18,27 @@ public enum Agent {
         public var requestId: UUID?
         /// What is asking, shown in the approval prompt ("evault run").
         public var client: String?
+        /// The AI agent running the command ("Claude Code"), nil for a person.
+        public var agent: String?
+        /// What the key is for: `AIAgents.Purpose` raw value. Apps before 0.5 ignore it.
+        public var purpose: String?
+        /// What will be touched, for the prompt and the activity log ("api/prod.env").
+        public var detail: String?
 
-        public init(op: Op, vaultId: UUID? = nil, requestId: UUID? = nil, client: String? = nil) {
+        public init(op: Op, vaultId: UUID? = nil, requestId: UUID? = nil, client: String? = nil,
+                    agent: String? = nil, purpose: String? = nil, detail: String? = nil) {
             self.op = op; self.vaultId = vaultId; self.requestId = requestId; self.client = client
+            self.agent = agent; self.purpose = purpose; self.detail = detail
         }
+    }
+
+    /// A key request as the app sees it, labels already sanitized.
+    public struct KeyRequest: Sendable {
+        public var vaultId: UUID
+        public var client: String
+        public var agent: String?
+        public var purpose: AIAgents.Purpose
+        public var detail: String?
     }
 
     public struct Info: Codable, Sendable {
@@ -33,9 +50,12 @@ public enum Agent {
         public var appVersion: String
         /// The CLI inside the app bundle.
         public var cliPath: String?
-        public init(vaultId: UUID?, vaultPath: String?, mode: String?, locked: Bool, appVersion: String, cliPath: String?) {
+        /// What AI agents may do (Settings › AI Agents). Nil from apps before 0.5.
+        public var agents: AIAgents.Policy?
+        public init(vaultId: UUID?, vaultPath: String?, mode: String?, locked: Bool, appVersion: String, cliPath: String?,
+                    agents: AIAgents.Policy? = nil) {
             self.vaultId = vaultId; self.vaultPath = vaultPath; self.mode = mode; self.locked = locked
-            self.appVersion = appVersion; self.cliPath = cliPath
+            self.appVersion = appVersion; self.cliPath = cliPath; self.agents = agents
         }
     }
 
@@ -47,16 +67,21 @@ public enum Agent {
         public var requestId: UUID?
         public var state: State?
         public var key: Data?
+        /// The user or a setting said no: the CLI must not fall back to another way in.
+        public var denied: Bool?
 
-        public init(ok: Bool, error: String? = nil, info: Info? = nil, requestId: UUID? = nil, state: State? = nil, key: Data? = nil) {
+        public init(ok: Bool, error: String? = nil, info: Info? = nil, requestId: UUID? = nil, state: State? = nil, key: Data? = nil, denied: Bool? = nil) {
             self.ok = ok; self.error = error; self.info = info; self.requestId = requestId; self.state = state; self.key = key
+            self.denied = denied
         }
-        public static func failure(_ e: String) -> Response { Response(ok: false, error: e) }
+        public static func failure(_ e: String, denied: Bool = false) -> Response { Response(ok: false, error: e, denied: denied ? true : nil) }
     }
 
     public struct Failure: Error, LocalizedError, Sendable {
         public var message: String
-        public init(_ m: String) { message = m }
+        /// A refusal (user cancelled, or a setting forbids it), as opposed to "can't ask".
+        public var denied: Bool
+        public init(_ m: String, denied: Bool = false) { message = m; self.denied = denied }
         public var errorDescription: String? { message }
     }
 }
@@ -90,14 +115,16 @@ public struct AgentClient {
 
     /// Asks the app for the key of `vaultId`. Blocks while the user answers the
     /// Touch ID prompt, up to `timeout`.
-    public func requestKey(vaultId: UUID, client: String, timeout: TimeInterval = 120) throws -> VaultKey {
-        let start = try send(Agent.Request(op: .requestKey, vaultId: vaultId, client: client))
-        guard start.ok, let id = start.requestId else { throw Agent.Failure(start.error ?? "refused") }
+    public func requestKey(vaultId: UUID, client: String, agent: String? = nil, purpose: AIAgents.Purpose = .use,
+                           detail: String? = nil, timeout: TimeInterval = 120) throws -> VaultKey {
+        let start = try send(Agent.Request(op: .requestKey, vaultId: vaultId, client: client,
+                                           agent: agent, purpose: purpose.rawValue, detail: detail))
+        guard start.ok, let id = start.requestId else { throw Agent.Failure(start.error ?? "refused", denied: start.denied == true) }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             usleep(150_000)
             let r = try send(Agent.Request(op: .poll, requestId: id))
-            guard r.ok else { throw Agent.Failure(r.error ?? "refused") }
+            guard r.ok else { throw Agent.Failure(r.error ?? "refused", denied: r.denied == true) }
             if r.state == .granted {
                 guard let k = r.key, k.count == 32 else { throw Agent.Failure("malformed key") }
                 return VaultKey(data: k)
@@ -112,14 +139,14 @@ public struct AgentClient {
 @MainActor
 public final class AgentServer {
     public typealias InfoProvider = @MainActor () -> Agent.Info
-    public typealias Authorizer = @MainActor (_ vaultId: UUID, _ client: String) async throws -> VaultKey
+    public typealias Authorizer = @MainActor (Agent.KeyRequest) async throws -> VaultKey
 
     private let info: InfoProvider
     private let authorize: Authorizer
     private var port: CFMessagePort?
     private var source: CFRunLoopSource?
 
-    private enum Outcome { case pending, granted(VaultKey), failed(String) }
+    private enum Outcome { case pending, granted(VaultKey), failed(String, denied: Bool) }
     private var requests: [UUID: (outcome: Outcome, created: Date)] = [:]
 
     /// The running server; the C callback has no context to find it otherwise.
@@ -175,13 +202,20 @@ public final class AgentServer {
             }
             let id = UUID()
             requests[id] = (.pending, now)
-            let client = Self.sanitize(req.client ?? "evault")
+            let request = Agent.KeyRequest(
+                vaultId: vaultId,
+                client: Self.sanitize(req.client ?? "evault"),
+                agent: req.agent.map { Self.sanitize($0, fallback: "AI agent") },
+                purpose: req.purpose.flatMap(AIAgents.Purpose.init(rawValue:)) ?? .use,
+                detail: req.detail.map { Self.sanitize($0, fallback: "") }.flatMap { $0.isEmpty ? nil : $0 })
             Task { @MainActor in
                 do {
-                    let key = try await authorize(vaultId, client)
+                    let key = try await authorize(request)
                     requests[id]?.outcome = .granted(key)
+                } catch let f as Agent.Failure {
+                    requests[id]?.outcome = .failed(f.message, denied: f.denied)
                 } catch {
-                    requests[id]?.outcome = .failed(error.localizedDescription)
+                    requests[id]?.outcome = .failed(error.localizedDescription, denied: false)
                 }
             }
             return Agent.Response(ok: true, requestId: id, state: .pending)
@@ -193,18 +227,18 @@ public final class AgentServer {
             case .granted(let key):
                 requests[id] = nil   // hand the key out once
                 return Agent.Response(ok: true, requestId: id, state: .granted, key: key.data)
-            case .failed(let e):
+            case .failed(let e, let denied):
                 requests[id] = nil
-                return .failure(e)
+                return .failure(e, denied: denied)
             }
         }
     }
 
     /// The client label is untrusted text that ends up in a system prompt.
-    static func sanitize(_ s: String) -> String {
+    static func sanitize(_ s: String, fallback: String = "evault") -> String {
         let cleaned = s.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || " -_./:@".unicodeScalars.contains($0) }
         let out = String(String.UnicodeScalarView(cleaned)).trimmingCharacters(in: .whitespaces)
-        return out.isEmpty ? "evault" : String(out.prefix(60))
+        return out.isEmpty ? fallback : String(out.prefix(60))
     }
 }
 

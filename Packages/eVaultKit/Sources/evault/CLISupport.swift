@@ -171,29 +171,6 @@ enum Deploy {
     }
 }
 
-struct CLIError: Error, CustomStringConvertible {
-    let description: String
-    init(_ d: String) { description = d }
-}
-
-// MARK: - Create-or-update
-
-func upsert(_ store: VaultStore, project: String, item: String, text: String) async throws {
-    if await store.projects().first(where: { $0.name == project }) == nil {
-        try await store.createProject(name: project)
-        print("created project \(project)")
-    }
-    guard let p = await store.projects().first(where: { $0.name == project }) else { throw CLIError("project \(project) vanished") }
-    if let existing = await store.items(in: p.id).first(where: { $0.name == item }) {
-        if existing.payload.primaryText == text { print("\(project)/\(item) unchanged"); return }
-        try await store.updateItem(existing.id, payload: .envFile(text: text))
-        print("updated \(project)/\(item)")
-    } else {
-        try await store.createItem(in: p.id, name: item, payload: .envFile(text: text))
-        print("created \(project)/\(item)")
-    }
-}
-
 // MARK: - Pre-commit scan
 
 enum StagedScan {

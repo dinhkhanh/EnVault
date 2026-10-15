@@ -5,15 +5,25 @@ import EnvKit
 // evault — command-line companion to the eVault app. Reads the same vault
 // folder. The key comes from `evault unlock`'s cache, from the running app
 // (approved with Touch ID), from EVAULT_PASSPHRASE, or from a prompt.
+//
+// AI agents (detected from their environment, see AIAgents.detect) never get
+// a prompt, have `run` output redacted, and need the user's approval in the
+// app to read values. `evault mcp` serves the same as MCP tools.
 
 let usage = """
-usage: evault [--vault DIR] <command>
+usage: evault [--vault DIR] [--json] <command>
 
   ls                                  list projects and items
+  keys <project> <item>               list an env file's variable names (no values)
   get  <project> <item>               print an item's contents
   pull <project> <item> [-o PATH]     write an env file to disk (default: ./<item>)
   push <project> <item> <FILE>        create or update an item from a file
-  run  <project> <item> -- CMD ...    run CMD with the env file's variables set
+  set  <project> <item> KEY=VALUE ... set variables (creates the env file if needed); KEY=- reads the value
+       [--generate KEY]...            from stdin, --generate KEY stores a new random secret without printing it
+  unset <project> <item> KEY ...      remove variables
+  run  <project> <item> [--redact | --no-redact] -- CMD ...
+                                      run CMD with the env file's variables set; --redact replaces secret
+                                      values in its output with [redacted:KEY] (the default for AI agents)
   history <project> <item>            list revisions
   init                                create a new vault in DIR
   import <project> <item> <FILE|->    import a .env, JSON (Doppler, 1Password item) or .env.vault ($DOTENV_KEY) file
@@ -35,28 +45,68 @@ usage: evault [--vault DIR] <command>
   scan --staged                       scan what is about to be committed (used by the pre-commit hook)
   protect [DIR] [--remove]            install (or remove) a git pre-commit hook that runs `scan --staged`
   status                              is the eVault app running, which vault, locked or not
+  mcp                                 serve eVault to AI agents over MCP (stdio)
+  agent-guide [--skill]               print instructions for AI agents (for AGENTS.md / CLAUDE.md, or a skill)
   version                             print the version
 
 Vault folder: --vault, $EVAULT_DIR, the vault open in the eVault app, the iCloud Drive eVault folder,
               or the app's iCloud-synced vault.
 Key:          `evault unlock`'s cache, the running eVault app (Touch ID), $EVAULT_PASSPHRASE, or a prompt.
               Set EVAULT_NO_APP=1 to never ask the app.
+--json:       machine-readable output (ls, keys, status, history, links, scan, version, set, unset, push,
+              import); errors become {"error", "code"} on stderr.
+AI agents:    detected from CLAUDECODE, CURSOR_AGENT, GEMINI_CLI, CODEX_SANDBOX, or EVAULT_AGENT=<name>
+              (EVAULT_AGENT=0: treat as a person). Agents never get a passphrase prompt, `run` redacts by
+              default, and reading values (get, pull, env, run --no-redact, deploy) needs approval in eVault.
+Exit codes:   1 error, 2 scan found secrets, 3 not found, 4 needs the user (locked, approval),
+              5 refused by the user or a setting, 64 usage
 """
 
-func fail(_ msg: String) -> Never {
-    FileHandle.standardError.write(Data((msg + "\n").utf8))
-    exit(1)
-}
-
 var args = Array(CommandLine.arguments.dropFirst())
-var vaultDir: String? = ProcessInfo.processInfo.environment["EVAULT_DIR"]
-if let i = args.firstIndex(of: "--vault"), i + 1 < args.count {
-    vaultDir = args[i + 1]
-    args.removeSubrange(i...(i + 1))
-}
-let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
 
-let useApp = ProcessInfo.processInfo.environment["EVAULT_NO_APP"].map { $0.isEmpty || $0 == "0" } ?? true
+/// Removes a flag from the arguments before `--` (after it they belong to another command).
+@MainActor
+func takeFlag(_ name: String) -> Bool {
+    let end = args.firstIndex(of: "--") ?? args.count
+    guard let i = args[..<end].firstIndex(of: name) else { return false }
+    args.remove(at: i)
+    return true
+}
+
+@MainActor
+func takeOption(_ name: String) -> String? {
+    let end = args.firstIndex(of: "--") ?? args.count
+    guard let i = args[..<end].firstIndex(of: name), i + 1 < end else { return nil }
+    let v = args[i + 1]
+    args.removeSubrange(i...(i + 1))
+    return v
+}
+
+let env = ProcessInfo.processInfo.environment
+let json = takeFlag("--json")
+let quiet = takeFlag("--quiet")
+let vaultDir = takeOption("--vault") ?? env["EVAULT_DIR"]
+let home = env["HOME"] ?? NSHomeDirectory()
+let useApp = env["EVAULT_NO_APP"].map { $0.isEmpty || $0 == "0" } ?? true
+let aiAgent = AIAgents.detect(env)
+
+func fail(_ msg: String, _ code: ExitCode = .error) -> Never {
+    if json {
+        let obj = ["error": msg, "code": code.name]
+        let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
+        FileHandle.standardError.write(data + Data("\n".utf8))
+    } else {
+        Out.stderr(msg)
+    }
+    exit(code.rawValue)
+}
+
+func usageError() -> Never { fail(usage, .usage) }
+
+/// Prints `text` for people, or `value` as JSON with --json.
+func output<T: Encodable>(_ text: @autoclosure () -> String, json value: @autoclosure () -> T) {
+    if json { Out.json(value()) } else { print(text()) }
+}
 
 /// Default vault: --vault / $EVAULT_DIR, else the vault the running app has
 /// open, else the iCloud Drive folder, else the single iCloud-synced vault
@@ -72,120 +122,125 @@ func defaultVaultDir(askApp: Bool) -> String {
     return drive
 }
 
-guard let command = args.first else { fail(usage) }
+guard let command = args.first else { usageError() }
 args.removeFirst()
 /// Commands that never open a vault don't go looking for one.
-let vaultless: Set<String> = ["scan", "protect", "version", "--version", "status", "hook", "links", "unlink", "help", "--help"]
+let vaultless: Set<String> = ["scan", "protect", "version", "--version", "status", "hook", "links", "unlink", "help", "--help", "agent-guide"]
 let root = URL(fileURLWithPath: vaultDir ?? (vaultless.contains(command) ? "" : defaultVaultDir(askApp: command != "init")), isDirectory: true)
 
-/// The eVault app's agent, launching the app in the background if needed.
-func appAgent(launch: Bool) -> AgentClient? {
-    guard useApp else { return nil }
-    if let c = AgentClient() { return c }
-    guard launch else { return nil }
-    let open = Process()
-    open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    open.arguments = ["-g", "-j", "-b", "dk.dinhkhanh.evault"]
-    open.standardOutput = FileHandle.nullDevice; open.standardError = FileHandle.nullDevice
-    guard (try? open.run()) != nil else { return nil }
-    open.waitUntilExit()
-    guard open.terminationStatus == 0 else { return nil }
-    for _ in 0..<40 {
-        usleep(200_000)
-        if let c = AgentClient() { return c }
-    }
-    return nil
+let session = Session(root: root, agent: aiAgent, useApp: useApp, client: "evault \(command)",
+                      interactive: aiAgent == nil, cachedOnly: quiet)
+
+// JSON shapes
+struct ItemJSON: Encodable { var name: String; var kind: String; var revisions: Int }
+struct ProjectJSON: Encodable { var name: String; var items: [ItemJSON] }
+struct KeyJSON: Encodable { var name: String; var empty: Bool; var redacted: Bool }
+struct KeysJSON: Encodable { var project: String; var item: String; var keys: [KeyJSON] }
+struct RevisionJSON: Encodable { var id: String; var modifiedAt: Date; var device: String; var deleted: Bool }
+struct FindingJSON: Encodable { var file: String; var line: Int; var kind: String; var excerpt: String }
+struct ScanJSON: Encodable { var findings: [FindingJSON] }
+struct ResultJSON: Encodable { var ok = true; var message: String; var keys: [String]? = nil }
+struct StatusJSON: Encodable {
+    var appRunning: Bool
+    var appVersion: String?
+    var vault: String?
+    var mode: String?
+    var locked: Bool?
+    var cliKeyCached: Bool
+    var agent: String?
+    var agentPolicy: AIAgents.Policy?
 }
 
-/// Asks the app for the key (Touch ID prompt in eVault). Nil if the app isn't
-/// available; prints why it refused otherwise.
-func keyFromApp(vaultId: UUID) -> VaultKey? {
-    guard let agent = appAgent(launch: true) else { return nil }
-    FileHandle.standardError.write(Data("Approve in eVault (Touch ID)…\n".utf8))
-    do {
-        return try agent.requestKey(vaultId: vaultId, client: "evault \(command)")
-    } catch {
-        FileHandle.standardError.write(Data("eVault: \(error.localizedDescription)\n".utf8))
-        return nil
-    }
+func findingsJSON(_ f: [EnvHygiene.Finding]) -> ScanJSON {
+    ScanJSON(findings: f.map { FindingJSON(file: $0.file, line: $0.line, kind: $0.kind, excerpt: $0.excerpt) })
 }
 
-func passphrase() -> String {
-    if let p = ProcessInfo.processInfo.environment["EVAULT_PASSPHRASE"], !p.isEmpty { return p }
-    guard let c = getpass("Vault passphrase: ") else { fail("no passphrase") }
-    return String(cString: c)
-}
-
-let quiet = args.contains("--quiet")
-
-func openUnlocked() async throws -> VaultStore {
-    let store = try await VaultStore.open(storage: LocalFolderStorage(root: root), device: DeviceIdentity(id: DeviceIdentity.current().id, name: DeviceIdentity.current().name + " (cli)"))
-    let vaultId = await store.vaultId
-    if let cached = CLIKeyCache.load(vaultId: vaultId) {
-        try await store.unlock(vaultKey: cached)
-    } else {
-        if quiet { exit(0) } // hooks: never prompt
-        if ProcessInfo.processInfo.environment["EVAULT_PASSPHRASE"]?.isEmpty == false {
-            try await store.unlock(passphrase: passphrase())
-        } else if let key = keyFromApp(vaultId: vaultId), (try? await store.unlock(vaultKey: key)) != nil {
-            // unlocked through the app
-        } else {
-            try await store.unlock(passphrase: passphrase())
-        }
-    }
-    return store
-}
-
-func find(_ store: VaultStore, _ projectName: String, _ itemName: String) async throws -> (Project, Item?) {
-    guard let p = await store.projects().first(where: { $0.name == projectName }) else { fail("no project named \(projectName)") }
-    let item = await store.items(in: p.id).first { $0.name == itemName }
-    return (p, item)
-}
-
-func envDoc(_ item: Item) -> EnvDocument {
-    guard case .envFile(let text) = item.payload else { fail("\(item.name) is not an env file") }
-    return DotEnv.parse(text)
+/// Agents can't answer prompts or should leave some things to the user.
+func refuseForAgent(_ why: String) {
+    guard let aiAgent else { return }
+    fail("\(aiAgent) is running evault: \(why)", .denied)
 }
 
 do {
     switch command {
     case "init":
-        _ = try await VaultStore.create(storage: LocalFolderStorage(root: root), passphrase: passphrase())
+        refuseForAgent("creating a vault needs the user (ask them to run `evault init` or use the app)")
+        let pass = try Session.envPassphrase ?? Session.promptPassphrase()
+        _ = try await VaultStore.create(storage: LocalFolderStorage(root: root), passphrase: pass)
         print("created vault at \(root.path)")
 
     case "ls":
-        let store = try await openUnlocked()
+        let store = try await session.unlocked(.use)
+        var projects: [ProjectJSON] = []
         for p in await store.projects() {
-            print(p.name)
-            for i in await store.items(in: p.id) {
-                print("  \(i.name)  [\(i.kind)]  \(i.revisionCount) rev")
-            }
+            projects.append(ProjectJSON(name: p.name, items: await store.items(in: p.id).map {
+                ItemJSON(name: $0.name, kind: $0.kind.rawValue, revisions: $0.revisionCount)
+            }))
         }
+        output(projects.map { p in ([p.name] + p.items.map { "  \($0.name)  [\(ItemKind(rawValue: $0.kind))]  \($0.revisions) rev" }).joined(separator: "\n") }
+                .joined(separator: "\n"), json: projects)
+
+    case "keys":
+        guard args.count == 2 else { usageError() }
+        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let doc = try envDoc(try await find(store, args[0], args[1]))
+        let keys = doc.entries.map { KeyJSON(name: $0.key, empty: $0.value.isEmpty, redacted: EnvRedactor.redacts($0)) }
+        output(keys.map(\.name).joined(separator: "\n"), json: KeysJSON(project: args[0], item: args[1], keys: keys))
 
     case "get":
-        guard args.count == 2 else { fail(usage) }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[0], args[1]).1 else { fail("no item named \(args[1])") }
+        guard args.count == 2 else { usageError() }
+        let store = try await session.unlocked(.reveal, "\(args[0])/\(args[1])")
+        let item = try await find(store, args[0], args[1])
         FileHandle.standardOutput.write(Data(item.payload.primaryText.utf8))
 
     case "pull":
-        guard args.count >= 2 else { fail(usage) }
-        var out = args[1]
-        if let i = args.firstIndex(of: "-o"), i + 1 < args.count { out = args[i + 1] }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[0], args[1]).1 else { fail("no item named \(args[1])") }
+        guard args.count >= 2 else { usageError() }
+        let out = takeOption("-o") ?? args[1]
+        let store = try await session.unlocked(.reveal, "\(args[0])/\(args[1])")
+        let item = try await find(store, args[0], args[1])
         try item.payload.primaryText.write(toFile: out, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: out)
-        print("wrote \(out)")
+        output("wrote \(out)", json: ResultJSON(message: "wrote \(out)"))
 
     case "push":
-        guard args.count == 3 else { fail(usage) }
+        guard args.count == 3 else { usageError() }
         let text = try String(contentsOfFile: args[2], encoding: .utf8)
-        let store = try await openUnlocked()
-        try await upsert(store, project: args[0], item: args[1], text: text)
+        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let msg = try await upsert(store, project: args[0], item: args[1], text: text)
+        output(msg, json: ResultJSON(message: msg))
+
+    case "set":
+        var generate: [String] = []
+        while let k = takeOption("--generate") { generate.append(k) }
+        guard args.count >= 2, args.count > 2 || !generate.isEmpty else { usageError() }
+        var pairs: [(key: String, value: String)] = []
+        var readStdin = false
+        for a in args.dropFirst(2) {
+            guard let eq = a.firstIndex(of: "="), eq != a.startIndex else { fail("expected KEY=VALUE, got \(a)", .usage) }
+            var value = String(a[a.index(after: eq)...])
+            if value == "-" {
+                guard !readStdin else { fail("only one KEY=- can read stdin", .usage) }
+                readStdin = true
+                value = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                if value.hasSuffix("\n") { value.removeLast() }
+            }
+            pairs.append((String(a[..<eq]), value))
+        }
+        pairs += generate.map { ($0, generateSecret()) }
+        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let msg = try await editEnv(store, project: args[0], item: args[1], set: pairs, unset: [])
+        let names = pairs.map(\.key)
+        let text = msg + (generate.isEmpty ? "" : "\ngenerated \(generate.joined(separator: ", ")) (32 random bytes, base64url)")
+        output(text, json: ResultJSON(message: msg, keys: names))
+
+    case "unset":
+        guard args.count >= 3 else { usageError() }
+        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let msg = try await editEnv(store, project: args[0], item: args[1], set: [], unset: Array(args.dropFirst(2)))
+        output(msg, json: ResultJSON(message: msg, keys: Array(args.dropFirst(2))))
 
     case "import":
-        guard args.count >= 3 else { fail(usage) }
+        guard args.count >= 3 else { usageError() }
         let (project, itemName) = (args[0], args[1])
         let dash = args.firstIndex(of: "--")
         let extra = dash.map { Array(args[($0 + 1)...]) } ?? []
@@ -196,7 +251,7 @@ do {
             guard r.status == 0 else { fail("doppler failed (is it installed and logged in? `doppler login`, `doppler setup`)") }
             text = r.output
         } else if opts.first == "--1password" {
-            guard opts.count >= 2 else { fail("usage: evault import <project> <item> --1password <op item> [-- op args]") }
+            guard opts.count >= 2 else { fail("usage: evault import <project> <item> --1password <op item> [-- op args]", .usage) }
             let r = try Deploy.run("op", ["item", "get", opts[1], "--format", "json"] + extra, mergeStderr: false)
             guard r.status == 0 else { fail("op failed (is the 1Password CLI installed and signed in?)") }
             text = try EnvImport.dotenv(fromJSON: r.output)
@@ -207,49 +262,59 @@ do {
             case .dotenv: text = raw
             case .json: text = try EnvImport.dotenv(fromJSON: raw)
             case .dotenvVault:
-                guard let keys = ProcessInfo.processInfo.environment["DOTENV_KEY"], let first = keys.split(separator: ",").first else {
+                guard let keys = env["DOTENV_KEY"], let first = keys.split(separator: ",").first else {
                     fail("set DOTENV_KEY to decrypt it (environments in the file: \(EnvImport.vaultEnvironments(raw).joined(separator: ", ")))")
                 }
                 text = try EnvImport.decryptVault(raw, key: EnvImport.parseDotenvKey(String(first)))
             }
         }
         let n = DotEnv.parse(text).entries.count
-        let store = try await openUnlocked()
-        try await upsert(store, project: project, item: itemName, text: text)
-        print("\(n) key\(n == 1 ? "" : "s")")
+        let store = try await session.unlocked(.write, "\(project)/\(itemName)")
+        let msg = try await upsert(store, project: project, item: itemName, text: text)
+        output("\(msg)\n\(n) key\(n == 1 ? "" : "s")", json: ResultJSON(message: msg, keys: DotEnv.parse(text).entries.map(\.key)))
 
     case "run":
-        guard let dash = args.firstIndex(of: "--"), dash == 2, args.count > 3 else { fail(usage) }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[0], args[1]).1 else { fail("no item named \(args[1])") }
-        var env = ProcessInfo.processInfo.environment
-        for (k, v) in envDoc(item).values { env[k] = v }
+        let redactFlag = takeFlag("--redact"), noRedact = takeFlag("--no-redact")
+        let redact = redactFlag || (aiAgent != nil && !noRedact)
+        guard let dash = args.firstIndex(of: "--"), dash == 2, args.count > 3 else { usageError() }
+        let store = try await session.unlocked(redact || aiAgent == nil ? .use : .reveal, "\(args[0])/\(args[1])")
+        let doc = try envDoc(try await find(store, args[0], args[1]))
+        var childEnv = env
+        for (k, v) in doc.values { childEnv[k] = v }
+        let argv = Array(args[(dash + 1)...])
+        if redact {
+            let result = try Runner.run(argv, env: childEnv, redact: doc,
+                                        stdout: { FileHandle.standardOutput.write($0) },
+                                        stderr: { FileHandle.standardError.write($0) })
+            exit(result.status)
+        }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = Array(args[(dash + 1)...])
-        proc.environment = env
+        proc.arguments = argv
+        proc.environment = childEnv
         try proc.run()
         proc.waitUntilExit()
         exit(proc.terminationStatus)
 
     case "history":
-        guard args.count == 2 else { fail(usage) }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[0], args[1]).1 else { fail("no item named \(args[1])") }
+        guard args.count == 2 else { usageError() }
+        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let item = try await find(store, args[0], args[1])
+        let revs = await store.history(of: item.id)
         let f = ISO8601DateFormatter()
-        for r in await store.history(of: item.id) {
-            print("\(r.id)  \(f.string(from: r.modifiedAt))  \(r.device.name)\(r.deleted ? "  [deleted]" : "")")
-        }
+        output(revs.map { "\($0.id)  \(f.string(from: $0.modifiedAt))  \($0.device.name)\($0.deleted ? "  [deleted]" : "")" }.joined(separator: "\n"),
+               json: revs.map { RevisionJSON(id: "\($0.id)", modifiedAt: $0.modifiedAt, device: $0.device.name, deleted: $0.deleted) })
 
     case "unlock":
+        refuseForAgent("`evault unlock` caches the vault key for every later command; ask the user to run it in their own terminal")
         let store = try await VaultStore.open(storage: LocalFolderStorage(root: root))
         let vaultId = await store.vaultId
         var vk: VaultKey?
-        if !args.contains("--passphrase"), ProcessInfo.processInfo.environment["EVAULT_PASSPHRASE"]?.isEmpty != false,
-           let k = keyFromApp(vaultId: vaultId), (try? await store.unlock(vaultKey: k)) != nil {
+        if !args.contains("--passphrase"), Session.envPassphrase == nil,
+           let k = session.keyFromApp(vaultId: vaultId), (try? await store.unlock(vaultKey: k)) != nil {
             vk = k
         }
-        if vk == nil { vk = try await store.unlock(passphrase: passphrase()) }
+        if vk == nil { vk = try await store.unlock(passphrase: Session.envPassphrase ?? Session.promptPassphrase()) }
         CLIKeyCache.save(vk!, vaultId: vaultId)
         print("vault key cached in the login keychain; run `evault lock` to forget it")
 
@@ -259,10 +324,10 @@ do {
         print("forgotten")
 
     case "link":
-        guard args.count >= 2 else { fail(usage) }
+        guard args.count >= 2 else { usageError() }
         let dir = URL(fileURLWithPath: args.count > 2 ? args[2] : FileManager.default.currentDirectoryPath).standardizedFileURL.path
-        let store = try await openUnlocked()
-        guard try await find(store, args[0], args[1]).1 != nil else { fail("no item named \(args[1]) in \(args[0])") }
+        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        _ = try await find(store, args[0], args[1])
         var links = Links.load().filter { $0.path != dir }
         links.append(Link(path: dir, project: args[0], item: args[1]))
         try Links.save(links)
@@ -274,13 +339,17 @@ do {
         print("unlinked \(dir)")
 
     case "links":
-        for l in Links.load().sorted(by: { $0.path < $1.path }) { print("\(l.path)  →  \(l.project)/\(l.item)") }
+        let links = Links.load().sorted(by: { $0.path < $1.path })
+        output(links.map { "\($0.path)  →  \($0.project)/\($0.item)" }.joined(separator: "\n"), json: links)
 
     case "env":
-        guard let link = Links.match(FileManager.default.currentDirectoryPath) else { if quiet { exit(0) } else { fail("no env file linked to this directory; run `evault link <project> <item>`") } }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, link.project, link.item).1 else { if quiet { exit(0) } else { fail("linked item \(link.item) no longer exists") } }
-        let doc = envDoc(item)
+        // Shell hooks in an agent's shell stay silent: agents use `evault run`.
+        if quiet, aiAgent != nil { exit(0) }
+        guard let link = Links.match(FileManager.default.currentDirectoryPath) else { if quiet { exit(0) } else { fail("no env file linked to this directory; run `evault link <project> <item>`", .notFound) } }
+        let store: VaultStore
+        do { store = try await session.unlocked(.reveal, "\(link.project)/\(link.item)") } catch let e as CLIError where quiet && e.code == .needsUser { exit(0) }
+        guard let item = try? await find(store, link.project, link.item) else { if quiet { exit(0) } else { fail("linked item \(link.item) no longer exists", .notFound) } }
+        let doc = try envDoc(item)
         if args.contains("--fish") {
             for e in doc.entries { print("set -gx \(e.key) \(EnvExport.shellQuote(e.value))") }
         } else {
@@ -288,18 +357,17 @@ do {
         }
 
     case "hook":
-        guard let shell = args.first, let script = ShellHook.script(for: shell) else { fail("usage: evault hook zsh|bash|fish") }
+        guard let shell = args.first, let script = ShellHook.script(for: shell) else { fail("usage: evault hook zsh|bash|fish", .usage) }
         print(script)
 
     case "deploy":
-        guard args.count >= 3 else { fail(usage) }
+        guard args.count >= 3 else { usageError() }
         let target = args[0]
         let dash = args.firstIndex(of: "--")
         let extra = dash.map { Array(args[($0 + 1)...]) } ?? []
         let dry = args.contains("--dry-run")
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[1], args[2]).1 else { fail("no item named \(args[2])") }
-        let doc = envDoc(item)
+        let store = try await session.unlocked(dry ? .use : .reveal, "\(args[1])/\(args[2]) to \(target)")
+        let doc = try envDoc(try await find(store, args[1], args[2]))
         switch target {
         case "vercel":
             let t = args.firstIndex(of: "--target").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } ?? "production"
@@ -310,18 +378,17 @@ do {
             let repo = args.firstIndex(of: "--repo").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
             try Deploy.github(doc: doc, repo: repo, extraArgs: extra, dryRun: dry)
         default:
-            fail("unknown deploy target \(target); use vercel, cloudflare or github")
+            fail("unknown deploy target \(target); use vercel, cloudflare or github", .usage)
         }
 
     case "example":
-        guard args.count == 2 else { fail(usage) }
-        let store = try await openUnlocked()
-        guard let item = try await find(store, args[0], args[1]).1 else { fail("no item named \(args[1])") }
-        FileHandle.standardOutput.write(Data(EnvHygiene.example(from: envDoc(item)).utf8))
+        guard args.count == 2 else { usageError() }
+        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        FileHandle.standardOutput.write(Data(EnvHygiene.example(from: try envDoc(try await find(store, args[0], args[1]))).utf8))
 
     case "scan" where args.contains("--staged"):
         let findings = try StagedScan.run()
-        for f in findings { FileHandle.standardError.write(Data("\(f.file):\(f.line): \(f.kind)  \(f.excerpt)\n".utf8)) }
+        for f in findings { Out.stderr("\(f.file):\(f.line): \(f.kind)  \(f.excerpt)") }
         if !findings.isEmpty {
             fail("""
             eVault blocked this commit: \(findings.count) possible secret\(findings.count == 1 ? "" : "s").
@@ -342,12 +409,19 @@ do {
         }
 
     case "version", "--version":
-        print("evault \(evaultVersion)")
+        output("evault \(evaultVersion)", json: ["version": evaultVersion])
 
     case "status":
+        let agent = useApp ? AgentClient() : nil
+        let info = try agent?.info()
+        let cached = info?.vaultId.map { CLIKeyCache.load(vaultId: $0) != nil } ?? false
+        if json {
+            Out.json(StatusJSON(appRunning: info != nil, appVersion: info?.appVersion, vault: info?.vaultPath, mode: info?.mode,
+                                locked: info?.locked, cliKeyCached: cached, agent: aiAgent, agentPolicy: info?.agents))
+            break
+        }
         guard useApp else { print("EVAULT_NO_APP is set: not asking the eVault app"); break }
-        guard let agent = AgentClient() else { print("eVault is not running (or is older than 0.4); evault will ask for the passphrase"); break }
-        let i = try agent.info()
+        guard let i = info else { print("eVault is not running (or is older than 0.4); evault will ask for the passphrase"); break }
         print("eVault \(i.appVersion) is running")
         if let path = i.vaultPath {
             print("vault:  \(path)\(i.mode == "icloud" ? "  (iCloud)" : "")")
@@ -355,22 +429,33 @@ do {
         } else {
             print("vault:  none open")
         }
-        let cached = i.vaultId.map { CLIKeyCache.load(vaultId: $0) != nil } ?? false
         print("cli:    \(cached ? "key cached by `evault unlock`" : "no cached key; commands ask eVault (Touch ID)")")
+        if let aiAgent { print("agent:  \(aiAgent) (output of `evault run` is redacted; reading values needs approval)") }
+        if let p = i.agents {
+            print("agents: \(p.enabled ? "allowed" : "turned off"); values: \(p.values.rawValue); changes: \(p.writes ? "allowed" : "not allowed")")
+        }
 
     case "scan":
         let dir = URL(fileURLWithPath: args.first ?? FileManager.default.currentDirectoryPath)
         let findings = EnvHygiene.scan(folder: dir)
-        for f in findings { print("\(f.file):\(f.line): \(f.kind)  \(f.excerpt)") }
-        print(findings.isEmpty ? "no secrets found" : "\(findings.count) finding(s)")
-        exit(findings.isEmpty ? 0 : 2)
+        output(findings.map { "\($0.file):\($0.line): \($0.kind)  \($0.excerpt)" }.joined(separator: "\n")
+                + (findings.isEmpty ? "no secrets found" : "\n\(findings.count) finding(s)"), json: findingsJSON(findings))
+        exit(findings.isEmpty ? 0 : ExitCode.findings.rawValue)
+
+    case "mcp":
+        await MCPServer(session: session).run()
+
+    case "agent-guide":
+        print(args.contains("--skill") ? AIAgents.skill : AIAgents.guide)
 
     case "help", "--help":
         print(usage)
 
     default:
-        fail(usage)
+        usageError()
     }
+} catch let e as CLIError {
+    fail(json ? e.description : "error: \(e.description)", e.code)
 } catch {
-    fail("error: \(error.localizedDescription)")
+    fail(json ? error.localizedDescription : "error: \(error.localizedDescription)")
 }

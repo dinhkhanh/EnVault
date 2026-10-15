@@ -139,8 +139,17 @@ Download for macOS</a>
 
 <section id="features" aria-labelledby="features-h" style="max-width: 1200px; margin: 0 auto; padding: 96px 24px 40px">
 <h2 id="features-h" style="margin: 0 0 12px; font-size: 44px; line-height: 1.1; letter-spacing: -.03em">Everything a .env file should have had.</h2>
-<p style="margin: 0 0 48px; font-size: 19px; color: var(--muted); max-width: 40em">New in 0.4: quick copy over any app, Touch ID for the command line, importing whole project folders, files kept in sync on disk, and a commit hook that stops leaks.</p>
+<p style="margin: 0 0 48px; font-size: 19px; color: var(--muted); max-width: 40em">New in 0.5: AI coding agents can use your secrets without seeing them. From 0.4: quick copy over any app, Touch ID for the command line, importing whole project folders, files kept in sync on disk, and a commit hook that stops leaks.</p>
 <div style="display: flex; flex-wrap: wrap; gap: 16px">
+
+<article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="2"></rect><path d="M12 4v4"></path><circle cx="12" cy="3" r="1"></circle><path d="M9.5 13h.01M14.5 13h.01"></path><path d="M9.5 16h5"></path></svg>
+<span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
+</div>
+<h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Secrets for AI agents, not their values</h3>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Claude Code, Cursor and Codex run your tests and scripts with the env file loaded, through MCP or the <code>evault</code> command. Values in their output show as <code>[redacted:KEY]</code>; reading one takes your Touch ID. <a href="cli.html#agents">How it works</a></p>
+</article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px">

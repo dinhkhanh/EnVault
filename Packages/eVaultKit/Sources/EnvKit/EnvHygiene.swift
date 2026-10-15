@@ -18,6 +18,11 @@ public enum EnvHygiene {
         return out.joined(separator: "\n") + (doc.trailingNewline && !out.isEmpty ? "\n" : "")
     }
 
+    /// False for values that are obviously not secret (ports, booleans, localhost URLs).
+    public static func isLikelySecret(key: String, value: String) -> Bool {
+        !value.isEmpty && placeholder(for: key, value: value).isEmpty
+    }
+
     /// Keep obviously non-secret values (ports, booleans, localhost URLs), blank the rest.
     static func placeholder(for key: String, value: String) -> String {
         let k = key.uppercased()

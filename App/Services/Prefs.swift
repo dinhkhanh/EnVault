@@ -1,4 +1,5 @@
 import Foundation
+import VaultCore
 
 /// UserDefaults keys shared by views (`@AppStorage`) and services.
 enum Prefs {
@@ -12,6 +13,10 @@ enum Prefs {
     static let cliInstallPath = "cliInstallPath"            // where Settings linked the CLI, for display
     static let quickCopyHotKey = "quickCopyHotKey"          // HotKeyService.Preset raw value, default optCmdE
     static let quickCopyRecents = "quickCopyRecents"        // ids of recently copied quick-copy hits (no values)
+    static let agentsEnabled = "agentsEnabled"              // default true: AI agents may use the vault through evault / MCP
+    static let agentValues = "agentValues"                  // AIAgents.Policy.Values: ask (default), never, allow
+    static let agentWrites = "agentWrites"                  // default true: agents may change env files
+    static let agentApprovalMinutes = "agentApprovalMinutes" // default 5: one approval covers an agent's commands this long; 0 = every command
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -23,6 +28,18 @@ enum Prefs {
             biometricUnlock: false,
             cliAgentEnabled: true,
             quickCopyHotKey: "optCmdE",
+            agentsEnabled: true,
+            agentValues: AIAgents.Policy.Values.ask.rawValue,
+            agentWrites: true,
+            agentApprovalMinutes: 5,
         ])
+    }
+
+    static var agentPolicy: AIAgents.Policy {
+        let d = UserDefaults.standard
+        return AIAgents.Policy(enabled: d.bool(forKey: agentsEnabled),
+                               values: AIAgents.Policy.Values(rawValue: d.string(forKey: agentValues) ?? "") ?? .ask,
+                               writes: d.bool(forKey: agentWrites),
+                               approvalMinutes: d.integer(forKey: agentApprovalMinutes))
     }
 }

@@ -7,6 +7,7 @@ struct SettingsView: View {
             GeneralSettings().tabItem { Label("General", systemImage: "gear") }
             VaultSettings().tabItem { Label("Vault", systemImage: "lock.shield") }
             CommandLineSettings().tabItem { Label("Command Line", systemImage: "terminal") }
+            AgentSettings().tabItem { Label("AI Agents", systemImage: "brain.head.profile") }
             LicenseSettings().tabItem { Label("License", systemImage: "sparkles") }
         }
         .frame(width: 480)
@@ -188,6 +189,107 @@ struct CommandLineSettings: View {
     private var agentText: String {
         guard model.agentRunning else { return "Not available: another copy of eVault is running and answering the command line." }
         return "When the command line needs the key, eVault asks you with Touch ID (or your Mac password) and hands it over for that one command. Without this, evault asks for the passphrase."
+    }
+}
+
+struct AgentSettings: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage(Prefs.cliAgentEnabled) private var cliAgent = true
+    @AppStorage(Prefs.agentsEnabled) private var enabled = true
+    @AppStorage(Prefs.agentValues) private var values = AIAgents.Policy.Values.ask.rawValue
+    @AppStorage(Prefs.agentWrites) private var writes = true
+    @AppStorage(Prefs.agentApprovalMinutes) private var minutes = 5
+    @State private var copiedGuide = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Let AI agents use eVault", isOn: $enabled)
+                Text("Claude Code, Cursor, Codex and other agents can run commands with your secrets and see variable names, through the evault command or its MCP server. Secret values in their output are replaced with [redacted:KEY].")
+                    .font(.callout).foregroundStyle(.secondary)
+                if !cliAgent {
+                    Text("Agents can only reach eVault when “Let evault ask eVault for the vault key” is on (Command Line).")
+                        .font(.callout).foregroundStyle(.red)
+                }
+            }
+            Section("What Agents May Do") {
+                Picker("Show secret values", selection: $values) {
+                    Text("Ask me each time").tag(AIAgents.Policy.Values.ask.rawValue)
+                    Text("Never").tag(AIAgents.Policy.Values.never.rawValue)
+                    Text("No extra prompt").tag(AIAgents.Policy.Values.allow.rawValue)
+                }
+                Toggle("Change env files", isOn: $writes)
+                Picker("After I approve an agent", selection: $minutes) {
+                    Text("Ask for every command").tag(0)
+                    Text("Don’t ask again for 5 minutes").tag(5)
+                    Text("Don’t ask again for 15 minutes").tag(15)
+                    Text("Don’t ask again for 1 hour").tag(60)
+                }
+                Text("An agent always needs your approval first. Showing values covers evault get, pull, env, run --no-redact and deploy; “No extra prompt” lets an approved agent do that too. Approvals end when eVault locks. These are guardrails for well-meaning agents, not a sandbox: an agent with a shell can do whatever your account can.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .disabled(!enabled)
+            Section("Connect an Agent") {
+                LabeledContent("Claude Code") { CopyableCommand("claude mcp add evault -- evault mcp") }
+                LabeledContent("Codex") { CopyableCommand("codex mcp add evault -- evault mcp") }
+                LabeledContent("Cursor, others") { CopyableCommand(#""evault": { "command": "evault", "args": ["mcp"] }"#) }
+                HStack {
+                    Text("Agents that only use the shell learn the commands from a short guide in AGENTS.md or CLAUDE.md:")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(copiedGuide ? "Copied" : "Copy Guide") {
+                        ClipboardService.shared.copy(AIAgents.guide, concealed: false)
+                        copiedGuide = true
+                        Task { try? await Task.sleep(for: .seconds(1.2)); copiedGuide = false }
+                    }
+                }
+            }
+            Section("Recent Requests") {
+                if model.agentActivity.isEmpty {
+                    Text("Nothing since eVault started.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.agentActivity.prefix(20)) { AgentActivityRow(entry: $0) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct AgentActivityRow: View {
+    let entry: AppModel.AgentActivity
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Image(systemName: icon).foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(entry.agent ?? "Terminal") · \(entry.client)")
+                Text([entry.detail, entry.note].compactMap { $0 }.joined(separator: " — "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            Text(entry.date, style: .time).font(.caption).foregroundStyle(.secondary)
+        }
+        .help(help)
+    }
+
+    private var icon: String {
+        switch entry.outcome {
+        case .approved: "checkmark.circle"
+        case .allowed: "clock.arrow.circlepath"
+        case .refused: "xmark.circle"
+        }
+    }
+
+    private var color: Color { entry.outcome == .refused ? .red : entry.purpose == .reveal ? .orange : .secondary }
+
+    private var help: String {
+        let what = switch entry.purpose { case .use: "use the vault"; case .write: "change an env file"; case .reveal: "read secret values" }
+        return switch entry.outcome {
+        case .approved: "Approved to \(what)"
+        case .allowed: "Allowed to \(what) by an earlier approval"
+        case .refused: "Refused to \(what)"
+        }
     }
 }
 
