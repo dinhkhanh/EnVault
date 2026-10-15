@@ -1,5 +1,7 @@
 name = "evault-store"
 main = "src/index.ts"
+# Account that owns the dinhkhanh.dk zone (Tran@dinhkhanh.dk's Account).
+account_id = "d87d194717900d3e8e1c5a9ee68f59ac"
 compatibility_date = "2026-10-01"
 # Custom domain; until it is attached the workers.dev URL from `wrangler deploy` works too.
 routes = [{ pattern = "store.evault.dinhkhanh.dk", custom_domain = true }]
@@ -7,8 +9,7 @@ routes = [{ pattern = "store.evault.dinhkhanh.dk", custom_domain = true }]
 [[d1_databases]]
 binding = "DB"
 database_name = "evault-store"
-# Replace with the id printed by `wrangler d1 create evault-store` (zeros work for `wrangler dev` only).
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "df3eae6c-9d89-4cd2-8313-8db53cae2334"
 
 [vars]
 # Public half of the license signing key; must match App/LicensePublicKey.swift.
