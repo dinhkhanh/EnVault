@@ -1,7 +1,9 @@
 import SwiftUI
+import LocalAuthentication
 import VaultCore
 import VaultSync
 import ToolKit
+import EnvKit
 
 /// Single source of truth for the UI. Wraps the `VaultStore` actor and keeps
 /// value-type snapshots that SwiftUI can render synchronously.
@@ -79,12 +81,34 @@ final class AppModel {
     }()
 
     let tools = ToolRegistry.all
+    /// Items kept written into project folders on this Mac.
+    let fileLinks = FileLinkStore()
+    /// Lets the `evault` CLI unlock through this app. False when another eVault already holds the port.
+    private(set) var agentRunning = false
+    @ObservationIgnored private var agent: AgentServer?
+    /// A `.env.vault` dropped in, waiting for its DOTENV_KEY.
+    var pendingVaultImport: PendingVaultImport?
+
+    struct PendingVaultImport: Identifiable {
+        let id = UUID()
+        let projectId: UUID
+        let fileName: String
+        let text: String
+        var environments: [String] { EnvImport.vaultEnvironments(text) }
+    }
 
     private static let iCloudVaultKey = "dk.dinhkhanh.evault.iCloudVaultId"
 
     init() {
         Prefs.registerDefaults()
         autoLock = AutoLock { [weak self] in self?.lock() }
+    }
+
+    /// Called once at launch, before any window shows: the CLI agent must answer
+    /// even when the app was launched hidden by `evault`.
+    func bootstrap() {
+        startAgent()
+        Task { await start() }
     }
 
     // MARK: - Derived
@@ -96,8 +120,12 @@ final class AppModel {
 
     // MARK: - Startup
 
+    @ObservationIgnored private var started = false
+
     func start() async {
-        guard phase == .loading else { return }
+        // bootstrap() and the window's .task both call this; phase stays .loading across awaits.
+        guard phase == .loading, !started else { return }
+        started = true
         #if DEBUG
         // Dev/testing: `eVault -vaultPath <dir> [-passphrase <pw>]` opens or creates a vault directly.
         // `-fakeCloud YES -createICloud YES -passphrase <pw>` creates a vault in the in-memory cloud.
@@ -437,6 +465,7 @@ final class AppModel {
 
     func lock() {
         guard phase == .unlocked, let store else { return }
+        if let vaultId { fileLinks.vaultLocked(vaultId: vaultId) }
         autoLock.stop()
         Task { await store.lock() }
         projects = []
@@ -497,6 +526,7 @@ final class AppModel {
         items = await store.allItems()
         if let pid = selectedProjectId, !projects.contains(where: { $0.id == pid }) { selectedProjectId = projects.first?.id }
         if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
+        if phase == .unlocked, let vaultId { fileLinks.syncAll(items: items, vaultId: vaultId) }
     }
 
     // MARK: - Mutations
@@ -559,17 +589,85 @@ final class AppModel {
 
     // MARK: - Import
 
-    /// Imports each URL as an env file into `projectId`. Returns the number imported.
+    /// Imports each URL as an env file into `projectId`: dotenv as is, JSON
+    /// (Doppler, 1Password item, flat objects) converted, `.env.vault` after
+    /// asking for its DOTENV_KEY. Returns the number imported.
     @discardableResult
     func importFiles(_ urls: [URL], into projectId: UUID) async -> Int {
         var n = 0
         for url in urls {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            if await createItem(in: projectId, name: url.lastPathComponent, payload: .envFile(text: text)) != nil { n += 1 }
+            guard let raw = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let name = url.lastPathComponent
+            switch EnvImport.detect(text: raw, fileName: name) {
+            case .dotenv:
+                if await upsertEnvItem(in: projectId, name: name, text: raw) { n += 1 }
+            case .json:
+                do {
+                    let text = try EnvImport.dotenv(fromJSON: raw)
+                    if await upsertEnvItem(in: projectId, name: url.deletingPathExtension().lastPathComponent + ".env", text: text) { n += 1 }
+                } catch {
+                    errorMessage = "\(name): \(error.localizedDescription)"
+                }
+            case .dotenvVault:
+                pendingVaultImport = PendingVaultImport(projectId: projectId, fileName: name, text: raw)
+            }
         }
         return n
+    }
+
+    /// Decrypts the pending `.env.vault` with one DOTENV_KEY per environment
+    /// (newline or comma separated) into `.env.<environment>` items.
+    func completeVaultImport(keys: String) async -> String? {
+        guard let pending = pendingVaultImport else { return nil }
+        let parts = keys.split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == " " }).map(String.init).filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return "Paste at least one DOTENV_KEY." }
+        do {
+            for part in parts {
+                let key = try EnvImport.parseDotenvKey(part)
+                let text = try EnvImport.decryptVault(pending.text, key: key)
+                _ = await upsertEnvItem(in: pending.projectId, name: ".env.\(key.environment)", text: text)
+            }
+            pendingVaultImport = nil
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Creates the item, or updates it when one with that name already exists and differs.
+    @discardableResult
+    func upsertEnvItem(in projectId: UUID, name: String, text: String) async -> Bool {
+        if let existing = items(in: projectId).first(where: { $0.name == name }) {
+            guard existing.payload.primaryText != text else { return false }
+            await updateItem(existing.id, payload: .envFile(text: text))
+            return true
+        }
+        return await createItem(in: projectId, name: name, payload: .envFile(text: text)) != nil
+    }
+
+    /// Imports projects found by `EnvDiscovery` under `root`; projects that
+    /// already exist (same name) get the files merged in.
+    func importDiscovered(_ found: [EnvDiscovery.FoundProject], root: URL) async -> (projects: Int, files: Int) {
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        var p = 0, f = 0
+        for proj in found {
+            var pid = projects.first { $0.name == proj.name }?.id
+            if pid == nil {
+                await createProject(name: proj.name)
+                pid = projects.first { $0.name == proj.name }?.id
+                if pid != nil { p += 1 }
+            }
+            guard let pid else { continue }
+            for file in proj.files {
+                guard let text = try? String(contentsOf: file.url, encoding: .utf8) else { continue }
+                if await upsertEnvItem(in: pid, name: file.itemName, text: text) { f += 1 }
+            }
+        }
+        selectedProjectId = projects.first { $0.name == found.first?.name }?.id ?? selectedProjectId
+        return (p, f)
     }
 
     /// Finds `.env*` files up to two levels deep, skipping dependency folders.
@@ -589,6 +687,53 @@ final class AppModel {
         }
         scan(folder, depth: 0)
         return out.sorted { $0.path < $1.path }
+    }
+
+    // MARK: - CLI agent
+
+    private func startAgent() {
+        let server = AgentServer(
+            info: { [weak self] in
+                Agent.Info(vaultId: self?.vaultId, vaultPath: self?.vaultURL?.path(percentEncoded: false),
+                           mode: self?.syncMode == .iCloud ? "icloud" : "folder", locked: self?.phase != .unlocked,
+                           appVersion: Bundle.main.shortVersion, cliPath: CLIService.bundledCLI.path)
+            },
+            authorize: { [weak self] vaultId, client in
+                guard let self else { throw Agent.Failure("eVault is quitting") }
+                return try await self.authorizeCLI(vaultId: vaultId, client: client)
+            })
+        agentRunning = server.start()
+        agent = server
+    }
+
+    /// Hands the vault key to the `evault` CLI after the user approves with
+    /// Touch ID (or the login password when the app is unlocked).
+    private func authorizeCLI(vaultId requested: UUID, client: String) async throws -> VaultKey {
+        guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
+            throw Agent.Failure("unlocking the CLI through the app is turned off in eVault Settings › Command Line")
+        }
+        // Launched by the CLI a moment ago: let the vault finish opening.
+        for _ in 0..<50 where phase == .loading { try? await Task.sleep(for: .milliseconds(200)) }
+        guard let store, let vaultId else { throw Agent.Failure("no vault is open in eVault") }
+        guard requested == vaultId else { throw Agent.Failure("eVault has a different vault open; pass --vault for this one") }
+        let reason = "allow “\(client)” in Terminal to unlock your vault"
+        if phase == .unlocked, let key = await store.currentVaultKey() {
+            let ctx = LAContext()
+            do {
+                try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            } catch {
+                throw Agent.Failure("not approved")
+            }
+            return key
+        }
+        if hasBiometricKey {
+            let keychain = keychain
+            guard let key = try await Task.detached(operation: { try keychain.load(vaultId: vaultId, reason: reason) }).value else {
+                throw Agent.Failure("not approved")
+            }
+            return key
+        }
+        throw Agent.Failure("eVault is locked and Touch ID unlock is off; unlock the app first")
     }
 
     // MARK: - Tools

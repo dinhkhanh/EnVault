@@ -6,6 +6,7 @@ struct MainView: View {
     @Environment(LicenseManager.self) private var licenses
     @State private var showNewProject = false
     @State private var showNewItem = false
+    @State private var showImportProjects = false
 
     var body: some View {
         @Bindable var model = model
@@ -27,6 +28,15 @@ struct MainView: View {
                     if let project = model.selectedProject {
                         ItemListView(project: project, showNewItem: $showNewItem)
                             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                    } else if model.projects.isEmpty {
+                        ContentUnavailableView {
+                            Label("Bring In Your .env Files", systemImage: "square.and.arrow.down.on.square")
+                        } description: {
+                            Text("Point eVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
+                        } actions: {
+                            Button("Import Projects from Folder…") { showImportProjects = true }.buttonStyle(.borderedProminent)
+                            Button("New Empty Project") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+                        }
                     } else {
                         ContentUnavailableView("No Project", systemImage: "folder", description: Text("Create a project to start storing env files."))
                     }
@@ -41,6 +51,9 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showNewProject) { NewProjectSheet() }
+        .sheet(isPresented: $showImportProjects) { ImportProjectsSheet() }
+        .sheet(item: Binding(get: { model.pendingVaultImport }, set: { if $0 == nil { model.pendingVaultImport = nil } })) { VaultImportSheet(pending: $0) }
+        .onReceive(NotificationCenter.default.publisher(for: .importProjects)) { _ in showImportProjects = true }
         .sheet(isPresented: $showNewItem) {
             if let pid = model.selectedProjectId { NewItemSheet(projectId: pid) }
         }

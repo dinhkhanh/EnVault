@@ -53,7 +53,8 @@ struct ItemListView: View {
             ToolbarItemGroup {
                 Button { showNewItem = true } label: { Label("New Item", systemImage: "plus") }.help("New item (⌘N)")
                 Menu {
-                    Button("Import .env Files…") { importFiles() }
+                    Button("Import Files…") { importFiles() }
+                        .help(".env, JSON (Doppler, 1Password item) or .env.vault")
                     Button("Scan Folder for .env Files…") { importFolder() }
                 } label: { Label("Import", systemImage: "square.and.arrow.down") }
             }
@@ -72,7 +73,7 @@ struct ItemListView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.showsHiddenFiles = true
-        panel.message = "Choose .env files to import into \(project.name)."
+        panel.message = "Choose files to import into \(project.name): .env files, JSON exports (Doppler, 1Password, vercel) or a .env.vault."
         guard panel.runModal() == .OK else { return }
         Task { await model.importFiles(panel.urls, into: project.id) }
     }

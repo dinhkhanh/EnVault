@@ -8,6 +8,11 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<!-- The CLI agent: the `evault` command asks the app for the vault key over this Mach port (see VaultCore/Agent.swift). -->
+	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
+	<array>
+		<string>dk.dinhkhanh.evault.agent</string>
+	</array>
 	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>

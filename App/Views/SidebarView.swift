@@ -56,8 +56,13 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } } label: { Label("New Project", systemImage: "plus") }
-                    .buttonStyle(.borderless)
+                Menu {
+                    Button("New Project…") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+                    Button("Import Projects from Folder…") { NotificationCenter.default.post(name: .importProjects, object: nil) }
+                } label: { Label("New Project", systemImage: "plus") } primaryAction: {
+                    if licenses.canAddProject(existing: model.projects.count) { showNewProject = true }
+                }
+                .menuStyle(.borderlessButton).fixedSize()
                 Spacer()
                 if model.syncMode == .iCloud {
                     SyncStatusLabel()

@@ -35,6 +35,14 @@ targets:
         product: LicenseKit
       - package: Sparkle
         product: Sparkle
+      # The `evault` CLI ships inside the app; Settings links it into PATH. Not in Contents/MacOS:
+      # on a case-insensitive disk `evault` would overwrite the app's own `eVault` executable.
+      - target: evault-cli
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     configFiles:
       Debug-iCloud: Config/Signing.xcconfig
       Release-iCloud: Config/Signing.xcconfig
@@ -62,8 +70,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.3.10
-        CURRENT_PROJECT_VERSION: 14
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 15
         # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
         EVAULT_RELEASE_DATE: "2026-10-15"
         ENABLE_PREVIEWS: true
@@ -90,6 +98,44 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
           DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
           EVAULT_APS_ENVIRONMENT: production
+  # Named evault-cli, not evault: the case-insensitive disk would merge its build folders with eVault's.
+  evault-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Packages/eVaultKit/Sources/evault
+    dependencies:
+      - package: eVaultKit
+        product: VaultCore
+      - package: eVaultKit
+        product: EnvKit
+    configFiles:
+      Debug-iCloud: Config/Signing.xcconfig
+      Release-iCloud: Config/Signing.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: evault
+        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault.cli
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        ENABLE_HARDENED_RUNTIME: true
+        SKIP_INSTALL: true
+        DEAD_CODE_STRIPPING: true
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        # An embedded Info.plist gives the tool a stable signing identifier. No sandbox, no entitlements.
+        CREATE_INFOPLIST_SECTION_IN_BINARY: true
+        GENERATE_INFOPLIST_FILE: true
+      configs:
+        Debug-iCloud:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
+        Release-iCloud:
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "Apple Development"
+          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
 schemes:
   eVault:
     build:

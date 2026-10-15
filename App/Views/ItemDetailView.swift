@@ -71,6 +71,7 @@ struct ItemDetailView: View {
 
 struct EnvFileView: View {
     @Environment(AppModel.self) private var model
+    @Environment(LicenseManager.self) private var licenses
     @AppStorage(Prefs.maskValues) private var maskValues = true
     let item: Item
     let text: String
@@ -97,6 +98,9 @@ struct EnvFileView: View {
 
     private var dirty: Bool { draft != text }
     private var doc: EnvDocument { DotEnv.parse(text) }
+    /// Lint follows what is on screen: the draft while editing raw text.
+    private var issues: [EnvLint.Issue] { EnvLint.check(mode == .raw ? DotEnv.parse(draft) : doc) }
+    private var projectName: String { model.projects.first { $0.id == item.projectId }?.name ?? "" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -118,7 +122,15 @@ struct EnvFileView: View {
                     Button("Copy as JSON") { ClipboardService.shared.copy(EnvExport.json(doc)) }
                     Button("Copy as .env.example") { ClipboardService.shared.copy(EnvHygiene.example(from: doc), concealed: false) }
                     Divider()
+                    Button("Copy `evault run` Command") {
+                        ClipboardService.shared.copy("evault run \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name)) -- ", concealed: false)
+                    }
+                    Button("Copy `evault pull` Command") {
+                        ClipboardService.shared.copy("evault pull \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name))", concealed: false)
+                    }
+                    Divider()
                     Button("Write File to Folder…") { writeToFolder() }
+                    Button("Keep in Sync with a Folder…") { if licenses.require(.folderSync) { linkFolder() } }
                 } label: { Label("Export", systemImage: "square.and.arrow.up") }
                 .fixedSize()
                 if mode == .raw {
@@ -127,17 +139,20 @@ struct EnvFileView: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
+            FileLinksBar(item: item)
+            CompareBar(item: item, doc: doc)
 
             switch mode {
             case .table:
-                EnvTableView(doc: doc, masked: masked, keyAges: keyAges) { key, value in
+                EnvTableView(doc: doc, masked: masked, keyAges: keyAges, issues: issues) { key, value in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.setting(key, to: value).text)) }
                 } onDelete: { key in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.removing(key).text)) }
                 }
             case .raw:
-                CodeTextView(text: $draft)
+                CodeTextView(text: $draft, flaggedLines: Set(issues.map(\.line)))
             }
+            if !issues.isEmpty { LintBar(issues: issues) }
         }
         .onChange(of: text) { _, new in if !dirty || mode == .table { draft = new } }
         .onChange(of: maskValues) { _, new in masked = new }
@@ -173,6 +188,23 @@ struct EnvFileView: View {
             exportConfirm = target
         } else {
             write(to: target)
+        }
+    }
+
+    /// Writes the file into a folder now and again whenever the item changes.
+    private func linkFolder() {
+        guard let vaultId = model.vaultId else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Keep in Sync"
+        panel.message = "Choose the project folder. eVault writes “\(item.name)” there now and rewrites it whenever it changes (here, on another Mac, or from the CLI). Edits made to the file on disk are never overwritten without asking."
+        guard panel.runModal() == .OK, let dir = panel.url else { return }
+        do {
+            try model.fileLinks.add(folder: dir, fileName: item.name, item: item, vaultId: vaultId)
+        } catch {
+            model.errorMessage = "Could not link the folder: \(error.localizedDescription)"
         }
     }
 

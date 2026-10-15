@@ -11,6 +11,9 @@ cd "$(dirname "$0")/.."
 # Refunded keys stop working on this release: refresh the compiled-in list first.
 scripts/sync-revocations.sh
 VERSION=$(sed -n 's/.*MARKETING_VERSION: \(.*\)/\1/p' project.yml | head -1)
+# The bundled CLI reports its own version; keep it in step with the app.
+grep -q "let evaultVersion = \"$VERSION\"" Packages/eVaultKit/Sources/evault/CLISupport.swift \
+  || { echo "evaultVersion in Packages/eVaultKit/Sources/evault/CLISupport.swift is not $VERSION"; exit 1; }
 OUT=dist
 rm -rf "$OUT" && mkdir -p "$OUT"
 

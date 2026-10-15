@@ -8,16 +8,18 @@ struct EnvTableView: View {
     let doc: EnvDocument
     let masked: Bool
     var keyAges: [String: Date] = [:]
+    var issues: [EnvLint.Issue] = []
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
 
     var body: some View {
+        let issuesByLine = Dictionary(grouping: issues, by: \.line)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(doc.lines) { line in
                     switch line.kind {
                     case .entry(let e):
-                        EnvEntryRow(entry: e, masked: masked, lastChanged: keyAges[e.key], onEdit: onEdit, onDelete: onDelete)
+                        EnvEntryRow(entry: e, masked: masked, lastChanged: keyAges[e.key], issues: issuesByLine[line.id] ?? [], onEdit: onEdit, onDelete: onDelete)
                     case .comment(let c):
                         Text("# " + c).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
                             .padding(.horizontal, 16).padding(.vertical, 3)
@@ -44,6 +46,7 @@ struct EnvEntryRow: View {
     let entry: EnvEntry
     let masked: Bool
     var lastChanged: Date?
+    var issues: [EnvLint.Issue] = []
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
     @State private var revealed = false
@@ -82,6 +85,10 @@ struct EnvEntryRow: View {
             }
             if let c = entry.inlineComment, !editing {
                 Text("# " + c).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if !issues.isEmpty, !editing {
+                Image(systemName: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    .help(issues.map(\.message).joined(separator: "\n"))
             }
             if let d = lastChanged, !editing, !entry.value.isEmpty {
                 let days = Int(Date().timeIntervalSince(d) / 86400)

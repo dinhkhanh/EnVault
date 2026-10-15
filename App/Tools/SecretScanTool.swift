@@ -17,6 +17,7 @@ private struct SecretScanView: View {
     @State private var findings: [EnvHygiene.Finding] = []
     @State private var scanning = false
     @State private var scanned = false
+    @State private var protectResult: (ok: Bool, text: String)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,6 +26,12 @@ private struct SecretScanView: View {
                 if let f = folder { Text(f.path(percentEncoded: false)).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                 Spacer()
                 if scanning { ProgressView().controlSize(.small) }
+                Button { protect() } label: { Label("Protect a Repository…", systemImage: "lock.shield") }
+                    .help("Install a git pre-commit hook that blocks commits containing secrets or real .env files")
+            }
+            if let r = protectResult {
+                Label(r.text, systemImage: r.ok ? "checkmark.shield" : "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(r.ok ? .green : .orange)
             }
             if scanned && findings.isEmpty {
                 Label("No secrets found.", systemImage: "checkmark.seal").foregroundStyle(.green)
@@ -43,6 +50,34 @@ private struct SecretScanView: View {
             }
         }
         .padding(16)
+    }
+
+    /// Writes the eVault block into `.git/hooks/pre-commit`. The hook runs the
+    /// bundled CLI (`evault scan --staged`), so it works without installing it.
+    private func protect() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.prompt = "Protect"
+        panel.message = "Choose a git repository. Commits that contain API keys, tokens or real .env files will be stopped."
+        guard panel.runModal() == .OK, let repo = panel.url else { return }
+        let scoped = repo.startAccessingSecurityScopedResource()
+        defer { if scoped { repo.stopAccessingSecurityScopedResource() } }
+        let git = repo.appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir) else {
+            protectResult = (false, "\(repo.lastPathComponent) is not a git repository (no .git folder).")
+            return
+        }
+        guard isDir.boolValue else {
+            protectResult = (false, "This is a worktree or submodule; run `evault protect` inside it instead.")
+            return
+        }
+        do {
+            _ = try GitHook.install(hooksDir: git.appendingPathComponent("hooks"))
+            protectResult = (true, "\(repo.lastPathComponent) is protected. Remove with `evault protect --remove`. If the repo sets core.hooksPath, run `evault protect` instead.")
+        } catch {
+            protectResult = (false, "Could not write the hook: \(error.localizedDescription)")
+        }
     }
 
     private func pick() {

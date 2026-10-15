@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.registerForRemoteNotifications()
         _ = UpdaterService.shared
+        HotKeyService.shared.action = { QuickCopyPanelController.shared.toggle() }
+        HotKeyService.shared.apply()
     }
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {

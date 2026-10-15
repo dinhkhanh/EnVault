@@ -80,6 +80,10 @@ public actor VaultStore {
         }
     }
 
+    /// The key of an unlocked vault, so the app can hand it to the CLI after the
+    /// user approves (see `AgentServer`).
+    public func currentVaultKey() -> VaultKey? { vaultKey }
+
     public func lock() {
         vaultKey = nil
         clearIndex()

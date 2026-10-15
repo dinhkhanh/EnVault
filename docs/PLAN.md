@@ -343,16 +343,19 @@ payouts is the seller's job; nothing in the pipeline depends on it.
 - The store Worker (`store/`) is written and tested locally but not deployed:
   needs a Polar account (payout country Vietnam), the D1 database, secrets and
   the custom domain `store.evault.dinhkhanh.dk` (§15).
-- CloudKit sync has not been run against a real iCloud account yet (no signing
-  identity on the build machine). First real run: `make run-icloud`, create a
-  vault in iCloud, then on a second Mac "Open Vault from iCloud…".
 - Touch ID on ad-hoc signed builds uses the legacy keychain fallback (§5
-  describes the Developer ID path). The CLI cannot use the app's cached key;
-  a shared keychain access group is the planned fix once both are signed.
+  describes the Developer ID path).
+- The CLI gets the key from the running app (Mach-port agent, Touch ID per
+  request) rather than a shared keychain group: a plain command-line tool can't
+  carry the provisioning-profile entitlement the data-protection keychain needs.
+  Any local process can *ask*; the user approves each request in a system prompt.
+- In iCloud (CloudKit) mode the CLI reads the vault inside the app's container,
+  which macOS 14+ may gate behind an "access data from other apps" prompt for the terminal.
 - Concurrent passphrase changes on two offline devices: last header wins; the
   loser must use the other passphrase (the vault key is unchanged).
-- The raw editor has basic highlighting only; no line numbers.
-- Menu bar search covers env keys and secrets, not notes.
+- Folder-synced files are rewritten when the vault changes; edits made on disk
+  are detected (and never overwritten without asking) only on the next vault change
+  or when the item is opened, not by watching the file.
 - Not yet verified on a second physical Mac through iCloud Drive; verified
   locally by writing from the CLI while the app watched the folder.
 - CloudKit backend, sharing, and iOS remain future work (§9).

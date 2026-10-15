@@ -90,9 +90,19 @@ and a passphrase change replaces the `vault.json` record.
 
 ## CLI
 
+The `evault` command ships inside the app (`eVault.app/Contents/Helpers/evault`).
+Settings › Command Line links it into your PATH, or:
+`sudo ln -sf /Applications/eVault.app/Contents/Helpers/evault /usr/local/bin/evault`.
+To build it on its own: `swift build -c release --package-path Packages/eVaultKit --product evault`.
+
+When the app is running, the CLI needs no passphrase: it asks eVault over a
+Mach port (`dk.dinhkhanh.evault.agent`, see `VaultCore/Agent.swift`), eVault
+asks you with Touch ID (or the login password) and hands the key over for that
+one command. `EVAULT_NO_APP=1` turns this off; Settings can too.
+
 ```sh
-swift build -c release --package-path Packages/eVaultKit --product evault
-evault unlock                          # caches the vault key in the login keychain
+evault status                          # is the app running, which vault, locked?
+evault unlock                          # caches the vault key in the login keychain (for shell hooks)
 evault ls
 evault pull my-saas .env.local         # writes ./.env.local (mode 600)
 evault push my-saas .env.local .env.local
@@ -106,14 +116,20 @@ evault deploy cloudflare my-saas .env.production
 evault deploy github my-saas .env.production --repo owner/name
 evault example my-saas .env > .env.example
 evault scan .                          # find committed secrets
+evault protect                         # git pre-commit hook: block commits with secrets or real .env files
+evault import my-saas .env.prod secrets.json            # .env, JSON (Doppler, 1Password item) or .env.vault ($DOTENV_KEY)
+evault import my-saas .env.prod --doppler -- --project shop --config prd
+evault import my-saas .env.prod --1password "Shop prod" -- --vault Work
 evault lock
 ```
+
+A line containing `evault:allow` is never reported by `scan` or the hook.
 
 Deploy commands shell out to `vercel`, `wrangler` and `gh`, so they use the
 credentials you already have. `--dry-run` prints what would run.
 
-The vault folder defaults to `~/Library/Mobile Documents/com~apple~CloudDocs/eVault`;
-override with `--vault DIR` or `EVAULT_DIR`.
+The vault folder is the one the running app has open, else
+`~/Library/Mobile Documents/com~apple~CloudDocs/eVault`; override with `--vault DIR` or `EVAULT_DIR`.
 
 ## Licensing
 
@@ -137,8 +153,9 @@ Every issued key is appended to `~/Library/Application Support/eVault Vendor/lic
 on the issuing Mac. That file and the keychain signing key are the vendor's
 
 
-Free: 3 projects, folder sync, editor, history, Touch ID, CLI.
-Pro: unlimited projects, CloudKit sync, menu bar quick copy, developer tools.
+Free: 3 projects, folder sync, editor, history, Touch ID, CLI (including Touch ID through the app), import.
+Pro: unlimited projects, CloudKit sync, quick copy (menu bar and ⌥⌘E panel), developer tools,
+shell integration, env files kept in sync in project folders.
 The split lives in `LicenseKit/Entitlements.swift`.
 
 ## Updates

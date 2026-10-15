@@ -8,6 +8,7 @@ public enum Feature: String, CaseIterable, Sendable {
     case menuBarQuickCopy
     case developerTools         // the Tools section
     case cliIntegration         // `evault link` / shell hook (the CLI itself stays open)
+    case folderSync             // env files kept written into project folders
     case teamSharing            // reserved for the Team plan
 
     public var title: String {
@@ -17,6 +18,7 @@ public enum Feature: String, CaseIterable, Sendable {
         case .menuBarQuickCopy: "Menu bar quick copy"
         case .developerTools: "Developer tools"
         case .cliIntegration: "Shell integration"
+        case .folderSync: "Env files kept in sync in project folders"
         case .teamSharing: "Team sharing"
         }
     }

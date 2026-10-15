@@ -3,9 +3,18 @@ import SwiftUI
 @main
 struct eVaultApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
-    @State private var licenses = LicenseManager()
+    @State private var model: AppModel
+    @State private var licenses: LicenseManager
     @Environment(\.openWindow) private var openWindow
+
+    init() {
+        let model = AppModel()
+        let licenses = LicenseManager()
+        _model = State(initialValue: model)
+        _licenses = State(initialValue: licenses)
+        QuickCopyPanelController.shared.configure(model: model, licenses: licenses)
+        model.bootstrap()
+    }
 
     var body: some Scene {
         Window("eVault", id: "main") {
@@ -16,7 +25,10 @@ struct eVaultApp: App {
                     UpgradeSheet(feature: licenses.upgradePrompt).environment(licenses)
                 }
                 .frame(minWidth: 900, minHeight: 560)
-                .task { await model.start() }
+                .task {
+                    await model.start()
+                    QuickCopyPanelController.shared.openMain = { openWindow(id: "main"); NSApp.activate() }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { _ in model.remotePushReceived() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.appActivated() }
         }
@@ -32,11 +44,17 @@ struct eVaultApp: App {
                 Button("New Item…") { NotificationCenter.default.post(name: .newItem, object: nil) }
                     .keyboardShortcut("n")
                     .disabled(model.phase != .unlocked || model.selectedProjectId == nil)
+                Divider()
+                Button("Import Projects from Folder…") { NotificationCenter.default.post(name: .importProjects, object: nil) }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .disabled(model.phase != .unlocked)
             }
             CommandMenu("Vault") {
                 Button("Lock") { model.lock() }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
                     .disabled(model.phase != .unlocked)
+                Button("Quick Copy…") { QuickCopyPanelController.shared.show() }
+                    .disabled(model.phase == .noVault)
                 Button(model.syncMode == .iCloud ? "Sync with iCloud Now" : "Refresh from Disk") {
                     Task { if model.syncMode == .iCloud { await model.syncNow() } else { await model.refreshFromDisk() } }
                 }
@@ -66,4 +84,5 @@ struct eVaultApp: App {
 extension Notification.Name {
     static let newProject = Notification.Name("evault.newProject")
     static let newItem = Notification.Name("evault.newItem")
+    static let importProjects = Notification.Name("evault.importProjects")
 }

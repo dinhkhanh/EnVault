@@ -110,14 +110,17 @@ enum ShellHook {
 // MARK: - Deploy targets (shell out to the vendors' own CLIs)
 
 enum Deploy {
-    static func run(_ exe: String, _ args: [String], stdin: String? = nil, env: [String: String] = [:]) throws -> (status: Int32, output: String) {
+    /// Runs `exe` from PATH. With `mergeStderr: false`, stderr goes to the terminal
+    /// (so sign-in prompts stay visible) and only stdout is captured.
+    static func run(_ exe: String, _ args: [String], stdin: String? = nil, env: [String: String] = [:], mergeStderr: Bool = true) throws -> (status: Int32, output: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = [exe] + args
         var e = ProcessInfo.processInfo.environment
         for (k, v) in env { e[k] = v }
         p.environment = e
-        let out = Pipe(); p.standardOutput = out; p.standardError = out
+        let out = Pipe(); p.standardOutput = out
+        if mergeStderr { p.standardError = out }
         if let stdin {
             let inp = Pipe(); p.standardInput = inp
             try p.run()
@@ -172,3 +175,63 @@ struct CLIError: Error, CustomStringConvertible {
     let description: String
     init(_ d: String) { description = d }
 }
+
+// MARK: - Create-or-update
+
+func upsert(_ store: VaultStore, project: String, item: String, text: String) async throws {
+    if await store.projects().first(where: { $0.name == project }) == nil {
+        try await store.createProject(name: project)
+        print("created project \(project)")
+    }
+    guard let p = await store.projects().first(where: { $0.name == project }) else { throw CLIError("project \(project) vanished") }
+    if let existing = await store.items(in: p.id).first(where: { $0.name == item }) {
+        if existing.payload.primaryText == text { print("\(project)/\(item) unchanged"); return }
+        try await store.updateItem(existing.id, payload: .envFile(text: text))
+        print("updated \(project)/\(item)")
+    } else {
+        try await store.createItem(in: p.id, name: item, payload: .envFile(text: text))
+        print("created \(project)/\(item)")
+    }
+}
+
+// MARK: - Pre-commit scan
+
+enum StagedScan {
+    static func git(_ args: [String], in dir: String? = nil) throws -> (status: Int32, data: Data) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = ["git"] + (dir.map { ["-C", $0] } ?? []) + args
+        let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
+        try p.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (p.terminationStatus, data)
+    }
+
+    /// Staged (added, copied, modified, renamed) text files, as they will be committed.
+    static func run(maxFileSize: Int = 512_000) throws -> [EnvHygiene.Finding] {
+        let list = try git(["diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"])
+        guard list.status == 0 else { throw CLIError("not inside a git repository") }
+        let paths = list.data.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
+        var files: [(path: String, text: String)] = []
+        for path in paths {
+            let name = (path as NSString).lastPathComponent
+            guard EnvHygiene.isScannable(path: path) || EnvDiscovery.isEnvFile(name) else { continue }
+            let blob = try git(["show", ":" + path])
+            guard blob.status == 0, blob.data.count <= maxFileSize, !blob.data.contains(0) else { continue }
+            files.append((path, String(decoding: blob.data, as: UTF8.self)))
+        }
+        return EnvHygiene.scan(staged: files)
+    }
+
+    /// The repo's hooks folder, honouring core.hooksPath.
+    static func hooksDir(repo: String) throws -> URL {
+        let r = try git(["rev-parse", "--git-path", "hooks"], in: repo)
+        guard r.status == 0 else { throw CLIError("\(repo) is not a git repository") }
+        let path = String(decoding: r.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.hasPrefix("/") ? URL(fileURLWithPath: path) : URL(fileURLWithPath: repo).appendingPathComponent(path).standardizedFileURL
+    }
+}
+
+/// Matches the app's MARKETING_VERSION; scripts/release.sh checks they agree.
+let evaultVersion = "0.4.0"

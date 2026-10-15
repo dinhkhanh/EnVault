@@ -6,6 +6,7 @@ struct SettingsView: View {
         TabView {
             GeneralSettings().tabItem { Label("General", systemImage: "gear") }
             VaultSettings().tabItem { Label("Vault", systemImage: "lock.shield") }
+            CommandLineSettings().tabItem { Label("Command Line", systemImage: "terminal") }
             LicenseSettings().tabItem { Label("License", systemImage: "sparkles") }
         }
         .frame(width: 480)
@@ -19,6 +20,8 @@ struct GeneralSettings: View {
     @AppStorage(Prefs.maskValues) private var mask = true
     @AppStorage(Prefs.autoMaskSeconds) private var autoMask = 30
     @AppStorage(Prefs.lockOnSleep) private var lockOnSleep = true
+    @AppStorage(Prefs.quickCopyHotKey) private var hotKey = HotKeyService.Preset.optCmdE.rawValue
+    @State private var hotKeyTaken = false
 
     var body: some View {
         Form {
@@ -34,6 +37,20 @@ struct GeneralSettings: View {
                 Text("10 seconds").tag(10); Text("30 seconds").tag(30); Text("1 minute").tag(60); Text("5 minutes").tag(300); Text("Never").tag(0)
             }
             .disabled(!mask)
+            Section("Quick Copy") {
+                Picker("Shortcut", selection: $hotKey) {
+                    ForEach(HotKeyService.Preset.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .onChange(of: hotKey) { _, _ in
+                    HotKeyService.shared.apply()
+                    hotKeyTaken = HotKeyService.Preset.current != .off && !HotKeyService.shared.registered
+                }
+                if hotKeyTaken {
+                    Text("Another app already uses this shortcut. Pick a different one.").font(.callout).foregroundStyle(.red)
+                } else {
+                    Text("Opens a search panel over any app: type, then ↩ to copy. Also in the menu bar.").font(.callout).foregroundStyle(.secondary)
+                }
+            }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: Binding(get: { UpdaterService.shared.automaticallyChecks }, set: { UpdaterService.shared.automaticallyChecks = $0 }))
                 Button("Check Now") { UpdaterService.shared.checkForUpdates() }
@@ -116,5 +133,80 @@ struct VaultSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+struct CommandLineSettings: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage(Prefs.cliAgentEnabled) private var agentEnabled = true
+    @AppStorage(Prefs.cliInstallPath) private var installPath = ""
+    @State private var installError: String?
+    @State private var shell = "zsh"
+
+    var body: some View {
+        Form {
+            Section("The evault Command") {
+                if CLIService.isBundled {
+                    LabeledContent("Installed") {
+                        Text(installPath.isEmpty ? "Not yet" : installPath).font(.callout.monospaced()).textSelection(.enabled)
+                    }
+                    HStack {
+                        Button(installPath.isEmpty ? "Install evault Command…" : "Install Again…") { installError = CLIService.installWithPanel() }
+                        Spacer()
+                        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([CLIService.bundledCLI]) }
+                    }
+                    if let installError { Text(installError).font(.callout).foregroundStyle(.red) }
+                    Text("Puts a link in a folder on your PATH (Homebrew’s bin works). It points into eVault, so app updates update the command. Or run this in Terminal:")
+                        .font(.callout).foregroundStyle(.secondary)
+                    CopyableCommand(CLIService.terminalInstallCommand)
+                } else {
+                    Text("This build has no bundled command-line tool.").foregroundStyle(.secondary)
+                }
+            }
+            Section("Unlock with Touch ID") {
+                Toggle("Let evault ask eVault for the vault key", isOn: $agentEnabled)
+                Text(agentText).font(.callout).foregroundStyle(model.agentRunning ? Color.secondary : Color.red)
+            }
+            Section("Load Env Files on cd (Pro)") {
+                Picker("Shell", selection: $shell) {
+                    Text("zsh").tag("zsh"); Text("bash").tag("bash"); Text("fish").tag("fish")
+                }
+                .pickerStyle(.segmented)
+                Text("Add to \(CLIService.shellRCFile(shell)), then in a project folder run `evault link <project> <item>` and `evault unlock`:")
+                    .font(.callout).foregroundStyle(.secondary)
+                CopyableCommand(CLIService.shellHookLine(shell))
+            }
+            Section("Block Secrets in Commits") {
+                Text("Installs a git pre-commit hook that stops commits containing API keys, tokens or real .env files:")
+                    .font(.callout).foregroundStyle(.secondary)
+                CopyableCommand("cd your-repo && evault protect")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var agentText: String {
+        guard model.agentRunning else { return "Not available: another copy of eVault is running and answering the command line." }
+        return "When the command line needs the key, eVault asks you with Touch ID (or your Mac password) and hands it over for that one command. Without this, evault asks for the passphrase."
+    }
+}
+
+/// A one-line command with a copy button.
+struct CopyableCommand: View {
+    let command: String
+    @State private var copied = false
+    init(_ command: String) { self.command = command }
+
+    var body: some View {
+        HStack {
+            Text(command).font(.callout.monospaced()).textSelection(.enabled).lineLimit(2).truncationMode(.middle)
+            Spacer()
+            Button {
+                ClipboardService.shared.copy(command, concealed: false)
+                copied = true
+                Task { try? await Task.sleep(for: .seconds(1.2)); copied = false }
+            } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
+            .buttonStyle(.borderless).help("Copy")
+        }
     }
 }

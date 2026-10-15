@@ -73,7 +73,7 @@ public enum EnvHygiene {
         var out: [Finding] = []
         for (i, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             let l = String(line)
-            if l.contains("example") || l.contains("placeholder") || l.contains("xxxx") { continue }
+            if l.contains("example") || l.contains("placeholder") || l.contains("xxxx") || l.contains(allowMarker) { continue }
             let range = NSRange(l.startIndex..., in: l)
             for (kind, re) in patterns where re.firstMatch(in: l, range: range) != nil {
                 out.append(Finding(file: file, line: i + 1, kind: kind, excerpt: redact(l)))
@@ -83,10 +83,35 @@ public enum EnvHygiene {
         return out
     }
 
+    /// A line containing this is never reported (for test fixtures and the like).
+    public static let allowMarker = "evault:allow"
+
+    static let textExt: Set<String> = ["", "env", "txt", "md", "json", "yml", "yaml", "toml", "ini", "cfg", "conf", "js", "ts", "tsx", "jsx", "mjs", "cjs", "py", "rb", "go", "rs", "swift", "java", "kt", "php", "sh", "zsh", "bash", "fish", "xml", "plist", "tf", "hcl", "tfvars", "sql", "cs", "c", "h", "cpp", "m", "mm", "properties", "gradle", "example", "local", "development", "production", "staging", "test", "vue", "svelte", "astro", "dart", "ex", "exs", "pem", "key", "npmrc", "pypirc", "netrc"]
+
+    /// Whether a file of this name is text worth scanning.
+    public static func isScannable(path: String) -> Bool {
+        let name = (path as NSString).lastPathComponent
+        return textExt.contains((name as NSString).pathExtension.lowercased()) || name.hasPrefix(".")
+    }
+
+    /// Scans files about to be committed: their content, plus a finding for any
+    /// real env file (not a template) being added at all.
+    public static func scan(staged files: [(path: String, text: String)]) -> [Finding] {
+        var out: [Finding] = []
+        for f in files {
+            let name = (f.path as NSString).lastPathComponent
+            if EnvDiscovery.isEnvFile(name), !DotEnv.parse(f.text).entries.filter({ !$0.value.isEmpty }).isEmpty {
+                out.append(Finding(file: f.path, line: 1, kind: "Env file committed", excerpt: "\(name) with values; add it to .gitignore and keep it in eVault"))
+                continue
+            }
+            out += scan(text: f.text, file: f.path)
+        }
+        return out
+    }
+
     /// Scans a folder tree (skipping dependencies, binaries and the vault's own files).
     public static func scan(folder: URL, maxFileSize: Int = 512_000) -> [Finding] {
         let skipDirs: Set<String> = ["node_modules", ".git", "vendor", "Pods", "build", "dist", ".next", "target", "DerivedData", ".build", ".venv", "venv"]
-        let textExt: Set<String> = ["", "env", "txt", "md", "json", "yml", "yaml", "toml", "ini", "cfg", "conf", "js", "ts", "tsx", "jsx", "py", "rb", "go", "rs", "swift", "java", "kt", "php", "sh", "zsh", "bash", "fish", "xml", "plist", "tf", "hcl", "sql", "cs", "c", "h", "cpp", "m", "mm", "properties", "gradle", "example", "local", "development", "production", "test"]
         var out: [Finding] = []
         let base = folder.resolvingSymlinksInPath().path + "/"
         guard let e = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey], options: []) else { return [] }
