@@ -1,6 +1,6 @@
 # eVault — current state
 
-Snapshot as of **2026-10-15**. Update this file whenever something ships,
+Snapshot as of **2026-10-16**. Update this file whenever something ships,
 blocks, or changes hands. Design and rationale live in [PLAN.md](PLAN.md);
 this is the "where are we" page.
 
@@ -9,7 +9,7 @@ this is the "where are we" page.
 | What | Where | State |
 |---|---|---|
 | App v0.4.0 (**Developer ID signed, notarized**, macOS 14+) | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.4.0): dmg, zip, SHA256SUMS, appcast.xml | 0.4.0 (build 15): CLI bundled in the app (`Contents/Helpers/evault`, installed from Settings › Command Line) and unlocked through the app with Touch ID (Mach-port agent); `evault import` (JSON, Doppler, 1Password, .env.vault), `evault protect` / `scan --staged` pre-commit hook; quick copy panel on a global shortcut (⌥⌘E) searching keys, secrets, notes and values with recents; Import Projects from Folder on first run; env files kept in sync in project folders (Pro); editor line numbers, lint warnings, key comparison with sibling files. 0.3.10 only prompts Touch ID while eVault is frontmost, once per lock. 0.3.9 fixes Touch ID unlock in signed builds (0.3.7–0.3.8 never found the saved key after relaunch). 0.3.8 redesigns the license key input (multi-line box, Paste, live status; wrapped keys accepted). 0.3.7 was the first signed build: iCloud (CloudKit, Production) available to Pro, no right-click > Open. 0.3.6 introduced the current license (`LR48…`) and Sparkle (`SRLH…`) keys; 0.3.2–0.3.5 installs must reinstall by hand |
-| AI agents (unreleased, on `main`) | CLI, app, site | Agents detected from their env (`CLAUDECODE`, `CURSOR_AGENT`, `GEMINI_CLI`, `CODEX_SANDBOX`, `EVAULT_AGENT`): no prompts, `run` output redacted, values only with Touch ID; `evault mcp` (stdio MCP server), `keys`, `set`/`unset` (`--generate`), `--json`, stable exit codes, `agent-guide [--skill]`; Settings › AI Agents (values ask/never/no extra prompt, writes, approval window, recent requests); `docs/llms.txt`. Free. Ships in 0.5.0 |
+| App v0.5.0: AI agents | [GitHub release](https://github.com/dinhkhanh/eVault/releases/tag/v0.5.0) (build 16, signed, notarized) | Agents detected from their env (`CLAUDECODE`, `CURSOR_AGENT`, `GEMINI_CLI`, `CODEX_SANDBOX`, `EVAULT_AGENT`): no prompts, `run` output redacted, values only with Touch ID; `evault mcp` (stdio MCP server), `keys`, `set`/`unset` (`--generate`), `--json`, stable exit codes, `agent-guide [--skill]`; Settings › AI Agents (values ask/never/no extra prompt, writes, approval window, recent requests); `docs/llms.txt`. Free. Shipped 2026-10-16 |
 | Website + pricing + privacy | https://dinhkhanh.github.io/eVault/ (GitHub Pages from `main:/docs`) | live |
 | Packages `VaultCore`, `EnvKit`, `VaultSync`, `ToolKit`, `LicenseKit` | `Packages/eVaultKit` | 73 tests passing |
 | CLI `evault`, vendor tool `evault-license` | same package | done |
