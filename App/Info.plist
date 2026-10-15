@@ -37,7 +37,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>/DQqNs5Xtctf7m5I8HsyCCxdg58izjlM+N+Yxnhffc4=</string>
+	<string>sEM9s89FUeuB1ut18cfEKD4AWekFEM7RxciQC+kLOw8=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>
