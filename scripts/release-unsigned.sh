@@ -31,7 +31,9 @@ cp -R "$APP" "$OUT/dmg/"
 ln -s /Applications "$OUT/dmg/Applications"
 hdiutil create -volname "EnVault $VERSION" -srcfolder "$OUT/dmg" -ov -format UDZO "$OUT/EnVault-$VERSION.dmg" >/dev/null
 rm -rf "$OUT/dmg"
-shasum -a 256 "$OUT"/EnVault-$VERSION.* | tee "$OUT/SHA256SUMS"
+# Unversioned copy: the website links to releases/latest/download/EnVault.dmg.
+cp "$OUT/EnVault-$VERSION.dmg" "$OUT/EnVault.dmg"
+(cd "$OUT" && shasum -a 256 EnVault-$VERSION.dmg EnVault.dmg EnVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
 # Sparkle appcast: signs the zip with the EdDSA key from the keychain
 # (account ed25519, or $SPARKLE_ACCOUNT; it must match SUPublicEDKey).
 GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)

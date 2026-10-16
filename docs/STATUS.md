@@ -63,7 +63,7 @@ Restore on a new Mac or after a keychain reset:
 
 ## Routine operations
 
-- Release: bump `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, `ENVAULT_RELEASE_DATE` (quoted) in `project.yml`; `make archive` (signed, notarized; `make release-unsigned` only as a fallback); tag `vX.Y.Z`; `gh release create` with dmg, zip, SHA256SUMS, appcast.xml. The release scripts pull revoked ids from the store first.
+- Release: bump `MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`, `ENVAULT_RELEASE_DATE` (quoted) in `project.yml`; `make archive` (signed, notarized; `make release-unsigned` only as a fallback); tag `vX.Y.Z`; `gh release create` with dmg, zip, `EnVault.dmg` (unversioned copy the site's Download buttons link to via `releases/latest/download/EnVault.dmg`), SHA256SUMS, appcast.xml. The release scripts pull revoked ids from the store first.
 - Customers: `scripts/store.sh list [query]`, `issue --email E --name N`, `revoke --email E --reason R`, `resend --email E`. Self-service: `/resend` on the store.
 - Tests: `make test` (Swift), `make store-test` (Worker).
 

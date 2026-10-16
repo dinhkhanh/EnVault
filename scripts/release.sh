@@ -45,7 +45,9 @@ xcrun stapler staple "$OUT/EnVault-$VERSION.dmg"
 # Gatekeeper's verdict on what users will download.
 spctl --assess --type execute -v "$OUT/export/EnVault.app"
 spctl --assess --type open --context context:primary-signature -v "$OUT/EnVault-$VERSION.dmg"
-(cd "$OUT" && shasum -a 256 EnVault-$VERSION.dmg EnVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
+# Unversioned copy: the website links to releases/latest/download/EnVault.dmg.
+cp "$OUT/EnVault-$VERSION.dmg" "$OUT/EnVault.dmg"
+(cd "$OUT" && shasum -a 256 EnVault-$VERSION.dmg EnVault.dmg EnVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
 # Sparkle appcast: signs the zip with the EdDSA key from the keychain
 # (account ed25519, or $SPARKLE_ACCOUNT; it must match SUPublicEDKey).
 GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
@@ -63,4 +65,4 @@ if [ -n "$GA" ]; then
 else
   echo "warning: generate_appcast not found; resolve packages first (make gen && xcodebuild -resolvePackageDependencies)"
 fi
-echo "Done: $OUT/EnVault-$VERSION.zip and .dmg (Developer ID signed, notarized)"
+echo "Done: $OUT/EnVault-$VERSION.zip, .dmg and EnVault.dmg (Developer ID signed, notarized)"
