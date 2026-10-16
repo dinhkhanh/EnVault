@@ -199,7 +199,7 @@ struct EnvFileView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Keep in Sync"
-        panel.message = "Choose the project folder. EnVault writes “\(item.name)” there now and rewrites it whenever it changes (here, on another Mac, or from the CLI). Edits made to the file on disk are never overwritten without asking."
+        panel.message = "Choose the project folder. EnVault writes “\(item.name)” there now and keeps both in step: changes in EnVault (here, on another Mac, or from the CLI) are written to the file, and edits you make in the file are saved to EnVault as a new revision. If the same key changed in both places, EnVault asks."
         guard panel.runModal() == .OK, let dir = panel.url else { return }
         do {
             try model.fileLinks.add(folder: dir, fileName: item.name, item: item, vaultId: vaultId)

@@ -158,7 +158,7 @@ struct FileLinksBar: View {
             .padding(.horizontal, 16).padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.blue.opacity(0.05))
-            .task(id: item.revisionId) { model.fileLinks.syncItem(item) }
+            .task(id: item.revisionId) { model.fileLinks.syncItem(item.id) }
         }
     }
 
@@ -170,15 +170,16 @@ struct FileLinksBar: View {
             Text(abbreviated(link.filePath)).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
             Text(caption(status, link)).font(.caption).foregroundStyle(color(status) == .secondary ? .secondary : color(status))
             Spacer()
-            if status == .changedOnDisk {
-                Button("Use EnVault’s Version") { model.fileLinks.overwrite(link.id, item: item) }
-                Button("Import Disk Version") {
-                    if let text = model.fileLinks.diskText(link.id) { Task { await model.updateItem(item.id, payload: .envFile(text: text)) } }
-                }
+            if needsChoice(status) {
+                Button("Use EnVault’s Version") { model.fileLinks.overwrite(link.id) }
+                    .help("Write EnVault’s version to the file")
+                Button("Use the File’s Version") { model.fileLinks.useFileVersion(link.id) }
+                    .help("Save the file as a new revision (History keeps the current one)")
             }
             Menu {
+                Toggle("Save Edits Made in the File to EnVault", isOn: Binding(get: { link.importEdits }, set: { model.fileLinks.setImportEdits(link.id, $0) }))
                 Toggle("Remove the File While EnVault Is Locked", isOn: Binding(get: { link.removeWhenLocked }, set: { model.fileLinks.setRemoveWhenLocked(link.id, $0) }))
-                Button("Check Now") { model.fileLinks.syncItem(item) }
+                Button("Check Now") { model.fileLinks.syncItem(item.id) }
                 Divider()
                 Button("Stop Syncing (Keep File)") { model.fileLinks.remove(link.id) }
             } label: { Image(systemName: "ellipsis.circle") }
@@ -187,9 +188,16 @@ struct FileLinksBar: View {
         .controlSize(.small)
     }
 
+    private func needsChoice(_ s: FileLinkStatus?) -> Bool {
+        switch s {
+        case .changedOnDisk, .conflict: true
+        default: false
+        }
+    }
+
     private func icon(_ s: FileLinkStatus?) -> String {
         switch s {
-        case .changedOnDisk: "exclamationmark.triangle.fill"
+        case .changedOnDisk, .conflict: "exclamationmark.triangle.fill"
         case .failed, .itemDeleted: "xmark.octagon"
         case .removedWhileLocked: "lock"
         default: "arrow.triangle.2.circlepath"
@@ -198,7 +206,7 @@ struct FileLinksBar: View {
 
     private func color(_ s: FileLinkStatus?) -> Color {
         switch s {
-        case .changedOnDisk: .orange
+        case .changedOnDisk, .conflict: .orange
         case .failed, .itemDeleted: .red
         default: .secondary
         }
@@ -206,9 +214,16 @@ struct FileLinksBar: View {
 
     private func caption(_ s: FileLinkStatus?, _ link: FileLink) -> String {
         switch s {
-        case .synced(let d?): "synced \(d.formatted(.relative(presentation: .named)))"
+        case .synced(let d?):
+            switch link.lastChange {
+            case .fromFile: "file edit saved \(d.formatted(.relative(presentation: .named)))"
+            case .merged: "merged \(d.formatted(.relative(presentation: .named)))"
+            default: "synced \(d.formatted(.relative(presentation: .named)))"
+            }
         case .synced(nil), nil: "kept in sync"
-        case .changedOnDisk: "edited on disk"
+        case .changedOnDisk: "edited in the file"
+        case .conflict(let keys) where keys.isEmpty: "the file and EnVault differ"
+        case .conflict(let keys): "changed in both places: \(keys.joined(separator: ", "))"
         case .removedWhileLocked: "removed while locked"
         case .itemDeleted: "item deleted"
         case .failed(let e): e

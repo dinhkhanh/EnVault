@@ -119,6 +119,10 @@ final class AppModel {
     init() {
         Prefs.registerDefaults()
         autoLock = AutoLock { [weak self] in self?.lock() }
+        fileLinks.hooks = .init(
+            item: { [weak self] id in self?.items.first { $0.id == id } },
+            history: { [weak self] id in await self?.history(of: id) ?? [] },
+            save: { [weak self] id, payload in await self?.saveFromLinkedFile(id, payload: payload) ?? false })
     }
 
     /// Called once at launch, before any window shows: the CLI agent must answer
@@ -546,6 +550,7 @@ final class AppModel {
         touchIDOfferArmed = false
         errorMessage = nil
         await reload()
+        if let vaultId { fileLinks.vaultUnlocked(vaultId: vaultId) }
         autoLock.touch()
     }
 
@@ -591,7 +596,7 @@ final class AppModel {
         items = await store.allItems()
         if let pid = selectedProjectId, !projects.contains(where: { $0.id == pid }) { selectedProjectId = projects.first?.id }
         if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
-        if phase == .unlocked, let vaultId { fileLinks.syncAll(items: items, vaultId: vaultId) }
+        if phase == .unlocked, let vaultId { fileLinks.syncAll(vaultId: vaultId) }
     }
 
     // MARK: - Mutations
@@ -632,6 +637,13 @@ final class AppModel {
 
     func updateItem(_ id: UUID, name: String? = nil, tags: [String]? = nil, payload: ItemPayload? = nil, projectId: UUID? = nil) async {
         await perform { try await $0.updateItem(id, name: name, tags: tags, payload: payload, projectId: projectId) }
+    }
+
+    /// An edit made in a linked file (see `FileLinkStore`), saved as a new revision.
+    func saveFromLinkedFile(_ id: UUID, payload: ItemPayload) async -> Bool {
+        var ok = false
+        await perform { try await $0.updateItem(id, payload: payload); ok = true }
+        return ok
     }
 
     func deleteItem(_ id: UUID) async {
