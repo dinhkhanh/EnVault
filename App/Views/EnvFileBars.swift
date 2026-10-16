@@ -171,13 +171,13 @@ struct FileLinksBar: View {
             Text(caption(status, link)).font(.caption).foregroundStyle(color(status) == .secondary ? .secondary : color(status))
             Spacer()
             if status == .changedOnDisk {
-                Button("Use eVault’s Version") { model.fileLinks.overwrite(link.id, item: item) }
+                Button("Use EnVault’s Version") { model.fileLinks.overwrite(link.id, item: item) }
                 Button("Import Disk Version") {
                     if let text = model.fileLinks.diskText(link.id) { Task { await model.updateItem(item.id, payload: .envFile(text: text)) } }
                 }
             }
             Menu {
-                Toggle("Remove the File While eVault Is Locked", isOn: Binding(get: { link.removeWhenLocked }, set: { model.fileLinks.setRemoveWhenLocked(link.id, $0) }))
+                Toggle("Remove the File While EnVault Is Locked", isOn: Binding(get: { link.removeWhenLocked }, set: { model.fileLinks.setRemoveWhenLocked(link.id, $0) }))
                 Button("Check Now") { model.fileLinks.syncItem(item) }
                 Divider()
                 Button("Stop Syncing (Keep File)") { model.fileLinks.remove(link.id) }

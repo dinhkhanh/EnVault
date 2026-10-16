@@ -82,7 +82,7 @@ struct ItemListView: View {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
-        panel.message = "Choose a project folder. eVault imports every .env* file in it (two levels deep, skipping node_modules etc.)."
+        panel.message = "Choose a project folder. EnVault imports every .env* file in it (two levels deep, skipping node_modules etc.)."
         guard panel.runModal() == .OK, let dir = panel.url else { return }
         let urls = AppModel.findEnvFiles(in: dir)
         Task { await model.importFiles(urls, into: project.id) }

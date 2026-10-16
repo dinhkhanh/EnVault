@@ -14,7 +14,7 @@ struct FileLink: Codable, Identifiable, Hashable {
     var fileName: String
     /// Delete the file while the vault is locked (if nobody edited it).
     var removeWhenLocked = false
-    /// SHA-256 of what eVault last wrote, to tell our writes from edits on disk.
+    /// SHA-256 of what EnVault last wrote, to tell our writes from edits on disk.
     var lastWrittenHash: String?
     var lastWrittenAt: Date?
 
@@ -23,7 +23,7 @@ struct FileLink: Codable, Identifiable, Hashable {
 
 enum FileLinkStatus: Equatable {
     case synced(Date?)
-    /// The file on disk differs from both the vault and what eVault last wrote.
+    /// The file on disk differs from both the vault and what EnVault last wrote.
     case changedOnDisk
     case removedWhileLocked
     case itemDeleted
@@ -40,7 +40,7 @@ final class FileLinkStore {
 
     private let fileURL: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("eVault/FileLinks.json")
+        return support.appendingPathComponent("EnVault/FileLinks.json")
     }()
 
     init() {

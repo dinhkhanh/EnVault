@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eVault — encrypted .env storage for your Macs</title>
-<meta name="description" content="eVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
-<meta property="og:title" content="eVault — encrypted .env storage for your Macs">
-<meta property="og:description" content="eVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
+<title>EnVault — encrypted .env storage for your Macs</title>
+<meta name="description" content="EnVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
+<meta property="og:title" content="EnVault — encrypted .env storage for your Macs">
+<meta property="og:description" content="EnVault keeps .env files and secrets in an encrypted vault that syncs through your own iCloud. Quick copy over any app, a CLI unlocked with Touch ID, and a git hook that blocks leaked secrets.">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta property="og:image" content="https://dinhkhanh.github.io/eVault/icon-512.png">
+<meta property="og:image" content="https://dinhkhanh.github.io/envault/icon-512.png">
 <script>
 /* A saved manual theme applies only while it differs from the system's; one that matches is dropped. */
 try{var t=localStorage.getItem("theme"),s=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t===s)localStorage.removeItem("theme");else if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}
@@ -51,7 +51,7 @@ html{scroll-behavior:smooth}
 <span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
 </span>
-eVault
+EnVault
 </a>
 <a href="#features" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Features</a>
 <a href="cli.html" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Command line</a>
@@ -61,35 +61,36 @@ eVault
 <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"></path></svg>
 <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
 </button>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+<a href="https://github.com/dinhkhanh/envault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
 </nav>
 </header>
 
 <section style="max-width: 1200px; margin: 0 auto; padding: 88px 24px 72px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
 <div style="flex: 1 1 460px; min-width: 0">
-<p style="margin: 0 0 20px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; color: var(--muted); text-transform: uppercase">Native macOS · v0.4 · Free to start</p>
+<p style="margin: 0 0 20px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; color: var(--muted); text-transform: uppercase">Native macOS · v0.6 · Free to start</p>
 <h1 style="margin: 0 0 22px; font-size: 60px; line-height: 1.04; letter-spacing: -.035em; font-weight: 700">Your .env files, encrypted, on every Mac you own.</h1>
 <p style="margin: 0 0 32px; font-size: 20px; color: var(--muted); max-width: 34em">A native vault for environment files and secrets. It syncs through your own iCloud, never through our servers, because there aren’t any. Copy a key from any app, unlock the CLI with Touch ID, and stop committing secrets by accident.</p>
 <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px">
+<a href="https://github.com/dinhkhanh/envault/releases/latest" style="text-decoration: none; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px">
 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg>
 Download for macOS</a>
 <a href="#pricing" style="text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--border2); font-weight: 600; padding: 14px 22px; border-radius: 10px; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center">Get Pro — $29 once</a>
 </div>
 <p style="margin: 16px 0 0; font-size: 14px; color: var(--muted2)">macOS 14 or later. Free tier forever, no account. Signed and notarized by Apple.</p>
+<p id="from-evault" style="margin: 12px 0 0; font-size: 14px; color: var(--muted2)">EnVault (.env + vault) was called eVault until 0.6. Coming from eVault? Install EnVault, then pick “Used eVault? Move a vault from it…” on the first screen for an iCloud vault, or “Open from a Folder…” for a folder vault. Paste your license key again in Settings › License. The command is now <code>envault</code>.</p>
 </div>
 
-<div class="hero-visual" style="flex: 1 1 480px; min-width: 0; position: relative; padding-bottom: 200px" aria-label="eVault quick copy panel above a terminal">
+<div class="hero-visual" style="flex: 1 1 480px; min-width: 0; position: relative; padding-bottom: 200px" aria-label="EnVault quick copy panel above a terminal">
 <div style="background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 14px; padding: 18px 20px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13.5px; line-height: 1.75; color: #C9CEDA; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset">
 <div style="display: flex; gap: 7px; margin-bottom: 14px" aria-hidden="true"><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span><span style="width: 11px; height: 11px; border-radius: 50%; background: #3A3E4A"></span></div>
-<div><span style="color: #8FA6FF">~/code/shop</span> $ evault run shop .env.production -- npm start</div>
-<div style="color: #8A91A3">Approve in eVault (Touch ID)…</div>
+<div><span style="color: #8FA6FF">~/code/shop</span> $ envault run shop .env.production -- npm start</div>
+<div style="color: #8A91A3">Approve in EnVault (Touch ID)…</div>
 <div>&gt; shop@2.1.0 start</div>
 <div>&gt; next start -p 3000</div>
 <div style="color: #8A91A3">ready on http://localhost:3000</div>
 <div><span style="color: #8FA6FF">~/code/shop</span> $ git commit -m "add billing"</div>
 <div style="color: #F2A65A">src/billing.ts:12: Stripe key</div>
-<div style="color: #F2A65A">eVault blocked this commit: 1 possible secret.</div>
+<div style="color: #F2A65A">EnVault blocked this commit: 1 possible secret.</div>
 </div>
 <div class="hero-panel" style="position: absolute; left: 6%; right: 0; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 24px 60px var(--shadow)">
 <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line2)">
@@ -131,7 +132,7 @@ Download for macOS</a>
 </div>
 <div style="flex: 1 1 280px; min-width: 0">
 <p style="margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em">In Terminal</p>
-<p style="margin: 0; color: var(--muted)">The <code>evault</code> command ships inside the app. It asks eVault for the key and you approve with Touch ID, so you never type the passphrase into a shell.</p>
+<p style="margin: 0; color: var(--muted)">The <code>envault</code> command ships inside the app. It asks EnVault for the key and you approve with Touch ID, so you never type the passphrase into a shell.</p>
 </div>
 </div>
 </div>
@@ -148,7 +149,7 @@ Download for macOS</a>
 <span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Secrets for AI agents, not their values</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px">Claude Code, Cursor and Codex run your tests and scripts with the env file loaded, through MCP or the <code>evault</code> command. Values in their output show as <code>[redacted:KEY]</code>; reading one takes your Touch ID. <a href="cli.html#agents">How it works</a></p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Claude Code, Cursor and Codex run your tests and scripts with the env file loaded, through MCP or the <code>envault</code> command. Values in their output show as <code>[redacted:KEY]</code>; reading one takes your Touch ID. <a href="cli.html#agents">How it works</a></p>
 </article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
@@ -167,7 +168,7 @@ Download for macOS</a>
 <span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Touch ID for the command line</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px">When eVault is running, <code>evault</code> asks the app for the key and you approve with Touch ID. Install it from Settings in one click; app updates update it too.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">When EnVault is running, <code>envault</code> asks the app for the key and you approve with Touch ID. Install it from Settings in one click; app updates update it too.</p>
 </article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
@@ -176,7 +177,7 @@ Download for macOS</a>
 <span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Import your whole projects folder</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px">Point eVault at ~/Projects. Each folder becomes a project with its .env files; templates like .env.example are skipped. Also imports Doppler, 1Password items, JSON and .env.vault.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Point EnVault at ~/Projects. Each folder becomes a project with its .env files; templates like .env.example are skipped. Also imports Doppler, 1Password items, JSON and .env.vault.</p>
 </article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
@@ -186,7 +187,7 @@ Download for macOS</a>
 <span style="font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 1px 8px; border-radius: 99px">Pro</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">.env kept in sync in the project</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px">Link an item to a project folder and eVault rewrites the file whenever it changes, here, on another Mac or from the CLI. Edits you made on disk are never overwritten without asking.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Link an item to a project folder and EnVault rewrites the file whenever it changes, here, on another Mac or from the CLI. Edits you made on disk are never overwritten without asking.</p>
 </article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
@@ -195,7 +196,7 @@ Download for macOS</a>
 <span style="font-size: 12px; font-weight: 600; color: var(--link); background: var(--chip); padding: 2px 8px; border-radius: 99px">New</span>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Secrets stay out of git</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px"><code>evault protect</code> adds a pre-commit hook that stops commits containing API keys, tokens, private keys or a real .env file. Mark a false positive with <code>evault:allow</code>.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px"><code>envault protect</code> adds a pre-commit hook that stops commits containing API keys, tokens, private keys or a real .env file. Mark a false positive with <code>envault:allow</code>.</p>
 </article>
 
 <article style="flex: 1 1 340px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 26px">
@@ -229,7 +230,7 @@ Download for macOS</a>
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2F55E4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"></path><path d="m7 9 5-5 5 5"></path><path d="M4 20h16"></path></svg>
 </div>
 <h3 style="margin: 0 0 8px; font-size: 20px; letter-spacing: -.01em">Deploy without copy-paste</h3>
-<p style="margin: 0; color: var(--muted); font-size: 16px">Push an env file to Vercel, Cloudflare Workers or GitHub Actions secrets with <code>evault deploy</code>, using the vendor CLIs and logins you already have.</p>
+<p style="margin: 0; color: var(--muted); font-size: 16px">Push an env file to Vercel, Cloudflare Workers or GitHub Actions secrets with <code>envault deploy</code>, using the vendor CLIs and logins you already have.</p>
 </article>
 
 </div>
@@ -251,7 +252,7 @@ Download for macOS</a>
 </div>
 <div style="flex: 1 1 300px; min-width: 0; border-top: 1px solid #2C303B; padding-top: 20px">
 <h3 style="margin: 0 0 8px; font-size: 18px">No network access</h3>
-<p style="margin: 0; color: #A3AABA; font-size: 16px">The app is sandboxed without a network entitlement. macOS does the syncing; eVault has no servers and no analytics.</p>
+<p style="margin: 0; color: #A3AABA; font-size: 16px">The app is sandboxed without a network entitlement. macOS does the syncing; EnVault has no servers and no analytics.</p>
 </div>
 <div style="flex: 1 1 300px; min-width: 0; border-top: 1px solid #2C303B; padding-top: 20px">
 <h3 style="margin: 0 0 8px; font-size: 18px">Touch ID, auto-lock, clean clipboard</h3>
@@ -263,7 +264,7 @@ Download for macOS</a>
 </div>
 <div style="flex: 1 1 300px; min-width: 0; border-top: 1px solid #2C303B; padding-top: 20px">
 <h3 style="margin: 0 0 8px; font-size: 18px">Recovery key, open format</h3>
-<p style="margin: 0; color: #A3AABA; font-size: 16px">A one-time recovery key gets you back in if you forget the passphrase. The vault format and crypto are open source: <a href="https://github.com/dinhkhanh/eVault/blob/main/docs/PLAN.md" style="color: #8FA6FF">read the threat model</a>.</p>
+<p style="margin: 0; color: #A3AABA; font-size: 16px">A one-time recovery key gets you back in if you forget the passphrase. The vault format and crypto are open source: <a href="https://github.com/dinhkhanh/envault/blob/main/docs/PLAN.md" style="color: #8FA6FF">read the threat model</a>.</p>
 </div>
 </div>
 </div>
@@ -276,12 +277,12 @@ Download for macOS</a>
 <a href="cli.html" style="font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px">Full command reference
 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></a>
 </div>
-<div style="flex: 1.4 1 520px; min-width: 0; overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 14px; padding: 24px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.9; color: #C9CEDA; white-space: pre">$ evault run shop .env.production -- npm start  <span style="color: #8A91A3"># inject for one command</span>
-$ evault link shop .env.local                   <span style="color: #8A91A3"># load on cd (with the hook)</span>
-$ evault import shop .env.prod --doppler        <span style="color: #8A91A3"># or --1password, JSON, .env.vault</span>
-$ evault protect                                <span style="color: #8A91A3"># block secrets in commits</span>
-$ evault deploy vercel shop .env.production     <span style="color: #8A91A3"># or cloudflare, github</span>
-$ evault status                                 <span style="color: #8A91A3"># is the app there, locked?</span></div>
+<div style="flex: 1.4 1 520px; min-width: 0; overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 14px; padding: 24px 26px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.9; color: #C9CEDA; white-space: pre">$ envault run shop .env.production -- npm start  <span style="color: #8A91A3"># inject for one command</span>
+$ envault link shop .env.local                   <span style="color: #8A91A3"># load on cd (with the hook)</span>
+$ envault import shop .env.prod --doppler        <span style="color: #8A91A3"># or --1password, JSON, .env.vault</span>
+$ envault protect                                <span style="color: #8A91A3"># block secrets in commits</span>
+$ envault deploy vercel shop .env.production     <span style="color: #8A91A3"># or cloudflare, github</span>
+$ envault status                                 <span style="color: #8A91A3"># is the app there, locked?</span></div>
 </section>
 
 <section aria-labelledby="sync-h" style="background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line)">
@@ -318,7 +319,7 @@ $ evault status                                 <span style="color: #8A91A3"># i
 <li>Import projects, Doppler, 1Password, .env.vault</li>
 <li>Commit hook that blocks secrets</li>
 </ul>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Download</a>
+<a href="https://github.com/dinhkhanh/envault/releases/latest" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Download</a>
 </div>
 
 <div style="flex: 1 1 320px; min-width: 0; background: var(--surface); border: 2px solid #2F55E4; border-radius: 16px; padding: 29px; display: flex; flex-direction: column">
@@ -334,8 +335,8 @@ $ evault status                                 <span style="color: #8A91A3"># i
 <li>Developer tools: env diff, .env.example, secret scan, JWT, generators</li>
 <li>Updates for one year</li>
 </ul>
-<a href="https://store.evault.dinhkhanh.dk/buy?utm_source=site" style="text-decoration: none; text-align: center; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Buy Pro</a>
-<p style="margin: 14px 0 0; font-size: 13px; color: var(--muted2)">Checkout by <a href="https://polar.sh">Polar</a>. Your key arrives by email within a minute. 14-day refunds. <a href="https://store.evault.dinhkhanh.dk/resend">Lost your key?</a></p>
+<a href="https://store.envault.dinhkhanh.dk/buy?utm_source=site" style="text-decoration: none; text-align: center; color: #FFFFFF; background: #2F55E4; font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Buy Pro</a>
+<p style="margin: 14px 0 0; font-size: 13px; color: var(--muted2)">Checkout by <a href="https://polar.sh">Polar</a>. Your key arrives by email within a minute. 14-day refunds. <a href="https://store.envault.dinhkhanh.dk/resend">Lost your key?</a></p>
 </div>
 
 <div style="flex: 1 1 320px; min-width: 0; background: var(--surface); border: 1px dashed var(--border2); border-radius: 16px; padding: 30px; display: flex; flex-direction: column">
@@ -347,7 +348,7 @@ $ evault status                                 <span style="color: #8A91A3"># i
 <li>Audit log of who pulled what</li>
 <li>Rotation reminders</li>
 </ul>
-<a href="mailto:tran@dinhkhanh.dk?subject=eVault%20Team" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Join the waitlist</a>
+<a href="mailto:tran@dinhkhanh.dk?subject=EnVault%20Team" style="text-decoration: none; text-align: center; color: var(--ink); border: 1px solid var(--border2); font-weight: 600; padding: 13px; border-radius: 10px; min-height: 48px; box-sizing: border-box">Join the waitlist</a>
 </div>
 
 </div>
@@ -355,12 +356,12 @@ $ evault status                                 <span style="color: #8A91A3"># i
 
 <footer style="border-top: 1px solid var(--line); background: var(--surface)">
 <div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: var(--muted)">
-<span style="font-weight: 700; color: var(--ink); margin-right: auto">eVault</span>
+<span style="font-weight: 700; color: var(--ink); margin-right: auto">EnVault</span>
 <a href="cli.html">Command line</a>
 <a href="privacy.html">Privacy</a>
-<a href="https://github.com/dinhkhanh/eVault/blob/main/docs/PLAN.md">Threat model</a>
-<a href="https://github.com/dinhkhanh/eVault/releases">Release notes</a>
-<a href="https://github.com/dinhkhanh/eVault/issues">Support</a>
+<a href="https://github.com/dinhkhanh/envault/blob/main/docs/PLAN.md">Threat model</a>
+<a href="https://github.com/dinhkhanh/envault/releases">Release notes</a>
+<a href="https://github.com/dinhkhanh/envault/issues">Support</a>
 <span>© 2026 Dinh Khanh</span>
 </div>
 </footer>

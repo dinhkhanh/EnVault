@@ -9,11 +9,11 @@ enum Prefs {
     static let autoMaskSeconds = "autoMaskSeconds"          // default 30, 0 = never; re-hides a temporary reveal
     static let lockOnSleep = "lockOnSleep"                  // default true
     static let biometricUnlock = "biometricUnlock"          // default false until enabled
-    static let cliAgentEnabled = "cliAgentEnabled"          // default true: `evault` may ask for the key (Touch ID)
+    static let cliAgentEnabled = "cliAgentEnabled"          // default true: `envault` may ask for the key (Touch ID)
     static let cliInstallPath = "cliInstallPath"            // where Settings linked the CLI, for display
     static let quickCopyHotKey = "quickCopyHotKey"          // HotKeyService.Preset raw value, default optCmdE
     static let quickCopyRecents = "quickCopyRecents"        // ids of recently copied quick-copy hits (no values)
-    static let agentsEnabled = "agentsEnabled"              // default true: AI agents may use the vault through evault / MCP
+    static let agentsEnabled = "agentsEnabled"              // default true: AI agents may use the vault through envault / MCP
     static let agentValues = "agentValues"                  // AIAgents.Policy.Values: ask (default), never, allow
     static let agentWrites = "agentWrites"                  // default true: agents may change env files
     static let agentApprovalMinutes = "agentApprovalMinutes" // default 5: one approval covers an agent's commands this long; 0 = every command

@@ -10,7 +10,7 @@ import { resendForm, resendDone, thanks } from "./pages.ts";
 export interface Env {
   DB: D1Database;
   LICENSE_PUBLIC_KEY: string; LICENSE_PRIVATE_KEY: string;
-  SITE_URL: string; POLAR_CHECKOUT_URL: string; PADDLE_CHECKOUT_URL: string; CHECKOUT_PROVIDER: string;
+  SITE_URL: string; STORE_URL?: string; POLAR_CHECKOUT_URL: string; PADDLE_CHECKOUT_URL: string; CHECKOUT_PROVIDER: string;
   FROM_EMAIL: string; SUPPORT_EMAIL: string; UPDATES_MONTHS: string; MAIL_MODE: string;
   POLAR_WEBHOOK_SECRET?: string; PADDLE_WEBHOOK_SECRET?: string; PADDLE_API_KEY?: string; PADDLE_SANDBOX?: string;
   RESEND_API_KEY?: string; ADMIN_TOKEN?: string;
@@ -39,7 +39,7 @@ async function services(env: Env, req: Request): Promise<Services> {
     mailer: mailer(env),
     signingKey: await signingKey(env),
     updatesMonths: Number(env.UPDATES_MONTHS || 12),
-    mail: { siteUrl: env.SITE_URL, storeUrl: new URL(req.url).origin, supportEmail: env.SUPPORT_EMAIL },
+    mail: { siteUrl: env.SITE_URL, storeUrl: env.STORE_URL || new URL(req.url).origin, supportEmail: env.SUPPORT_EMAIL },
   };
 }
 
@@ -66,7 +66,7 @@ export default {
       // Checkout entry point: one stable URL, provider chosen by config.
       if (req.method === "GET" && path === "/buy") {
         const target = env.CHECKOUT_PROVIDER === "paddle" ? env.PADDLE_CHECKOUT_URL : env.POLAR_CHECKOUT_URL;
-        if (!target) return html(thanks(env.SITE_URL, env.SUPPORT_EMAIL).replace("Thank you for buying eVault Pro", "Checkout is not open yet").replace(/<p>Your license key[^]*?<\/p>/, `<p>Email <a href="mailto:${env.SUPPORT_EMAIL}">${env.SUPPORT_EMAIL}</a> to get a key.</p>`), 503);
+        if (!target) return html(thanks(env.SITE_URL, env.SUPPORT_EMAIL).replace("Thank you for buying EnVault Pro", "Checkout is not open yet").replace(/<p>Your license key[^]*?<\/p>/, `<p>Email <a href="mailto:${env.SUPPORT_EMAIL}">${env.SUPPORT_EMAIL}</a> to get a key.</p>`), 503);
         const t = new URL(target);
         for (const k of ["customer_email", "customer_name", "discount_code", "reference_id", "utm_source", "utm_medium", "utm_campaign"]) {
           const v = url.searchParams.get(k); if (v) t.searchParams.set(k, v);

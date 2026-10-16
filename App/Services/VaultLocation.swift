@@ -3,7 +3,7 @@ import Foundation
 /// Remembers the vault folder across launches via a security-scoped bookmark
 /// (required under App Sandbox; also what lets us use the iCloud Drive folder).
 enum VaultLocation {
-    private static let key = "dk.dinhkhanh.evault.vaultBookmark"
+    private static let key = "dk.dinhkhanh.envault.vaultBookmark"
 
     static func save(_ url: URL) throws {
         let data = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)

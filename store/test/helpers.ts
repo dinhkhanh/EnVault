@@ -30,7 +30,7 @@ export const polarOrderPaid = (over: Record<string, unknown> = {}) => ({
     id: "ord_1", status: "paid", paid: true, total_amount: 2900, refunded_amount: 0, currency: "usd",
     billing_name: "Ada Lovelace", customer_id: "cus_1", product_id: "prod_1", subscription_id: null, checkout_id: "chk_1",
     customer: { id: "cus_1", email: "ada@example.com", name: "Ada Lovelace" },
-    product: { id: "prod_1", name: "eVault Pro", metadata: {} },
+    product: { id: "prod_1", name: "EnVault Pro", metadata: {} },
     seats: null, subscription: null, ...over,
   },
 });

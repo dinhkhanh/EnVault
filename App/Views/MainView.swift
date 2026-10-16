@@ -32,7 +32,7 @@ struct MainView: View {
                         ContentUnavailableView {
                             Label("Bring In Your .env Files", systemImage: "square.and.arrow.down.on.square")
                         } description: {
-                            Text("Point eVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
+                            Text("Point EnVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
                         } actions: {
                             Button("Import Projects from Folder…") { showImportProjects = true }.buttonStyle(.borderedProminent)
                             Button("New Empty Project") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }

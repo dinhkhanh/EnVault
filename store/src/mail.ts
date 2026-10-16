@@ -34,28 +34,28 @@ export function licenseMail(rows: LicenseRow[], ctx: MailContext, kind: "new" | 
   // Plain sentences before the key: a mail that opens with an opaque blob reads as spam to filters.
   const greeting = `Hi ${first.name},`;
   const intro = kind === "new"
-    ? `Thank you for buying eVault ${plan}. Your purchase is complete, and the key below unlocks every Pro feature on your Mac. Keep this email somewhere safe; you will need the key again if you reinstall or move to a new Mac.`
-    : `You asked us to send your eVault ${rows.length === 1 ? "license again. Here it is" : "licenses again. Here they are"}, exactly as issued.`;
+    ? `Thank you for buying EnVault ${plan}. Your purchase is complete, and the key below unlocks every Pro feature on your Mac. Keep this email somewhere safe; you will need the key again if you reinstall or move to a new Mac.`
+    : `You asked us to send your EnVault ${rows.length === 1 ? "license again. Here it is" : "licenses again. Here they are"}, exactly as issued.`;
   const steps = [
-    `1. Download eVault: ${ctx.siteUrl}`,
-    `2. Open eVault > Settings > License (or any Pro feature), paste the key, click Activate.`,
+    `1. Download EnVault: ${ctx.siteUrl}`,
+    `2. Open EnVault > Settings > License (or any Pro feature), paste the key, click Activate.`,
     `3. The key is verified on your Mac. No account, no activation server.`,
   ].join("\n");
   const text = `${greeting}\n\n${intro}\n\n${keys.join("\n\n")}\n\n${steps}\n\n` +
     (updates ? `Licensed to ${first.name} <${first.email}>, ${first.seats} seat(s). Covers all updates released until ${updates}; versions released before that date keep working forever.\n\n` : "") +
-    `Lost this email? Get your key again at ${ctx.storeUrl}/resend\nQuestions or refunds (14 days): just reply to this email.\n\nThe eVault team`;
+    `Lost this email? Get your key again at ${ctx.storeUrl}/resend\nQuestions or refunds (14 days): just reply to this email.\n\nThe EnVault team`;
   const html = `<div style="font:15px/1.5 -apple-system,Helvetica,Arial,sans-serif;color:#111;max-width:600px">
 <p>${esc(greeting)}</p>
 <p>${esc(intro)}</p>
 ${keys.map((k) => `<pre style="background:#f4f4f5;border:1px solid #e4e4e7;border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-all;font-size:13px">${esc(k)}</pre>`).join("")}
 <ol>
-<li><a href="${esc(ctx.siteUrl)}">Download eVault</a></li>
-<li>Open eVault &gt; Settings &gt; License (or any Pro feature), paste the key, click Activate.</li>
+<li><a href="${esc(ctx.siteUrl)}">Download EnVault</a></li>
+<li>Open EnVault &gt; Settings &gt; License (or any Pro feature), paste the key, click Activate.</li>
 <li>The key is verified on your Mac. No account, no activation server.</li>
 </ol>
 ${updates ? `<p style="color:#555">Licensed to ${esc(first.name)} &lt;${esc(first.email)}&gt;, ${first.seats} seat(s). Covers all updates released until <b>${updates}</b>; versions released before that date keep working forever.</p>` : ""}
 <p style="color:#555">Lost this email? <a href="${esc(ctx.storeUrl)}/resend">Get your key again</a>. Questions or refunds (14 days): just reply to this email.</p>
-<p>The eVault team</p>
+<p>The EnVault team</p>
 </div>`;
-  return { to: first.email, subject: kind === "new" ? `Your eVault ${plan} purchase` : "Your eVault license, as requested", text, html, replyTo: ctx.supportEmail };
+  return { to: first.email, subject: kind === "new" ? `Your EnVault ${plan} purchase` : "Your EnVault license, as requested", text, html, replyTo: ctx.supportEmail };
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ed25519 public key that verifies license keys issued by `evault-license`.
+/// Ed25519 public key that verifies license keys issued by `envault-license`.
 /// The matching private key lives in the vendor's keychain
 /// (item "dk.dinhkhanh.evault.license-signing"), never in the repo.
 enum LicensePublicKey {

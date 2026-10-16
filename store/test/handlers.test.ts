@@ -23,7 +23,7 @@ test("polar order.paid issues one key, emails it, and is idempotent", async () =
   assert.ok(s.mailer.sent[0].text.includes(row.key));
   // replies reach a real inbox; the sending subdomain has no MX
   assert.equal(s.mailer.sent[0].replyTo, "help@example.test");
-  assert.equal(s.mailer.sent[0].subject, "Your eVault Pro purchase");
+  assert.equal(s.mailer.sent[0].subject, "Your EnVault Pro purchase");
   // same event redelivered
   out = await applyAction(s, "polar", "evt_1", ev.type, polarAction(ev));
   assert.equal(out.body, "duplicate event");
@@ -35,7 +35,7 @@ test("polar order.paid issues one key, emails it, and is idempotent", async () =
 
 test("plan from product metadata or name; seats from order", async () => {
   const s = await testServices();
-  const ev = polarOrderPaid({ id: "ord_2", product: { name: "eVault Team", metadata: {} }, seats: 5 });
+  const ev = polarOrderPaid({ id: "ord_2", product: { name: "EnVault Team", metadata: {} }, seats: 5 });
   await applyAction(s, "polar", "evt_3", ev.type, polarAction(ev));
   assert.equal(s.store.licenses[0].plan, "team"); assert.equal(s.store.licenses[0].seats, 5);
   const ev2 = polarOrderPaid({ id: "ord_3", product: { name: "Whatever", metadata: { plan: "team" } } });
@@ -80,7 +80,7 @@ test("unhandled events are acknowledged, not errors", async () => {
 test("paddle transaction.completed looks the customer up, refund adjustment revokes", async () => {
   const s = await testServices();
   const api = { async customer(id: string) { assert.equal(id, "ctm_1"); return { email: "grace@example.com", name: "Grace Hopper" }; } };
-  const tx = { event_id: "evt_p1", event_type: "transaction.completed", data: { id: "txn_1", customer_id: "ctm_1", subscription_id: null, items: [{ quantity: 2, price: { name: "eVault Pro", custom_data: {} } }] } };
+  const tx = { event_id: "evt_p1", event_type: "transaction.completed", data: { id: "txn_1", customer_id: "ctm_1", subscription_id: null, items: [{ quantity: 2, price: { name: "EnVault Pro", custom_data: {} } }] } };
   let out = await applyAction(s, "paddle", tx.event_id, tx.event_type, await paddleAction(tx, api));
   assert.equal(out.status, 201);
   assert.equal(s.store.licenses[0].email, "grace@example.com"); assert.equal(s.store.licenses[0].name, "Grace Hopper"); assert.equal(s.store.licenses[0].seats, 2);

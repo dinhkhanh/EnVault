@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eVault — Privacy</title>
-<meta name="description" content="eVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
-<meta property="og:title" content="eVault — Privacy">
-<meta property="og:description" content="eVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
+<title>EnVault — Privacy</title>
+<meta name="description" content="EnVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
+<meta property="og:title" content="EnVault — Privacy">
+<meta property="og:description" content="EnVault has no servers, no accounts and no network access. What it stores, what the CLI talks to, and how licenses work.">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta property="og:image" content="https://dinhkhanh.github.io/eVault/icon-512.png">
+<meta property="og:image" content="https://dinhkhanh.github.io/envault/icon-512.png">
 <script>
 /* A saved manual theme applies only while it differs from the system's; one that matches is dropped. */
 try{var t=localStorage.getItem("theme"),s=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t===s)localStorage.removeItem("theme");else if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}
@@ -49,7 +49,7 @@ html{scroll-behavior:smooth}
 <span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
 </span>
-eVault
+EnVault
 </a>
 <a href="./#features" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Features</a>
 <a href="cli.html" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Command line</a>
@@ -59,7 +59,7 @@ eVault
 <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"></path></svg>
 <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
 </button>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+<a href="https://github.com/dinhkhanh/envault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
 </nav>
 </header>
 
@@ -68,25 +68,25 @@ eVault
 <p style="margin: 0 0 40px; color: var(--muted2); font-size: 15px">Last updated 15 October 2026</p>
 
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; margin-bottom: 48px">
-<p style="margin: 0; font-size: 18px">The short version: your secrets are encrypted on your Mac, eVault has no servers and no accounts, and the app cannot reach the network. We can’t read your vault and can’t reset your passphrase.</p>
+<p style="margin: 0; font-size: 18px">The short version: your secrets are encrypted on your Mac, EnVault has no servers and no accounts, and the app cannot reach the network. We can’t read your vault and can’t reset your passphrase.</p>
 </div>
 
-<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">What eVault stores</h2>
-<p style="margin: 0 0 36px; color: var(--text2)">Your secrets are encrypted on your Mac with a key derived from your passphrase. They are written only to the vault folder you choose or, in iCloud mode, to your own private CloudKit database. If you ask eVault to keep an env file in sync with a project folder, it writes that file there, readable only by your user account, and nowhere else.</p>
+<h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">What EnVault stores</h2>
+<p style="margin: 0 0 36px; color: var(--text2)">Your secrets are encrypted on your Mac with a key derived from your passphrase. They are written only to the vault folder you choose or, in iCloud mode, to your own private CloudKit database. If you ask EnVault to keep an env file in sync with a project folder, it writes that file there, readable only by your user account, and nowhere else.</p>
 
 <h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Network access</h2>
 <p style="margin: 0 0 36px; color: var(--text2)">The app is sandboxed without a network entitlement. Sync is done by macOS (iCloud Drive or CloudKit). Update checks are done by the Sparkle framework’s helper service, which fetches a signed update feed from GitHub and sends no personal data.</p>
 
 <h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">The command-line tool</h2>
-<p style="margin: 0 0 14px; color: var(--text2)">When you run <code>evault</code> while the app is open, the two talk over a local macOS channel on your Mac; nothing goes over the network. The app hands the vault key to the command only after you approve in a Touch ID or password prompt. You can turn this off in Settings › Command Line.</p>
-<p style="margin: 0 0 36px; color: var(--text2)"><code>evault</code> contacts other services only when you ask it to, through their own command-line tools and your own logins: Vercel, Cloudflare and GitHub for <code>deploy</code>; Doppler and 1Password for <code>import</code>.</p>
+<p style="margin: 0 0 14px; color: var(--text2)">When you run <code>envault</code> while the app is open, the two talk over a local macOS channel on your Mac; nothing goes over the network. The app hands the vault key to the command only after you approve in a Touch ID or password prompt. You can turn this off in Settings › Command Line.</p>
+<p style="margin: 0 0 36px; color: var(--text2)"><code>envault</code> contacts other services only when you ask it to, through their own command-line tools and your own logins: Vercel, Cloudflare and GitHub for <code>deploy</code>; Doppler and 1Password for <code>import</code>.</p>
 
 <h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Licenses and purchases</h2>
 <p style="margin: 0 0 14px; color: var(--text2)">License keys are checked offline against a public key built into the app. No activation server, no usage tracking. The key contains the name and email entered at purchase so you can recognise it, and is stored only on your Mac.</p>
 <p style="margin: 0 0 36px; color: var(--text2)">Purchases go through <a href="https://polar.sh">Polar</a>, the merchant of record, which handles payment details, invoices and VAT under its own privacy policy. Our store keeps the name, email, order id and issued key so we can re-send or revoke a key after a refund. Refunded keys are listed by id, not by name or email, in later app versions so they stop working.</p>
 
 <h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Analytics and crash reports</h2>
-<p style="margin: 0 0 36px; color: var(--text2)">eVault contains no analytics SDK. Crash reports go through Apple’s standard crash reporter, under your macOS settings; we see them only if you share them with Apple and Apple shares them with developers.</p>
+<p style="margin: 0 0 36px; color: var(--text2)">EnVault contains no analytics SDK. Crash reports go through Apple’s standard crash reporter, under your macOS settings; we see them only if you share them with Apple and Apple shares them with developers.</p>
 
 <h2 style="margin: 0 0 10px; font-size: 24px; letter-spacing: -.015em">Contact</h2>
 <p style="margin: 0; color: var(--text2)"><a href="mailto:tran@dinhkhanh.dk">tran@dinhkhanh.dk</a></p>
@@ -94,10 +94,10 @@ eVault
 
 <footer style="border-top: 1px solid var(--line); background: var(--surface)">
 <div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: var(--muted)">
-<span style="font-weight: 700; color: var(--ink); margin-right: auto">eVault</span>
+<span style="font-weight: 700; color: var(--ink); margin-right: auto">EnVault</span>
 <a href="./">Home</a>
 <a href="cli.html">Command line</a>
-<a href="https://github.com/dinhkhanh/eVault/issues">Support</a>
+<a href="https://github.com/dinhkhanh/envault/issues">Support</a>
 <span>© 2026 Dinh Khanh</span>
 </div>
 </footer>

@@ -4,7 +4,7 @@ import os
 
 /// Receives CloudKit silent pushes and forwards them to the model.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let log = Logger(subsystem: "dk.dinhkhanh.evault", category: "push")
+    private static let log = Logger(subsystem: "dk.dinhkhanh.envault", category: "push")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.registerForRemoteNotifications()
@@ -24,5 +24,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension Notification.Name {
-    static let cloudKitPush = Notification.Name("evault.cloudKitPush")
+    static let cloudKitPush = Notification.Name("envault.cloudKitPush")
 }

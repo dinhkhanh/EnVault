@@ -102,7 +102,7 @@ struct QuickCopyView: View {
             if model.phase == .unlocked, !licenses.allows(.menuBarQuickCopy) {
                 VStack(spacing: 8) {
                     Image(systemName: "sparkles").font(.title)
-                    Text("Quick copy is part of eVault Pro.").foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text("Quick copy is part of EnVault Pro.").foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button("Learn More") { licenses.upgradePrompt = .menuBarQuickCopy; openMain() }.buttonStyle(.borderedProminent)
                 }
                 .padding(24).frame(maxWidth: .infinity)
@@ -169,7 +169,7 @@ struct QuickCopyView: View {
                 Button("Unlock with Touch ID") { Task { await model.unlockWithBiometrics() } }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             } else {
-                Button("Open eVault") { openMain() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button("Open EnVault") { openMain() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }
         .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)

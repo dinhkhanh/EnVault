@@ -3,7 +3,7 @@ import EnvKit
 import LicenseKit
 
 /// "Import Projects from Folder…": pick a workspace (say ~/Projects), see every
-/// project folder with .env files in it, import the ones you tick. One eVault
+/// project folder with .env files in it, import the ones you tick. One EnVault
 /// project per folder; templates like .env.example are left out.
 struct ImportProjectsSheet: View {
     @Environment(AppModel.self) private var model
@@ -26,7 +26,7 @@ struct ImportProjectsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import Projects from a Folder").font(.headline)
-            Text("Choose the folder that holds your projects. eVault finds the .env files in each project folder (templates like .env.example are skipped) and imports them as one project per folder.")
+            Text("Choose the folder that holds your projects. EnVault finds the .env files in each project folder (templates like .env.example are skipped) and imports them as one project per folder.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button(root == nil ? "Choose Folder…" : "Choose Another…") { pick() }

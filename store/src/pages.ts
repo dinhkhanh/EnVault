@@ -12,11 +12,11 @@ h1{font-size:24px;margin:0 0 8px}p{color:var(--muted)}
 input{width:100%;box-sizing:border-box;padding:10px 12px;font-size:16px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}
 button{margin-top:12px;padding:10px 16px;font-size:16px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
 a{color:var(--accent)}
-</style></head><body><main>${body}<p style="margin-top:40px;font-size:14px"><a href="${esc(siteUrl)}">eVault</a></p></main></body></html>`;
+</style></head><body><main>${body}<p style="margin-top:40px;font-size:14px"><a href="${esc(siteUrl)}">EnVault</a></p></main></body></html>`;
 }
 
 export function resendForm(siteUrl: string): string {
-  return page("Get your eVault license key", `
+  return page("Get your EnVault license key", `
 <h1>Lost your license key?</h1>
 <p>Enter the email you used at checkout. If it has a license, the key is on its way.</p>
 <form method="post" action="/resend">
@@ -28,12 +28,12 @@ export function resendForm(siteUrl: string): string {
 export function resendDone(siteUrl: string, supportEmail: string): string {
   return page("Check your inbox", `
 <h1>Check your inbox</h1>
-<p>If that address has an eVault license, the key has been sent. Nothing after a few minutes? Check spam, then write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
+<p>If that address has an EnVault license, the key has been sent. Nothing after a few minutes? Check spam, then write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
 }
 
 export function thanks(siteUrl: string, supportEmail: string): string {
   return page("Thank you", `
-<h1>Thank you for buying eVault Pro</h1>
-<p>Your license key is on its way by email. Paste it in eVault &gt; Settings &gt; License.</p>
-<p>It comes from evault@updates.dinhkhanh.dk with the subject &ldquo;Your eVault Pro purchase&rdquo;. Nothing after a few minutes? Check your spam folder (and mark it &ldquo;Not spam&rdquo;), <a href="/resend">resend it</a>, or write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
+<h1>Thank you for buying EnVault Pro</h1>
+<p>Your license key is on its way by email. Paste it in EnVault &gt; Settings &gt; License.</p>
+<p>It comes from envault@updates.dinhkhanh.dk with the subject &ldquo;Your EnVault Pro purchase&rdquo;. Nothing after a few minutes? Check your spam folder (and mark it &ldquo;Not spam&rdquo;), <a href="/resend">resend it</a>, or write to <a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>.</p>`, siteUrl);
 }

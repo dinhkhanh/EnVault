@@ -2,7 +2,7 @@
 # Archive, export with Developer ID, notarize, staple; zip + dmg + SHA256SUMS + appcast.
 #
 # One-time setup:
-#   1. Config/Signing.xcconfig with EVAULT_TEAM_ID
+#   1. Config/Signing.xcconfig with ENVAULT_TEAM_ID
 #   2. xcrun notarytool store-credentials evault-notary --apple-id you@example.com --team-id TEAMID
 #   3. In CloudKit Console, deploy the Development schema to Production
 #      (Developer ID builds use the Production container environment).
@@ -12,16 +12,16 @@ cd "$(dirname "$0")/.."
 scripts/sync-revocations.sh
 VERSION=$(sed -n 's/.*MARKETING_VERSION: \(.*\)/\1/p' project.yml | head -1)
 # The bundled CLI reports its own version; keep it in step with the app.
-grep -q "let evaultVersion = \"$VERSION\"" Packages/eVaultKit/Sources/evault/CLISupport.swift \
-  || { echo "evaultVersion in Packages/eVaultKit/Sources/evault/CLISupport.swift is not $VERSION"; exit 1; }
+grep -q "let envaultVersion = \"$VERSION\"" Packages/EnVaultKit/Sources/envault/CLISupport.swift \
+  || { echo "envaultVersion in Packages/EnVaultKit/Sources/envault/CLISupport.swift is not $VERSION"; exit 1; }
 OUT=dist
 rm -rf "$OUT" && mkdir -p "$OUT"
 
-xcodebuild -project eVault.xcodeproj -scheme eVault-iCloud -configuration Release-iCloud \
-  -archivePath "$OUT/eVault.xcarchive" -allowProvisioningUpdates archive | tail -3
-xcodebuild -exportArchive -archivePath "$OUT/eVault.xcarchive" \
+xcodebuild -project EnVault.xcodeproj -scheme EnVault-iCloud -configuration Release-iCloud \
+  -archivePath "$OUT/EnVault.xcarchive" -allowProvisioningUpdates archive | tail -3
+xcodebuild -exportArchive -archivePath "$OUT/EnVault.xcarchive" \
   -exportOptionsPlist Config/ExportOptions.plist -exportPath "$OUT/export" -allowProvisioningUpdates | tail -3
-codesign --verify --deep --strict "$OUT/export/eVault.app"
+codesign --verify --deep --strict "$OUT/export/EnVault.app"
 
 # notarytool can exit 0 when Apple rejects the upload; check the status line.
 notarize() {
@@ -30,32 +30,35 @@ notarize() {
     || { echo "notarization failed for $1 (see: xcrun notarytool log <id> --keychain-profile evault-notary)"; exit 1; }
 }
 
-ditto -c -k --keepParent "$OUT/export/eVault.app" "$OUT/eVault-$VERSION.zip"
-notarize "$OUT/eVault-$VERSION.zip"
-xcrun stapler staple "$OUT/export/eVault.app"
-ditto -c -k --keepParent "$OUT/export/eVault.app" "$OUT/eVault-$VERSION.zip"
+ditto -c -k --keepParent "$OUT/export/EnVault.app" "$OUT/EnVault-$VERSION.zip"
+notarize "$OUT/EnVault-$VERSION.zip"
+xcrun stapler staple "$OUT/export/EnVault.app"
+ditto -c -k --keepParent "$OUT/export/EnVault.app" "$OUT/EnVault-$VERSION.zip"
 # Disk image with the stapled app; signed and notarized on its own so Gatekeeper accepts the dmg too.
-mkdir -p "$OUT/dmg" && cp -R "$OUT/export/eVault.app" "$OUT/dmg/" && ln -s /Applications "$OUT/dmg/Applications"
-hdiutil create -volname "eVault $VERSION" -srcfolder "$OUT/dmg" -ov -format UDZO "$OUT/eVault-$VERSION.dmg" >/dev/null
+mkdir -p "$OUT/dmg" && cp -R "$OUT/export/EnVault.app" "$OUT/dmg/" && ln -s /Applications "$OUT/dmg/Applications"
+hdiutil create -volname "EnVault $VERSION" -srcfolder "$OUT/dmg" -ov -format UDZO "$OUT/EnVault-$VERSION.dmg" >/dev/null
 rm -rf "$OUT/dmg"
-IDENTITY=$(codesign -dvv "$OUT/export/eVault.app" 2>&1 | sed -n 's/^Authority=\(Developer ID Application:.*\)/\1/p' | head -1)
-codesign --sign "$IDENTITY" --timestamp "$OUT/eVault-$VERSION.dmg"
-notarize "$OUT/eVault-$VERSION.dmg"
-xcrun stapler staple "$OUT/eVault-$VERSION.dmg"
+IDENTITY=$(codesign -dvv "$OUT/export/EnVault.app" 2>&1 | sed -n 's/^Authority=\(Developer ID Application:.*\)/\1/p' | head -1)
+codesign --sign "$IDENTITY" --timestamp "$OUT/EnVault-$VERSION.dmg"
+notarize "$OUT/EnVault-$VERSION.dmg"
+xcrun stapler staple "$OUT/EnVault-$VERSION.dmg"
 # Gatekeeper's verdict on what users will download.
-spctl --assess --type execute -v "$OUT/export/eVault.app"
-spctl --assess --type open --context context:primary-signature -v "$OUT/eVault-$VERSION.dmg"
-(cd "$OUT" && shasum -a 256 eVault-$VERSION.dmg eVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
+spctl --assess --type execute -v "$OUT/export/EnVault.app"
+spctl --assess --type open --context context:primary-signature -v "$OUT/EnVault-$VERSION.dmg"
+(cd "$OUT" && shasum -a 256 EnVault-$VERSION.dmg EnVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
 # Sparkle appcast: signs the zip with the EdDSA key from the keychain.
 GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
 if [ -n "$GA" ]; then
   # Sparkle wants exactly one archive per version: feed it the zip only.
   rm -rf "$OUT/appcast-src" && mkdir -p "$OUT/appcast-src"
-  cp "$OUT/eVault-$VERSION.zip" "$OUT/appcast-src/"
-  "$GA" --download-url-prefix "https://github.com/dinhkhanh/eVault/releases/download/v$VERSION/" -o "$OUT/appcast.xml" "$OUT/appcast-src" >/dev/null
+  cp "$OUT/EnVault-$VERSION.zip" "$OUT/appcast-src/"
+  "$GA" --download-url-prefix "https://github.com/dinhkhanh/envault/releases/download/v$VERSION/" -o "$OUT/appcast.xml" "$OUT/appcast-src" >/dev/null
+  # eVault (builds 17 and below) has another bundle id, so Sparkle can't install EnVault over it;
+  # for those builds the update is informational and links to the download page.
+  perl -0pi -e 's{(\s*)</item>}{$1    <sparkle:informationalUpdate><sparkle:belowVersion>18</sparkle:belowVersion></sparkle:informationalUpdate>$1    <link>https://dinhkhanh.github.io/envault/</link>$1</item>}' "$OUT/appcast.xml"
   rm -rf "$OUT/appcast-src"
   echo "appcast: $OUT/appcast.xml"
 else
   echo "warning: generate_appcast not found; resolve packages first (make gen && xcodebuild -resolvePackageDependencies)"
 fi
-echo "Done: $OUT/eVault-$VERSION.zip and .dmg (Developer ID signed, notarized)"
+echo "Done: $OUT/EnVault-$VERSION.zip and .dmg (Developer ID signed, notarized)"

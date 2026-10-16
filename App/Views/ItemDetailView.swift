@@ -21,7 +21,7 @@ struct ItemDetailView: View {
             case .note(let md):
                 NoteView(item: item, markdown: md)
             case .unknown(let kind, _):
-                ContentUnavailableView("Unsupported item", systemImage: "questionmark.square.dashed", description: Text("This “\(kind)” item was created by a newer eVault. Its data is preserved."))
+                ContentUnavailableView("Unsupported item", systemImage: "questionmark.square.dashed", description: Text("This “\(kind)” item was created by a newer EnVault. Its data is preserved."))
             }
         }
         .navigationTitle(item.name)
@@ -122,11 +122,11 @@ struct EnvFileView: View {
                     Button("Copy as JSON") { ClipboardService.shared.copy(EnvExport.json(doc)) }
                     Button("Copy as .env.example") { ClipboardService.shared.copy(EnvHygiene.example(from: doc), concealed: false) }
                     Divider()
-                    Button("Copy `evault run` Command") {
-                        ClipboardService.shared.copy("evault run \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name)) -- ", concealed: false)
+                    Button("Copy `envault run` Command") {
+                        ClipboardService.shared.copy("envault run \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name)) -- ", concealed: false)
                     }
-                    Button("Copy `evault pull` Command") {
-                        ClipboardService.shared.copy("evault pull \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name))", concealed: false)
+                    Button("Copy `envault pull` Command") {
+                        ClipboardService.shared.copy("envault pull \(EnvQuoting.shell(projectName)) \(EnvQuoting.shell(item.name))", concealed: false)
                     }
                     Divider()
                     Button("Write File to Folder…") { writeToFolder() }
@@ -199,7 +199,7 @@ struct EnvFileView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Keep in Sync"
-        panel.message = "Choose the project folder. eVault writes “\(item.name)” there now and rewrites it whenever it changes (here, on another Mac, or from the CLI). Edits made to the file on disk are never overwritten without asking."
+        panel.message = "Choose the project folder. EnVault writes “\(item.name)” there now and rewrites it whenever it changes (here, on another Mac, or from the CLI). Edits made to the file on disk are never overwritten without asking."
         guard panel.runModal() == .OK, let dir = panel.url else { return }
         do {
             try model.fileLinks.add(folder: dir, fileName: item.name, item: item, vaultId: vaultId)

@@ -1,4 +1,4 @@
-# eVault — Plan & Solution
+# EnVault — Plan & Solution
 
 A native macOS app for developers to store `.env` files and other secrets in an
 encrypted local vault, and get them back on any of their Macs via iCloud (or any
@@ -40,7 +40,7 @@ lists what is still open). Current state, blockers and next actions:
 | No xcodegen/tuist installed | Need either `brew install xcodegen` or a hand-built `.xcodeproj`. Recommend XcodeGen (reproducible `project.yml` in git). |
 
 **Decision:** v1 syncs through an **encrypted file layout in a user-chosen
-folder** (default: an `eVault` folder inside iCloud Drive). This works with
+folder** (default: an `EnVault` folder inside iCloud Drive). This works with
 iCloud Drive, Dropbox, Syncthing, a git repo, or a USB stick, needs no
 entitlements, and is zero-knowledge by construction. CloudKit becomes a second
 `SyncBackend` implementation once a developer account exists.
@@ -51,12 +51,12 @@ entitlements, and is zero-knowledge by construction. CloudKit becomes a second
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  eVault.app (SwiftUI, macOS 14+)                                 │
+│  EnVault.app (SwiftUI, macOS 14+)                                │
 │  ┌──────────────┐ ┌────────────────┐ ┌─────────────────────────┐ │
 │  │ Vault UI     │ │ Menu bar extra │ │ Tools (plugin registry) │ │
 │  └──────┬───────┘ └───────┬────────┘ └───────────┬─────────────┘ │
 │         └─────────────────┴──────────────────────┘               │
-│                           │  AppCore (view models, services)      │
+│                           │  AppCore (view models, services)     │
 ├───────────────────────────┼──────────────────────────────────────┤
 │  Swift packages (no UI, fully unit-tested)                       │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────┐ ┌─────────────┐  │
@@ -66,7 +66,7 @@ entitlements, and is zero-knowledge by construction. CloudKit becomes a second
 │  │ store format │ │ FolderBackend│ │ diff     │ │             │  │
 │  └──────────────┘ └──────────────┘ └──────────┘ └─────────────┘  │
 ├──────────────────────────────────────────────────────────────────┤
-│  evault (CLI, phase 4) — links VaultCore + EnvKit                 │
+│  envault (CLI, phase 4) — links VaultCore + EnvKit               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -146,7 +146,7 @@ The vault is a directory. The same directory is both the local store and the
 synced store; the "sync backend" is just where that directory lives.
 
 ```
-eVault/                          ← the synced folder
+EnVault/                          ← the synced folder
   vault.json                     ← header: vaultId, formatVersion, kdf params,
                                    salt, wrapped VK. Public-safe (ciphertext only).
   projects/
@@ -250,7 +250,7 @@ public protocol Tool: Identifiable, Sendable {
 ## 9. Future (designed for, not built)
 
 - **CloudKit backend** when a developer account is available.
-- **CLI** `evault` (`evault pull my-saas .env.local`, `evault run -- npm dev`
+- **CLI** `envault` (`envault pull my-saas .env.local`, `envault run -- npm dev`
   injecting env). Reads the same folder; gets VK from Keychain via a shared
   access group or prompts for passphrase.
 - **Sharing a project**: per-project key wrapped for each recipient's public
@@ -263,10 +263,10 @@ public protocol Tool: Identifiable, Sendable {
 ## 10. Project layout & tooling
 
 ```
-eVault/
-  project.yml                 ← XcodeGen spec → eVault.xcodeproj (generated, git-ignored)
+EnVault/
+  project.yml                 ← XcodeGen spec → EnVault.xcodeproj (generated, git-ignored)
   App/                        ← SwiftUI app target
-    eVaultApp.swift, Views/, ViewModels/, Tools/, Resources/, eVault.entitlements
+    EnVaultApp.swift, Views/, ViewModels/, Tools/, Resources/, EnVault.entitlements
   Packages/
     VaultCore/   (Sources, Tests)
     VaultSync/   (Sources, Tests)
@@ -294,13 +294,13 @@ eVault/
 | 3 | App: create/unlock, Touch ID, projects, items, env editor, import/export, auto-lock, clipboard hygiene | done |
 | 4 | Folder sync over iCloud Drive, FSEvents watcher, revision merge, history/restore/compact UI | done |
 | 5 | Menu bar extra, `ToolRegistry` + 5 starter tools (env diff, random secret, UUID/ULID, JWT, base64/hex) | done |
-| 6 | `evault` CLI (`ls`, `get`, `pull`, `push`, `run`, `history`, `init`) | done |
+| 6 | `envault` CLI (`ls`, `get`, `pull`, `push`, `run`, `history`, `init`) | done |
 | 7 | CloudKit backend (`CloudMirror` + `CloudKitTransport`), signed `*-iCloud` configurations, push notifications, app icon, release/notarize script | done; CloudKit path verified against an in-memory transport and compiled with the entitled configuration, not yet run against a real iCloud account |
 | 8 | Recovery key, licensing, Sparkle, hygiene tools, shell, deploy, site (§14) | done |
 | 9 | Store Worker: Polar checkout, webhooks, email, refunds, revocations (§15) | built and tested locally; deployment waits on the Polar account |
 
 One deviation from §10: the four packages live as targets of a single
-SwiftPM package `Packages/eVaultKit` instead of four package directories.
+SwiftPM package `Packages/EnVaultKit` instead of four package directories.
 
 ---
 
@@ -309,11 +309,11 @@ SwiftPM package `Packages/eVaultKit` instead of four package directories.
 | Piece | What exists |
 |---|---|
 | Recovery key | Second wrap of the vault key under a random 157-bit key, shown once at creation, usable from the lock screen; forces a new passphrase afterwards. |
-| Licensing | `LicenseKit`: Ed25519-signed offline keys (`EVL1.payload.sig`), `Entitlements` with the Free/Pro/Team split, `evault-license` issuing tool, upgrade sheet and License settings. |
+| Licensing | `LicenseKit`: Ed25519-signed offline keys (`EVL1.payload.sig`), `Entitlements` with the Free/Pro/Team split, `envault-license` issuing tool, upgrade sheet and License settings. |
 | Updates | Sparkle 2 with XPC services (no network entitlement), appcast generated by the release scripts and attached to GitHub releases. |
-| Hygiene | `.env.example` generation, per-key age with rotation hint after 90 days, local secret scanner (app tool and `evault scan`). |
-| Shell | `evault unlock/lock` key cache, `evault link`, `evault hook zsh|bash|fish` loading linked env files on `cd`. |
-| Deploy | `evault deploy vercel|cloudflare|github`, shelling out to the vendors' CLIs. |
+| Hygiene | `.env.example` generation, per-key age with rotation hint after 90 days, local secret scanner (app tool and `envault scan`). |
+| Shell | `envault unlock/lock` key cache, `envault link`, `envault hook zsh|bash|fish` loading linked env files on `cd`. |
+| Deploy | `envault deploy vercel|cloudflare|github`, shelling out to the vendors' CLIs. |
 | Site | `docs/index.html` landing page with pricing, `docs/privacy.html`. |
 
 Deliberately not added: analytics or crash SDKs. Both need a network
@@ -329,9 +329,9 @@ Stripe acquisition, Vietnam bank payouts unconfirmed.
 
 | Piece | What exists |
 |---|---|
-| Store Worker | `store/`: Cloudflare Worker + D1. `/buy` redirect, Polar and Paddle webhooks (signature-verified, idempotent per event and per order), Ed25519 signing in WebCrypto compatible with `LicenseKit`, Resend email, `/resend` self-service, `/revocations.json`, bearer-token admin API. 12 unit tests plus a local end-to-end run against `wrangler dev`; keys cross-verified with `evault-license verify`. |
+| Store Worker | `store/`: Cloudflare Worker + D1. `/buy` redirect, Polar and Paddle webhooks (signature-verified, idempotent per event and per order), Ed25519 signing in WebCrypto compatible with `LicenseKit`, Resend email, `/resend` self-service, `/revocations.json`, bearer-token admin API. 12 unit tests plus a local end-to-end run against `wrangler dev`; keys cross-verified with `envault-license verify`. |
 | Revocation | No activation server, so refunds revoke in D1 and the id list is compiled into the next release (`App/RevokedLicenses.swift`, `scripts/sync-revocations.sh`, run by both release scripts). `LicenseVerifier` throws `.revoked`. |
-| Update window | Keys carry `updatesUntil` (12 months). The app compares it with its `EVReleaseDate` (Info.plist, from `EVAULT_RELEASE_DATE` in `project.yml`): a build released after the window runs as Free with a renew notice; older builds keep working. |
+| Update window | Keys carry `updatesUntil` (12 months). The app compares it with its `EVReleaseDate` (Info.plist, from `ENVAULT_RELEASE_DATE` in `project.yml`): a build released after the window runs as Free with a renew notice; older builds keep working. |
 | Ops | `scripts/store.sh list|issue|revoke|resend`; the keychain-only `issue-license.sh` stays as the offline fallback. |
 | Site/app | Buy button → `/buy`; "Lost your key?" → `/resend`; app purchase link fixed to the live site; License settings show the renew notice and the resend link. |
 
@@ -342,7 +342,7 @@ payouts is the seller's job; nothing in the pipeline depends on it.
 
 - The store Worker (`store/`) is written and tested locally but not deployed:
   needs a Polar account (payout country Vietnam), the D1 database, secrets and
-  the custom domain `store.evault.dinhkhanh.dk` (§15).
+  the custom domain `store.envault.dinhkhanh.dk` (§15).
 - Touch ID on ad-hoc signed builds uses the legacy keychain fallback (§5
   describes the Developer ID path).
 - The CLI gets the key from the running app (Mach-port agent, Touch ID per
@@ -367,4 +367,4 @@ payouts is the seller's job; nothing in the pipeline depends on it.
 1. Sync v1 = encrypted folder in iCloud Drive; CloudKit as a later backend.
 2. XcodeGen generates the `.xcodeproj` from the checked-in `project.yml`.
 3. Minimum macOS 14 (lowered from 15 in 0.3.4; 13 would need the state layer moved off @Observable).
-4. App name eVault, bundle id `dk.dinhkhanh.evault`.
+4. App name EnVault, bundle id `dk.dinhkhanh.envault`.

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>eVault</string>
+	<string>EnVault</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>eVault</string>
+	<string>EnVault</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -21,13 +21,13 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>EVReleaseDate</key>
-	<string>$(EVAULT_RELEASE_DATE)</string>
+	<string>$(ENVAULT_RELEASE_DATE)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>eVault uses Touch ID to unlock your vault.</string>
+	<string>EnVault uses Touch ID to unlock your vault.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Dinh Khanh</string>
 	<key>SUEnableDownloaderService</key>
@@ -35,7 +35,7 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/dinhkhanh/envault/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>SRLHhBqtlIsBvuqpk/ONBFaAS629idQVYwoebgfGd/E=</string>
 	<key>SUScheduledCheckInterval</key>

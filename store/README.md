@@ -1,4 +1,4 @@
-# eVault license store
+# EnVault license store
 
 A Cloudflare Worker that turns a paid order into a license key and emails it,
 revokes keys on refund, and lets customers re-send their key. Polar is the
@@ -49,16 +49,16 @@ and an old key cannot unlock versions released after its window.
    - `RESEND_API_KEY`: from resend.com after verifying the sending domain used in `FROM_EMAIL`
      (add the DNS records Resend shows for `dinhkhanh.dk`, or change `FROM_EMAIL` to a verified domain).
    - `POLAR_WEBHOOK_SECRET`: see step 4.
-3. `npm run deploy`. The custom domain in `wrangler.toml` (`store.evault.dinhkhanh.dk`) is
+3. `npm run deploy`. The custom domain in `wrangler.toml` (`store.envault.dinhkhanh.dk`) is
    attached automatically because the zone is on Cloudflare; until then the printed
    `*.workers.dev` URL works and the site/app links need that host instead.
-4. **Polar** (polar.sh, organization for eVault, payout country Vietnam):
-   - Products → New: "eVault Pro", one-time, $29. Metadata `plan = pro`.
-     (Later: "eVault Team", subscription with seats, metadata `plan = team`.)
-   - Checkout Links → New Link for the product. Success URL `https://store.evault.dinhkhanh.dk/thanks`,
-     Return URL `https://dinhkhanh.github.io/eVault/#pricing`. Paste the link into `wrangler.toml`
+4. **Polar** (polar.sh, organization for EnVault, payout country Vietnam):
+   - Products → New: "EnVault Pro", one-time, $29. Metadata `plan = pro`.
+     (Later: "EnVault Team", subscription with seats, metadata `plan = team`.)
+   - Checkout Links → New Link for the product. Success URL `https://store.envault.dinhkhanh.dk/thanks`,
+     Return URL `https://dinhkhanh.github.io/envault/#pricing`. Paste the link into `wrangler.toml`
      as `POLAR_CHECKOUT_URL` and redeploy.
-   - Settings → Webhooks → Add endpoint: `https://store.evault.dinhkhanh.dk/webhooks/polar`,
+   - Settings → Webhooks → Add endpoint: `https://store.envault.dinhkhanh.dk/webhooks/polar`,
      format Raw, generate a secret → `wrangler secret put POLAR_WEBHOOK_SECRET`.
      Events: `order.paid`, `order.refunded`, `subscription.revoked`.
    - Test in the Polar **sandbox** first (sandbox.polar.sh has its own org, products, links and
@@ -70,7 +70,7 @@ and an old key cannot unlock versions released after its window.
 
 If Polar rejects the payout account: create the product and a checkout in Paddle, set
 `CHECKOUT_PROVIDER = "paddle"`, `PADDLE_CHECKOUT_URL`, secrets `PADDLE_WEBHOOK_SECRET`
-(notification destination `https://store.evault.dinhkhanh.dk/webhooks/paddle`, events
+(notification destination `https://store.envault.dinhkhanh.dk/webhooks/paddle`, events
 `transaction.completed`, `adjustment.updated`, `subscription.canceled`) and `PADDLE_API_KEY`
 (read access to customers), `PADDLE_SANDBOX = "true"` while testing. Nothing else changes.
 
@@ -84,7 +84,7 @@ If Polar rejects the payout account: create the product and a checkout in Paddle
   deliver it yourself). Lands in the same ledger.
 - **Revoke by hand**: `scripts/store.sh revoke --email E --reason "chargeback"`.
 - **Key rotation**: never rotate `LICENSE_PRIVATE_KEY` casually; every issued key would stop
-  verifying. If it leaks, generate a new pair (`evault-license keygen`), ship the new public
+  verifying. If it leaks, generate a new pair (`envault-license keygen`), ship the new public
   key in the app, re-issue keys to all active customers from the ledger.
 - **Offline fallback**: `scripts/issue-license.sh` still signs with the keychain key and writes
   the local `licenses.jsonl`; use it only when the store is down.

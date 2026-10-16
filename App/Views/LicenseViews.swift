@@ -11,9 +11,9 @@ struct UpgradeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("eVault Pro", systemImage: "sparkles").font(.title2.bold())
+            Label("EnVault Pro", systemImage: "sparkles").font(.title2.bold())
             if let f = feature {
-                Text("“\(f.title)” is part of eVault Pro.").foregroundStyle(.secondary)
+                Text("“\(f.title)” is part of EnVault Pro.").foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Feature.allCases.filter { $0.minimumPlan == .pro }, id: \.self) { f in
@@ -59,14 +59,14 @@ struct LicenseSettings: View {
                     if let x = lic.expiresAt { LabeledContent("Expires") { Text(x, format: .dateTime.day().month().year()) } }
                     if let n = licenses.updatesNotice {
                         Text(n).font(.callout).foregroundStyle(.orange)
-                        Link("Renew eVault Pro…", destination: LicenseManager.purchaseURL)
+                        Link("Renew EnVault Pro…", destination: LicenseManager.purchaseURL)
                     }
                     Button("Remove License") { licenses.remove() }
                 } else {
                     LabeledContent("Plan") { Text(licenses.plan == .free ? "Free" : licenses.plan.rawValue.capitalized) }
                     Text("Free includes \(Entitlements.freeProjectLimit) projects, folder sync, the editor, history and Touch ID.")
                         .font(.callout).foregroundStyle(.secondary)
-                    Link("Get eVault Pro…", destination: LicenseManager.purchaseURL)
+                    Link("Get EnVault Pro…", destination: LicenseManager.purchaseURL)
                 }
             }
             if licenses.license == nil {

@@ -27,5 +27,5 @@ export function planFrom(metaPlan: unknown, productName: unknown): Plan {
 
 export function nameFrom(...candidates: unknown[]): string {
   for (const c of candidates) if (typeof c === "string" && c.trim()) return c.trim();
-  return "eVault user";
+  return "EnVault user";
 }

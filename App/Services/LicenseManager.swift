@@ -6,9 +6,9 @@ import LicenseKit
 @MainActor
 @Observable
 final class LicenseManager {
-    private static let defaultsKey = "dk.dinhkhanh.evault.licenseKey"
-    static let purchaseURL = URL(string: "https://dinhkhanh.github.io/eVault/#pricing")!
-    static let resendKeyURL = URL(string: "https://store.evault.dinhkhanh.dk/resend")!
+    private static let defaultsKey = "dk.dinhkhanh.envault.licenseKey"
+    static let purchaseURL = URL(string: "https://dinhkhanh.github.io/envault/#pricing")!
+    static let resendKeyURL = URL(string: "https://store.envault.dinhkhanh.dk/resend")!
 
     private(set) var entitlements: Entitlements = .free
     private(set) var licenseKey: String?

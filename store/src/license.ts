@@ -1,4 +1,4 @@
-// License signing compatible with Packages/eVaultKit/Sources/LicenseKit (EVL1.payload.sig).
+// License signing compatible with Packages/EnVaultKit/Sources/LicenseKit (EVL1.payload.sig).
 // Ed25519 via WebCrypto; works in Cloudflare Workers and Node 20+.
 
 export type Plan = "pro" | "team";

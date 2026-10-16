@@ -13,7 +13,7 @@ struct MenuBarView: View {
                 .frame(height: model.phase == .unlocked ? 340 : nil)
             Divider()
             HStack {
-                Button("Open eVault") { openMain() }
+                Button("Open EnVault") { openMain() }
                 if let preset = HotKeyService.Preset(rawValue: hotKey), preset != .off {
                     Text(preset.title).font(.caption).foregroundStyle(.tertiary).help("Opens quick copy from anywhere")
                 }

@@ -7,7 +7,7 @@ struct WelcomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(LicenseManager.self) private var licenses
 
-    enum Flow: Equatable { case menu, createFolder(URL), createICloud, openICloud }
+    enum Flow: Equatable { case menu, createFolder(URL), createICloud, openICloud, moveFromEVault }
     @State private var flow: Flow = .menu
     @State private var passphrase = ""
     @State private var confirm = ""
@@ -20,7 +20,7 @@ struct WelcomeView: View {
             Image(systemName: "lock.shield")
                 .font(.system(size: 56))
                 .foregroundStyle(.tint)
-            Text("eVault").font(.largeTitle.bold())
+            Text("EnVault").font(.largeTitle.bold())
             Text("Encrypted .env and secret storage for all your Macs.\nYour passphrase never leaves this Mac; only ciphertext is ever synced.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -30,7 +30,8 @@ struct WelcomeView: View {
             case .menu: menu
             case .createFolder(let url): createForm(folder: url)
             case .createICloud: createForm(folder: nil)
-            case .openICloud: openICloudList
+            case .openICloud: openICloudList(fromEVault: false)
+            case .moveFromEVault: openICloudList(fromEVault: true)
             }
 
             if let e = model.errorMessage {
@@ -55,6 +56,10 @@ struct WelcomeView: View {
                 }
                 Text("Synced through your iCloud account with CloudKit. Other Macs signed in to the same account see it automatically.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
+                Button("Used eVault? Move a vault from it…") {
+                    if licenses.require(.cloudKitSync) { model.errorMessage = nil; flow = .moveFromEVault; loadVaults(fromEVault: true) }
+                }
+                .buttonStyle(.link).font(.callout)
                 Divider().frame(width: 200)
             }
             HStack(spacing: 12) {
@@ -108,19 +113,29 @@ struct WelcomeView: View {
         .textFieldStyle(.roundedBorder)
     }
 
-    private var openICloudList: some View {
+    /// `fromEVault`: vaults eVault (this app's old name) kept in iCloud, copied over when picked.
+    private func openICloudList(fromEVault: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Vaults in your iCloud account", systemImage: "icloud").font(.headline)
+            Label(fromEVault ? "eVault vaults in your iCloud account" : "Vaults in your iCloud account", systemImage: "icloud").font(.headline)
+            if fromEVault {
+                Text("EnVault copies the encrypted vault into its own iCloud storage; unlock it with the same passphrase. The eVault copy is left as it was. A vault eVault kept in a folder opens with “Open from a Folder…” instead.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             if loadingVaults {
                 ProgressView().frame(maxWidth: .infinity)
             } else if cloudVaults.isEmpty {
-                Text("No vaults found. Create one on this Mac, or check that iCloud is signed in with the same account as your other Mac.")
+                Text(fromEVault
+                     ? "No eVault vaults left to move. Already moved ones are under “Open Vault from iCloud…”."
+                     : "No vaults found. Create one on this Mac, or check that iCloud is signed in with the same account as your other Mac.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(cloudVaults) { v in
                     Button {
                         busy = true
-                        Task { await model.openICloudVault(v.id); busy = false }
+                        Task {
+                            if fromEVault { await model.moveVaultFromEVault(v.id) } else { await model.openICloudVault(v.id) }
+                            busy = false
+                        }
                     } label: {
                         HStack {
                             VStack(alignment: .leading) {
@@ -139,16 +154,18 @@ struct WelcomeView: View {
             HStack {
                 Button("Back") { flow = .menu }
                 Spacer()
-                Button("Refresh") { loadVaults() }.disabled(loadingVaults)
+                if busy, fromEVault { ProgressView().controlSize(.small); Text("Copying…").foregroundStyle(.secondary) }
+                Button("Refresh") { loadVaults(fromEVault: fromEVault) }.disabled(loadingVaults)
             }
         }
         .frame(width: 440)
     }
 
-    private func loadVaults() {
+    private func loadVaults(fromEVault: Bool = false) {
         loadingVaults = true
+        cloudVaults = []
         Task {
-            cloudVaults = await model.listICloudVaults()
+            cloudVaults = fromEVault ? await model.listEVaultICloudVaults() : await model.listICloudVaults()
             loadingVaults = false
         }
     }
@@ -162,8 +179,8 @@ struct WelcomeView: View {
         panel.directoryURL = SyncLocations.iCloudDriveRoot
         panel.prompt = create ? "Use Folder" : "Open Vault"
         panel.message = create
-            ? "Choose an empty folder for the vault. Inside iCloud Drive is recommended; name it \"eVault\"."
-            : "Choose a folder that contains a vault.json created by eVault."
+            ? "Choose an empty folder for the vault. Inside iCloud Drive is recommended; name it \"EnVault\"."
+            : "Choose a folder that contains a vault.json created by EnVault."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         model.errorMessage = nil
         if create {

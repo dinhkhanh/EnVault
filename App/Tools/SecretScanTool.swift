@@ -36,7 +36,7 @@ private struct SecretScanView: View {
             if scanned && findings.isEmpty {
                 Label("No secrets found.", systemImage: "checkmark.seal").foregroundStyle(.green)
             } else if !findings.isEmpty {
-                Text("\(findings.count) finding\(findings.count == 1 ? "" : "s"). Move these into eVault and reference them via environment variables.")
+                Text("\(findings.count) finding\(findings.count == 1 ? "" : "s"). Move these into EnVault and reference them via environment variables.")
                     .font(.callout).foregroundStyle(.secondary)
                 Table(findings) {
                     TableColumn("File") { f in Text("\(f.file):\(f.line)").font(.system(.callout, design: .monospaced)) }
@@ -52,8 +52,8 @@ private struct SecretScanView: View {
         .padding(16)
     }
 
-    /// Writes the eVault block into `.git/hooks/pre-commit`. The hook runs the
-    /// bundled CLI (`evault scan --staged`), so it works without installing it.
+    /// Writes the EnVault block into `.git/hooks/pre-commit`. The hook runs the
+    /// bundled CLI (`envault scan --staged`), so it works without installing it.
     private func protect() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
@@ -69,12 +69,12 @@ private struct SecretScanView: View {
             return
         }
         guard isDir.boolValue else {
-            protectResult = (false, "This is a worktree or submodule; run `evault protect` inside it instead.")
+            protectResult = (false, "This is a worktree or submodule; run `envault protect` inside it instead.")
             return
         }
         do {
             _ = try GitHook.install(hooksDir: git.appendingPathComponent("hooks"))
-            protectResult = (true, "\(repo.lastPathComponent) is protected. Remove with `evault protect --remove`. If the repo sets core.hooksPath, run `evault protect` instead.")
+            protectResult = (true, "\(repo.lastPathComponent) is protected. Remove with `envault protect --remove`. If the repo sets core.hooksPath, run `envault protect` instead.")
         } catch {
             protectResult = (false, "Could not write the hook: \(error.localizedDescription)")
         }

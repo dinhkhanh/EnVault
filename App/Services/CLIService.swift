@@ -1,31 +1,31 @@
 import AppKit
 import VaultCore
 
-/// The `evault` command bundled in the app: where it is, linking it into PATH,
+/// The `envault` command bundled in the app: where it is, linking it into PATH,
 /// and the agent that lets it unlock through the app (Touch ID).
 @MainActor
 enum CLIService {
-    /// `eVault.app/Contents/Helpers/evault` (not Contents/MacOS: on a case-insensitive
-    /// disk `evault` would collide with the app's own `eVault` executable).
-    static var bundledCLI: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/evault") }
+    /// `EnVault.app/Contents/Helpers/envault` (not Contents/MacOS: on a case-insensitive
+    /// disk `envault` would collide with the app's own `EnVault` executable).
+    static var bundledCLI: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/envault") }
     static var isBundled: Bool { FileManager.default.isExecutableFile(atPath: bundledCLI.path) }
 
     static var installedPath: String? { UserDefaults.standard.string(forKey: Prefs.cliInstallPath) }
 
     /// `sudo ln -sf …` for people who prefer the terminal, or when the panel can't write there.
     static var terminalInstallCommand: String {
-        "sudo mkdir -p /usr/local/bin && sudo ln -sf \(EnvQuoting.shell(bundledCLI.path)) /usr/local/bin/evault"
+        "sudo mkdir -p /usr/local/bin && sudo ln -sf \(EnvQuoting.shell(bundledCLI.path)) /usr/local/bin/envault"
     }
 
-    /// Asks where to put the `evault` link (Homebrew's bin by default) and creates
+    /// Asks where to put the `envault` link (Homebrew's bin by default) and creates
     /// a symlink to the bundled CLI, so app updates update the command too.
     /// Returns an error message, or nil on success/cancel.
     static func installWithPanel() -> String? {
         let panel = NSSavePanel()
-        panel.title = "Install the evault Command"
-        panel.message = "Choose a folder on your PATH. eVault puts a link named “evault” there that points into the app, so it stays up to date."
+        panel.title = "Install the envault Command"
+        panel.message = "Choose a folder on your PATH. EnVault puts a link named “envault” there that points into the app, so it stays up to date."
         panel.prompt = "Install"
-        panel.nameFieldStringValue = "evault"
+        panel.nameFieldStringValue = "envault"
         panel.canCreateDirectories = true
         panel.showsHiddenFiles = true
         let home = realHome
@@ -52,8 +52,8 @@ enum CLIService {
 
     static func shellHookLine(_ shell: String) -> String {
         switch shell {
-        case "fish": "evault hook fish | source"
-        default: "eval \"$(evault hook \(shell))\""
+        case "fish": "envault hook fish | source"
+        default: "eval \"$(envault hook \(shell))\""
         }
     }
 

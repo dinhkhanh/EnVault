@@ -1,4 +1,4 @@
-name: eVault
+name: EnVault
 options:
   bundleIdPrefix: dk.dinhkhanh
   deploymentTarget:
@@ -11,33 +11,33 @@ configs:
   Debug-iCloud: debug
   Release-iCloud: release
 packages:
-  eVaultKit:
-    path: Packages/eVaultKit
+  EnVaultKit:
+    path: Packages/EnVaultKit
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.7.0
 targets:
-  eVault:
+  EnVault:
     type: application
     platform: macOS
     sources:
       - path: App
     dependencies:
-      - package: eVaultKit
+      - package: EnVaultKit
         product: VaultCore
-      - package: eVaultKit
+      - package: EnVaultKit
         product: EnvKit
-      - package: eVaultKit
+      - package: EnVaultKit
         product: VaultSync
-      - package: eVaultKit
+      - package: EnVaultKit
         product: ToolKit
-      - package: eVaultKit
+      - package: EnVaultKit
         product: LicenseKit
       - package: Sparkle
         product: Sparkle
-      # The `evault` CLI ships inside the app; Settings links it into PATH. Not in Contents/MacOS:
-      # on a case-insensitive disk `evault` would overwrite the app's own `eVault` executable.
-      - target: evault-cli
+      # The `envault` CLI ships inside the app; Settings links it into PATH. Not in Contents/MacOS:
+      # on a case-insensitive disk `envault` would overwrite the app's own `EnVault` executable.
+      - target: envault-cli
         embed: true
         codeSign: true
         copy:
@@ -49,73 +49,73 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: eVault
-        CFBundleName: eVault
+        CFBundleDisplayName: EnVault
+        CFBundleName: EnVault
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"
-        NSFaceIDUsageDescription: "eVault uses Touch ID to unlock your vault."
-        SUFeedURL: https://github.com/dinhkhanh/eVault/releases/latest/download/appcast.xml
+        NSFaceIDUsageDescription: "EnVault uses Touch ID to unlock your vault."
+        SUFeedURL: https://github.com/dinhkhanh/envault/releases/latest/download/appcast.xml
         SUPublicEDKey: SRLHhBqtlIsBvuqpk/ONBFaAS629idQVYwoebgfGd/E=
         SUEnableInstallerLauncherService: true
         SUEnableDownloaderService: true
         SUScheduledCheckInterval: 86400
-        EVReleaseDate: $(EVAULT_RELEASE_DATE)
+        EVReleaseDate: $(ENVAULT_RELEASE_DATE)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault
+        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.envault
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.5.1
-        CURRENT_PROJECT_VERSION: 17
+        MARKETING_VERSION: 0.6.0
+        CURRENT_PROJECT_VERSION: 18
         # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
-        EVAULT_RELEASE_DATE: "2026-10-16"
+        ENVAULT_RELEASE_DATE: "2026-10-16"
         ENABLE_PREVIEWS: true
         SWIFT_EMIT_LOC_STRINGS: false
         DEAD_CODE_STRIPPING: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Unsigned local builds: folder sync only, no iCloud entitlements.
-        CODE_SIGN_ENTITLEMENTS: App/eVault.entitlements
+        CODE_SIGN_ENTITLEMENTS: App/EnVault.entitlements
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
       configs:
         # Signed builds: iCloud/CloudKit + push entitlements. Team id comes from Config/Signing.xcconfig.
         Debug-iCloud:
-          CODE_SIGN_ENTITLEMENTS: App/eVault-iCloud.entitlements
+          CODE_SIGN_ENTITLEMENTS: App/EnVault-iCloud.entitlements
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
-          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
-          EVAULT_APS_ENVIRONMENT: development
+          DEVELOPMENT_TEAM: "$(ENVAULT_TEAM_ID)"
+          ENVAULT_APS_ENVIRONMENT: development
         Release-iCloud:
-          CODE_SIGN_ENTITLEMENTS: App/eVault-iCloud.entitlements
+          CODE_SIGN_ENTITLEMENTS: App/EnVault-iCloud.entitlements
           CODE_SIGN_STYLE: Automatic
           # Automatic signing archives with Apple Development; the export (method developer-id) re-signs with Developer ID.
           CODE_SIGN_IDENTITY: "Apple Development"
-          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
-          EVAULT_APS_ENVIRONMENT: production
-  # Named evault-cli, not evault: the case-insensitive disk would merge its build folders with eVault's.
-  evault-cli:
+          DEVELOPMENT_TEAM: "$(ENVAULT_TEAM_ID)"
+          ENVAULT_APS_ENVIRONMENT: production
+  # Named envault-cli, not envault: the case-insensitive disk would merge its build folders with EnVault's.
+  envault-cli:
     type: tool
     platform: macOS
     sources:
-      - path: Packages/eVaultKit/Sources/evault
+      - path: Packages/EnVaultKit/Sources/envault
     dependencies:
-      - package: eVaultKit
+      - package: EnVaultKit
         product: VaultCore
-      - package: eVaultKit
+      - package: EnVaultKit
         product: EnvKit
     configFiles:
       Debug-iCloud: Config/Signing.xcconfig
       Release-iCloud: Config/Signing.xcconfig
     settings:
       base:
-        PRODUCT_NAME: evault
-        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.evault.cli
+        PRODUCT_NAME: envault
+        PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.envault.cli
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
@@ -131,22 +131,22 @@ targets:
         Debug-iCloud:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
-          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
+          DEVELOPMENT_TEAM: "$(ENVAULT_TEAM_ID)"
         Release-iCloud:
           CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "Apple Development"
-          DEVELOPMENT_TEAM: "$(EVAULT_TEAM_ID)"
+          DEVELOPMENT_TEAM: "$(ENVAULT_TEAM_ID)"
 schemes:
-  eVault:
+  EnVault:
     build:
       targets:
-        eVault: all
+        EnVault: all
     run:
       config: Debug
-  eVault-iCloud:
+  EnVault-iCloud:
     build:
       targets:
-        eVault: all
+        EnVault: all
     run:
       config: Debug-iCloud
     archive:

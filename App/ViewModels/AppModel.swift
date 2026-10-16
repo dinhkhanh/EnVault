@@ -35,7 +35,7 @@ final class AppModel {
     var errorMessage: String?
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
-    /// Set when the vault opens locked or gets locked; the next time eVault is (or becomes)
+    /// Set when the vault opens locked or gets locked; the next time EnVault is (or becomes)
     /// the active app, Touch ID is offered once. Never prompts while another app is in front.
     @ObservationIgnored private var touchIDOfferArmed = false
     private(set) var hasRecoveryKey = false
@@ -83,7 +83,7 @@ final class AppModel {
     let tools = ToolRegistry.all
     /// Items kept written into project folders on this Mac.
     let fileLinks = FileLinkStore()
-    /// Lets the `evault` CLI unlock through this app. False when another eVault already holds the port.
+    /// Lets the `envault` CLI unlock through this app. False when another EnVault already holds the port.
     private(set) var agentRunning = false
     @ObservationIgnored private var agent: AgentServer?
     /// Requests from the command line and AI agents since launch, newest first (no values).
@@ -114,7 +114,7 @@ final class AppModel {
         var environments: [String] { EnvImport.vaultEnvironments(text) }
     }
 
-    private static let iCloudVaultKey = "dk.dinhkhanh.evault.iCloudVaultId"
+    private static let iCloudVaultKey = "dk.dinhkhanh.envault.iCloudVaultId"
 
     init() {
         Prefs.registerDefaults()
@@ -122,7 +122,7 @@ final class AppModel {
     }
 
     /// Called once at launch, before any window shows: the CLI agent must answer
-    /// even when the app was launched hidden by `evault`.
+    /// even when the app was launched hidden by `envault`.
     func bootstrap() {
         startAgent()
         Task { await start() }
@@ -144,7 +144,7 @@ final class AppModel {
         guard phase == .loading, !started else { return }
         started = true
         #if DEBUG
-        // Dev/testing: `eVault -vaultPath <dir> [-passphrase <pw>]` opens or creates a vault directly.
+        // Dev/testing: `EnVault -vaultPath <dir> [-passphrase <pw>]` opens or creates a vault directly.
         // `-fakeCloud YES -createICloud YES -passphrase <pw>` creates a vault in the in-memory cloud.
         if UserDefaults.standard.bool(forKey: "createICloud"), let pw = UserDefaults.standard.string(forKey: "passphrase") {
             await createVaultInICloud(passphrase: pw)
@@ -238,17 +238,17 @@ final class AppModel {
 
     private static func localRoot(for vaultId: UUID) -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("eVault/Vaults/\(vaultId.uuidString)", isDirectory: true)
+        return support.appendingPathComponent("EnVault/Vaults/\(vaultId.uuidString)", isDirectory: true)
     }
     private static func stateURL(for vaultId: UUID) -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("eVault/SyncState/\(vaultId.uuidString).json")
+        return support.appendingPathComponent("EnVault/SyncState/\(vaultId.uuidString).json")
     }
 
     func createVaultInICloud(passphrase: String) async {
         // The vault id is assigned by VaultStore.create, so create in a temp folder and rename.
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let tmp = support.appendingPathComponent("eVault/Vaults/new-\(UUID().uuidString)", isDirectory: true)
+        let tmp = support.appendingPathComponent("EnVault/Vaults/new-\(UUID().uuidString)", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
             let s = try await VaultStore.create(storage: LocalFolderStorage(root: tmp), passphrase: passphrase)
@@ -273,10 +273,14 @@ final class AppModel {
 
     /// Vaults in the iCloud account, newest first.
     func listICloudVaults() async -> [CloudVaultSummary] {
+        await listVaults(in: cloud)
+    }
+
+    private func listVaults(in transport: CloudVaultTransport) async -> [CloudVaultSummary] {
         do {
             var out: [CloudVaultSummary] = []
-            for id in try await cloud.listVaults() {
-                let header = try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: id).flatMap { try? VaultHeader.decode($0) }
+            for id in try await transport.listVaults() {
+                let header = try await transport.fetchFile(path: VaultHeader.fileName, vaultId: id).flatMap { try? VaultHeader.decode($0) }
                 out.append(CloudVaultSummary(id: id, createdAt: header?.createdAt))
             }
             return out.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
@@ -303,6 +307,47 @@ final class AppModel {
             syncStatus = .error(error.localizedDescription)
             errorMessage = error.localizedDescription
             if phase == .loading { phase = .noVault }
+        }
+    }
+
+    // MARK: - Moving over from eVault
+
+    /// Before 0.6 the app was eVault (bundle id dk.dinhkhanh.evault) and kept iCloud
+    /// vaults in this container. EnVault only reads it, to copy a vault into its own.
+    static let eVaultContainerIdentifier = "iCloud.dk.dinhkhanh.evault"
+    @ObservationIgnored private lazy var eVaultCloud: CloudVaultTransport = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "fakeCloud") { return MemoryCloudTransport() }
+        #endif
+        return CloudKitTransport(containerIdentifier: Self.eVaultContainerIdentifier)
+    }()
+
+    /// iCloud vaults eVault left behind that aren't in EnVault's container yet.
+    func listEVaultICloudVaults() async -> [CloudVaultSummary] {
+        let moved = Set((try? await cloud.listVaults()) ?? [])
+        return await listVaults(in: eVaultCloud).filter { !moved.contains($0.id) }
+    }
+
+    /// Copies an eVault iCloud vault (ciphertext) into EnVault's container and opens it.
+    /// The eVault copy stays as it was.
+    func moveVaultFromEVault(_ id: UUID) async {
+        let root = Self.localRoot(for: id)
+        let importState = FileManager.default.temporaryDirectory.appendingPathComponent("evault-import-\(id.uuidString).json")
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            syncStatus = .syncing
+            try await CloudMirror(vaultId: id, localRoot: root, stateURL: importState, transport: eVaultCloud).pull()
+            try? FileManager.default.removeItem(at: importState)
+            syncStatus = .idle
+            guard await VaultStore.vaultExists(in: LocalFolderStorage(root: root)) else {
+                throw VaultError.io("that vault is empty in eVault's iCloud; open eVault on the Mac that made it and let it sync")
+            }
+            await openVault(at: root, mode: .iCloud)
+            try await mirror?.bootstrap()
+            await syncNow()
+        } catch {
+            syncStatus = .error(error.localizedDescription)
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -349,7 +394,7 @@ final class AppModel {
         if mirror != nil { Task { await syncNow() } }
     }
 
-    /// Prompts Touch ID if the vault is locked, a key is cached, eVault is frontmost, and
+    /// Prompts Touch ID if the vault is locked, a key is cached, EnVault is frontmost, and
     /// this lock hasn't been offered yet. Auto-lock in the background therefore waits for
     /// the user to come back; a manual lock doesn't re-prompt until they leave and return.
     func offerTouchIDIfAppropriate() {
@@ -717,18 +762,18 @@ final class AppModel {
                            appVersion: Bundle.main.shortVersion, cliPath: CLIService.bundledCLI.path, agents: Prefs.agentPolicy)
             },
             authorize: { [weak self] request in
-                guard let self else { throw Agent.Failure("eVault is quitting") }
+                guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try await self.authorizeCLI(request)
             },
             storage: { [weak self] agent in
-                guard let self else { throw Agent.Failure("eVault is quitting") }
+                guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try self.vaultStorageForCLI(agent: agent)
             })
         agentRunning = server.start()
         agent = server
     }
 
-    /// Hands the vault key to the `evault` CLI after the user approves with
+    /// Hands the vault key to the `envault` CLI after the user approves with
     /// Touch ID (or the login password when the app is unlocked). AI agents
     /// are held to Settings › AI Agents, and one approval can cover their
     /// next commands for a few minutes, except reading values when set to ask.
@@ -739,18 +784,18 @@ final class AppModel {
             return Agent.Failure(message, denied: denied)
         }
         guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
-            throw refuse("unlocking the CLI through the app is turned off in eVault Settings › Command Line", denied: isAgent)
+            throw refuse("unlocking the CLI through the app is turned off in EnVault Settings › Command Line", denied: isAgent)
         }
         // Launched by the CLI a moment ago: let the vault finish opening.
         for _ in 0..<50 where phase == .loading { try? await Task.sleep(for: .milliseconds(200)) }
-        guard let store, let vaultId else { throw refuse("no vault is open in eVault", denied: false) }
-        guard r.vaultId == vaultId else { throw refuse("eVault has a different vault open; pass --vault for this one", denied: false) }
+        guard let store, let vaultId else { throw refuse("no vault is open in EnVault", denied: false) }
+        guard r.vaultId == vaultId else { throw refuse("EnVault has a different vault open; pass --vault for this one", denied: false) }
 
         var policy = Prefs.agentPolicy
         if let agent = r.agent {
-            guard policy.enabled else { throw refuse("AI agents are turned off in eVault Settings › AI Agents") }
+            guard policy.enabled else { throw refuse("AI agents are turned off in EnVault Settings › AI Agents") }
             if r.purpose == .reveal, policy.values == .never {
-                throw refuse("eVault doesn't show secret values to AI agents (Settings › AI Agents); use `evault run` instead")
+                throw refuse("EnVault doesn't show secret values to AI agents (Settings › AI Agents); use `envault run` instead")
             }
             if r.purpose == .write, !policy.writes {
                 throw refuse("AI agents may not change env files (Settings › AI Agents)")
@@ -781,7 +826,7 @@ final class AppModel {
             }
             key = k
         } else {
-            throw refuse("eVault is locked and Touch ID unlock is off; unlock the app first", denied: false)
+            throw refuse("EnVault is locked and Touch ID unlock is off; unlock the app first", denied: false)
         }
         if let agent = r.agent, policy.approvalMinutes > 0 {
             agentGrants[agent] = Date().addingTimeInterval(TimeInterval(policy.approvalMinutes * 60))
@@ -794,16 +839,16 @@ final class AppModel {
     /// container itself in iCloud mode. Ciphertext; the key is a separate request.
     private func vaultStorageForCLI(agent: String?) throws -> any VaultStorage {
         guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
-            throw Agent.Failure("the command line is turned off in eVault Settings › Command Line", denied: true)
+            throw Agent.Failure("the command line is turned off in EnVault Settings › Command Line", denied: true)
         }
         if agent != nil, !Prefs.agentPolicy.enabled {
-            throw Agent.Failure("AI agents are turned off in eVault Settings › AI Agents", denied: true)
+            throw Agent.Failure("AI agents are turned off in EnVault Settings › AI Agents", denied: true)
         }
-        guard store != nil, let vaultURL else { throw Agent.Failure("no vault is open in eVault") }
+        guard store != nil, let vaultURL else { throw Agent.Failure("no vault is open in EnVault") }
         return LocalFolderStorage(root: vaultURL)
     }
 
-    /// Completes "eVault is trying to …" in the Touch ID prompt.
+    /// Completes "EnVault is trying to …" in the Touch ID prompt.
     private static func approvalReason(_ r: Agent.KeyRequest) -> String {
         let what = r.detail.map { "“\($0)”" } ?? "your vault"
         guard let agent = r.agent else { return "allow “\(r.client)” in Terminal to unlock your vault" }

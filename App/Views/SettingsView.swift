@@ -146,18 +146,18 @@ struct CommandLineSettings: View {
 
     var body: some View {
         Form {
-            Section("The evault Command") {
+            Section("The envault Command") {
                 if CLIService.isBundled {
                     LabeledContent("Installed") {
                         Text(installPath.isEmpty ? "Not yet" : installPath).font(.callout.monospaced()).textSelection(.enabled)
                     }
                     HStack {
-                        Button(installPath.isEmpty ? "Install evault Command…" : "Install Again…") { installError = CLIService.installWithPanel() }
+                        Button(installPath.isEmpty ? "Install envault Command…" : "Install Again…") { installError = CLIService.installWithPanel() }
                         Spacer()
                         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([CLIService.bundledCLI]) }
                     }
                     if let installError { Text(installError).font(.callout).foregroundStyle(.red) }
-                    Text("Puts a link in a folder on your PATH (Homebrew’s bin works). It points into eVault, so app updates update the command. Or run this in Terminal:")
+                    Text("Puts a link in a folder on your PATH (Homebrew’s bin works). It points into EnVault, so app updates update the command. Or run this in Terminal:")
                         .font(.callout).foregroundStyle(.secondary)
                     CopyableCommand(CLIService.terminalInstallCommand)
                 } else {
@@ -165,7 +165,7 @@ struct CommandLineSettings: View {
                 }
             }
             Section("Unlock with Touch ID") {
-                Toggle("Let evault ask eVault for the vault key", isOn: $agentEnabled)
+                Toggle("Let envault ask EnVault for the vault key", isOn: $agentEnabled)
                 Text(agentText).font(.callout).foregroundStyle(model.agentRunning ? Color.secondary : Color.red)
             }
             Section("Load Env Files on cd (Pro)") {
@@ -173,22 +173,22 @@ struct CommandLineSettings: View {
                     Text("zsh").tag("zsh"); Text("bash").tag("bash"); Text("fish").tag("fish")
                 }
                 .pickerStyle(.segmented)
-                Text("Add to \(CLIService.shellRCFile(shell)), then in a project folder run `evault link <project> <item>` and `evault unlock`:")
+                Text("Add to \(CLIService.shellRCFile(shell)), then in a project folder run `envault link <project> <item>` and `envault unlock`:")
                     .font(.callout).foregroundStyle(.secondary)
                 CopyableCommand(CLIService.shellHookLine(shell))
             }
             Section("Block Secrets in Commits") {
                 Text("Installs a git pre-commit hook that stops commits containing API keys, tokens or real .env files:")
                     .font(.callout).foregroundStyle(.secondary)
-                CopyableCommand("cd your-repo && evault protect")
+                CopyableCommand("cd your-repo && envault protect")
             }
         }
         .formStyle(.grouped)
     }
 
     private var agentText: String {
-        guard model.agentRunning else { return "Not available: another copy of eVault is running and answering the command line." }
-        return "When the command line needs the key, eVault asks you with Touch ID (or your Mac password) and hands it over for that one command. Without this, evault asks for the passphrase."
+        guard model.agentRunning else { return "Not available: another copy of EnVault is running and answering the command line." }
+        return "When the command line needs the key, EnVault asks you with Touch ID (or your Mac password) and hands it over for that one command. Without this, envault asks for the passphrase."
     }
 }
 
@@ -204,11 +204,11 @@ struct AgentSettings: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Let AI agents use eVault", isOn: $enabled)
-                Text("Claude Code, Cursor, Codex and other agents can run commands with your secrets and see variable names, through the evault command or its MCP server. Secret values in their output are replaced with [redacted:KEY].")
+                Toggle("Let AI agents use EnVault", isOn: $enabled)
+                Text("Claude Code, Cursor, Codex and other agents can run commands with your secrets and see variable names, through the envault command or its MCP server. Secret values in their output are replaced with [redacted:KEY].")
                     .font(.callout).foregroundStyle(.secondary)
                 if !cliAgent {
-                    Text("Agents can only reach eVault when “Let evault ask eVault for the vault key” is on (Command Line).")
+                    Text("Agents can only reach EnVault when “Let envault ask EnVault for the vault key” is on (Command Line).")
                         .font(.callout).foregroundStyle(.red)
                 }
             }
@@ -225,14 +225,14 @@ struct AgentSettings: View {
                     Text("Don’t ask again for 15 minutes").tag(15)
                     Text("Don’t ask again for 1 hour").tag(60)
                 }
-                Text("An agent always needs your approval first. Showing values covers evault get, pull, env, run --no-redact and deploy; “No extra prompt” lets an approved agent do that too. Approvals end when eVault locks. These are guardrails for well-meaning agents, not a sandbox: an agent with a shell can do whatever your account can.")
+                Text("An agent always needs your approval first. Showing values covers envault get, pull, env, run --no-redact and deploy; “No extra prompt” lets an approved agent do that too. Approvals end when EnVault locks. These are guardrails for well-meaning agents, not a sandbox: an agent with a shell can do whatever your account can.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             .disabled(!enabled)
             Section("Connect an Agent") {
-                LabeledContent("Claude Code") { CopyableCommand("claude mcp add evault -- evault mcp") }
-                LabeledContent("Codex") { CopyableCommand("codex mcp add evault -- evault mcp") }
-                LabeledContent("Cursor, others") { CopyableCommand(#""evault": { "command": "evault", "args": ["mcp"] }"#) }
+                LabeledContent("Claude Code") { CopyableCommand("claude mcp add envault -- envault mcp") }
+                LabeledContent("Codex") { CopyableCommand("codex mcp add envault -- envault mcp") }
+                LabeledContent("Cursor, others") { CopyableCommand(#""envault": { "command": "envault", "args": ["mcp"] }"#) }
                 HStack {
                     Text("Agents that only use the shell learn the commands from a short guide in AGENTS.md or CLAUDE.md:")
                         .font(.callout).foregroundStyle(.secondary)
@@ -246,7 +246,7 @@ struct AgentSettings: View {
             }
             Section("Recent Requests") {
                 if model.agentActivity.isEmpty {
-                    Text("Nothing since eVault started.").foregroundStyle(.secondary)
+                    Text("Nothing since EnVault started.").foregroundStyle(.secondary)
                 } else {
                     ForEach(model.agentActivity.prefix(20)) { AgentActivityRow(entry: $0) }
                 }

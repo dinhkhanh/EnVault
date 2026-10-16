@@ -1,4 +1,4 @@
-# eVault
+# EnVault
 
 A native macOS app for developers: store `.env` files and secrets in an
 encrypted vault, get them back on any of your Macs through iCloud Drive (or any
@@ -23,7 +23,7 @@ comes from `project.yml`.
 ### Unsigned release (no Developer ID yet)
 
 ```sh
-make release-unsigned   # dist/eVault-<version>.zip and .dmg, ad-hoc signed
+make release-unsigned   # dist/EnVault-<version>.zip and .dmg, ad-hoc signed
 ```
 
 Gatekeeper blocks unsigned apps on first launch: right-click the app and
@@ -37,7 +37,7 @@ With an Apple Developer account:
    team id in it (the file is git-ignored).
 2. `make build-icloud` / `make run-icloud` — configuration `Debug-iCloud`,
    signed with "Apple Development", entitled for CloudKit container
-   `iCloud.dk.dinhkhanh.evault` and silent push. Xcode's automatic signing
+   `iCloud.dk.dinhkhanh.envault` and silent push. Xcode's automatic signing
    registers the container on first build (`-allowProvisioningUpdates`).
 3. `make archive` — `Release-iCloud` with Developer ID, notarized and stapled
    into `dist/` (see `scripts/release.sh` for the one-time `notarytool`
@@ -53,12 +53,12 @@ folder-only mode when unsigned.
 
 ```
 App/                      SwiftUI app (views, view model, services, tools)
-Packages/eVaultKit/
+Packages/EnVaultKit/
   Sources/VaultCore       crypto, vault format, VaultStore actor, Keychain cache
   Sources/EnvKit          dotenv parser / serializer / diff / export
   Sources/VaultSync       FSEvents folder watcher, iCloud Drive locations
   Sources/ToolKit         Tool protocol + registry (the plugin API)
-  Sources/evault          command-line companion
+  Sources/envault          command-line companion
   Tests/                  Swift Testing suites
 docs/PLAN.md              architecture, security model, roadmap
 docs/STATUS.md            current state, blockers, next actions, where secrets live
@@ -90,65 +90,65 @@ and a passphrase change replaces the `vault.json` record.
 
 ## CLI
 
-The `evault` command ships inside the app (`eVault.app/Contents/Helpers/evault`).
+The `envault` command ships inside the app (`EnVault.app/Contents/Helpers/envault`).
 Settings › Command Line links it into your PATH, or:
-`sudo ln -sf /Applications/eVault.app/Contents/Helpers/evault /usr/local/bin/evault`.
-To build it on its own: `swift build -c release --package-path Packages/eVaultKit --product evault`.
+`sudo ln -sf /Applications/EnVault.app/Contents/Helpers/envault /usr/local/bin/envault`.
+To build it on its own: `swift build -c release --package-path Packages/EnVaultKit --product envault`.
 
-When the app is running, the CLI needs no passphrase: it asks eVault over a
-Mach port (`dk.dinhkhanh.evault.agent`, see `VaultCore/Agent.swift`), eVault
+When the app is running, the CLI needs no passphrase: it asks EnVault over a
+Mach port (`dk.dinhkhanh.envault.agent`, see `VaultCore/Agent.swift`), EnVault
 asks you with Touch ID (or the login password) and hands the key over for that
-one command. `EVAULT_NO_APP=1` turns this off; Settings can too.
+one command. `ENVAULT_NO_APP=1` turns this off; Settings can too.
 
 ```sh
-evault status                          # is the app running, which vault, locked?
-evault unlock                          # caches the vault key in the login keychain (for shell hooks)
-evault ls
-evault pull my-saas .env.local         # writes ./.env.local (mode 600)
-evault push my-saas .env.local .env.local
-evault run  my-saas .env.production -- npm start
-evault history my-saas .env.local
+envault status                          # is the app running, which vault, locked?
+envault unlock                          # caches the vault key in the login keychain (for shell hooks)
+envault ls
+envault pull my-saas .env.local         # writes ./.env.local (mode 600)
+envault push my-saas .env.local .env.local
+envault run  my-saas .env.production -- npm start
+envault history my-saas .env.local
 
-evault link my-saas .env.local         # bind this directory to an env file
-eval "$(evault hook zsh)"              # ~/.zshrc: load on cd, unload on leave
-evault deploy vercel my-saas .env.production --target production
-evault deploy cloudflare my-saas .env.production
-evault deploy github my-saas .env.production --repo owner/name
-evault example my-saas .env > .env.example
-evault scan .                          # find committed secrets
-evault protect                         # git pre-commit hook: block commits with secrets or real .env files
-evault import my-saas .env.prod secrets.json            # .env, JSON (Doppler, 1Password item) or .env.vault ($DOTENV_KEY)
-evault import my-saas .env.prod --doppler -- --project shop --config prd
-evault import my-saas .env.prod --1password "Shop prod" -- --vault Work
-evault lock
+envault link my-saas .env.local         # bind this directory to an env file
+eval "$(envault hook zsh)"              # ~/.zshrc: load on cd, unload on leave
+envault deploy vercel my-saas .env.production --target production
+envault deploy cloudflare my-saas .env.production
+envault deploy github my-saas .env.production --repo owner/name
+envault example my-saas .env > .env.example
+envault scan .                          # find committed secrets
+envault protect                         # git pre-commit hook: block commits with secrets or real .env files
+envault import my-saas .env.prod secrets.json            # .env, JSON (Doppler, 1Password item) or .env.vault ($DOTENV_KEY)
+envault import my-saas .env.prod --doppler -- --project shop --config prd
+envault import my-saas .env.prod --1password "Shop prod" -- --vault Work
+envault lock
 ```
 
-A line containing `evault:allow` is never reported by `scan` or the hook.
+A line containing `envault:allow` is never reported by `scan` or the hook.
 
 Deploy commands shell out to `vercel`, `wrangler` and `gh`, so they use the
 credentials you already have. `--dry-run` prints what would run.
 
 The vault folder is the one the running app has open, else
-`~/Library/Mobile Documents/com~apple~CloudDocs/eVault`; override with `--vault DIR` or `EVAULT_DIR`.
+`~/Library/Mobile Documents/com~apple~CloudDocs/EnVault`; override with `--vault DIR` or `ENVAULT_DIR`.
 
 ### AI agents
 
 Agents (Claude Code, Cursor, Codex…) use secrets without reading them. The CLI
 recognises one from its environment (`CLAUDECODE`, `CURSOR_AGENT`, `GEMINI_CLI`,
-`CODEX_SANDBOX`, or `EVAULT_AGENT=name`; `EVAULT_AGENT=0` opts out) and then never
+`CODEX_SANDBOX`, or `ENVAULT_AGENT=name`; `ENVAULT_AGENT=0` opts out) and then never
 prompts, redacts `run` output (`[redacted:KEY]`), refuses `init`/`unlock`, and
 asks the app for every key so Settings › AI Agents applies: values ask/never/allow
 (get, pull, env, `run --no-redact`, deploy), writes on/off, and how long one Touch ID
-approval covers that agent. Without the app, agents may use `evault unlock`'s cached
-key but never read values. `evault mcp` serves the same over MCP (stdio,
-`Sources/evault/MCPServer.swift`); `evault agent-guide [--skill]` prints the
+approval covers that agent. Without the app, agents may use `envault unlock`'s cached
+key but never read values. `envault mcp` serves the same over MCP (stdio,
+`Sources/envault/MCPServer.swift`); `envault agent-guide [--skill]` prints the
 instructions in `VaultCore/AIAgents.swift`. Redaction lives in `EnvKit/EnvRedactor.swift`.
 
 ```sh
-claude mcp add evault -- evault mcp
-evault keys my-saas .env.local --json
-evault run my-saas .env.local -- npm test          # redacted for agents; --redact for anyone
-evault set my-saas .env.local --generate SESSION_SECRET
+claude mcp add envault -- envault mcp
+envault keys my-saas .env.local --json
+envault run my-saas .env.local -- npm test          # redacted for agents; --redact for anyone
+envault set my-saas .env.local --generate SESSION_SECRET
 ```
 
 `--json` works for ls, keys, status, history, links, scan, version and changes. Exit
@@ -172,7 +172,7 @@ scripts/issue-license.sh --email a@b.c --name "Ada"    # offline fallback, local
 scripts/list-licenses.sh [search]      # the local ledger
 ```
 
-Every issued key is appended to `~/Library/Application Support/eVault Vendor/licenses.jsonl`
+Every issued key is appended to `~/Library/Application Support/EnVault Vendor/licenses.jsonl`
 on the issuing Mac. That file and the keychain signing key are the vendor's
 
 

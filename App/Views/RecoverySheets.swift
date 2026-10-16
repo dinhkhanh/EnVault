@@ -42,10 +42,10 @@ struct RecoveryKeySheet: View {
 
     private func save() {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "eVault recovery key.txt"
+        panel.nameFieldStringValue = "EnVault recovery key.txt"
         panel.message = "Store this file somewhere safe, not inside the vault folder."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let text = "eVault recovery key\nCreated \(Date().formatted())\n\n\(recoveryKey)\n\nUse it on the lock screen under “Use recovery key” if you forget your passphrase.\n"
+        let text = "EnVault recovery key\nCreated \(Date().formatted())\n\n\(recoveryKey)\n\nUse it on the lock screen under “Use recovery key” if you forget your passphrase.\n"
         try? text.write(to: url, atomically: true, encoding: .utf8)
         saved = true
     }

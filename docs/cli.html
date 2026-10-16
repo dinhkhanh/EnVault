@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eVault — command line reference</title>
-<meta name="description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
-<meta property="og:title" content="eVault — command line reference">
-<meta property="og:description" content="Reference for the evault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<title>EnVault — command line reference</title>
+<meta name="description" content="Reference for the envault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
+<meta property="og:title" content="EnVault — command line reference">
+<meta property="og:description" content="Reference for the envault command: Touch ID unlock through the app, run, pull, push, AI agents and MCP, shell integration, import from Doppler and 1Password, the pre-commit hook, and deploy.">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta property="og:image" content="https://dinhkhanh.github.io/eVault/icon-512.png">
+<meta property="og:image" content="https://dinhkhanh.github.io/envault/icon-512.png">
 <script>
 /* A saved manual theme applies only while it differs from the system's; one that matches is dropped. */
 try{var t=localStorage.getItem("theme"),s=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t===s)localStorage.removeItem("theme");else if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}
@@ -49,7 +49,7 @@ html{scroll-behavior:smooth}
 <span style="width: 34px; height: 34px; border-radius: 9px; background: #2F55E4; display: grid; place-items: center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 3 8.4 7 10 4-1.6 7-5.4 7-10V6l-7-3Z"></path><rect x="9" y="11" width="6" height="5" rx="1"></rect><path d="M10.5 11V9.5a1.5 1.5 0 0 1 3 0V11"></path></svg>
 </span>
-eVault
+EnVault
 </a>
 <a href="./#features" style="text-decoration: none; color: var(--text2); font-size: 15px; font-weight: 500">Features</a>
 <a href="cli.html" aria-current="page" style="text-decoration: none; color: var(--ink); font-size: 15px; font-weight: 600">Command line</a>
@@ -59,14 +59,14 @@ eVault
 <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"></path></svg>
 <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
 </button>
-<a href="https://github.com/dinhkhanh/eVault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
+<a href="https://github.com/dinhkhanh/envault/releases/latest" style="text-decoration: none; color: var(--on-ink); background: var(--ink); font-size: 15px; font-weight: 600; padding: 10px 16px; border-radius: 9px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center">Download</a>
 </nav>
 </header>
 
 <section style="max-width: 1200px; margin: 0 auto; padding: 72px 24px 40px">
-<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted)">Reference · evault 0.5</p>
-<h1 style="margin: 0 0 18px; font-size: 52px; line-height: 1.06; letter-spacing: -.035em">The evault command</h1>
-<p style="margin: 0; font-size: 19px; color: var(--muted); max-width: 40em">It ships inside eVault.app and reads the same vault as the app. While eVault is running, it gets the key from the app after you approve with Touch ID, so you never type the passphrase into a shell.</p>
+<p style="margin: 0 0 16px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted)">Reference · envault 0.5</p>
+<h1 style="margin: 0 0 18px; font-size: 52px; line-height: 1.06; letter-spacing: -.035em">The envault command</h1>
+<p style="margin: 0; font-size: 19px; color: var(--muted); max-width: 40em">It ships inside EnVault.app and reads the same vault as the app. While EnVault is running, it gets the key from the app after you approve with Touch ID, so you never type the passphrase into a shell.</p>
 </section>
 
 <div style="max-width: 1200px; margin: 0 auto; padding: 0 24px 96px; display: flex; flex-wrap: wrap; gap: 32px 56px; align-items: flex-start">
@@ -90,64 +90,64 @@ eVault
 
 <section id="install" aria-labelledby="install-h">
 <h2 id="install-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Install</h2>
-<p style="margin: 0 0 18px; color: var(--text2)">In eVault, open <strong>Settings › Command Line › Install evault Command</strong> and pick a folder on your PATH (Homebrew’s <code>bin</code> works). It adds a link into the app, so app updates update the command. Or in Terminal:</p>
-<div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre">$ sudo ln -sf /Applications/eVault.app/Contents/Helpers/evault /usr/local/bin/evault
-$ evault status</div>
+<p style="margin: 0 0 18px; color: var(--text2)">In EnVault, open <strong>Settings › Command Line › Install envault Command</strong> and pick a folder on your PATH (Homebrew’s <code>bin</code> works). It adds a link into the app, so app updates update the command. Or in Terminal:</p>
+<div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre">$ sudo ln -sf /Applications/EnVault.app/Contents/Helpers/envault /usr/local/bin/envault
+$ envault status</div>
 </section>
 
 <section id="unlock" aria-labelledby="unlock-h">
 <h2 id="unlock-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Unlocking</h2>
 <p style="margin: 0 0 18px; color: var(--text2)">A command that needs the key tries, in order:</p>
 <ol style="margin: 0 0 20px; padding-left: 22px; color: var(--text2); display: flex; flex-direction: column; gap: 6px">
-<li>the key cached by <code>evault unlock</code></li>
-<li><code>$EVAULT_PASSPHRASE</code>, if set</li>
-<li>the running eVault app: it shows a Touch ID prompt and hands over the key for that one command (it starts the app in the background if needed)</li>
+<li>the key cached by <code>envault unlock</code></li>
+<li><code>$ENVAULT_PASSPHRASE</code>, if set</li>
+<li>the running EnVault app: it shows a Touch ID prompt and hands over the key for that one command (it starts the app in the background if needed)</li>
 <li>a passphrase prompt</li>
 </ol>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault status</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Is the app running, which vault is open, locked or not.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault unlock [--passphrase]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Cache the key in your login keychain, for shell hooks. Uses Touch ID through the app unless you pass <code>--passphrase</code>.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault lock</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Forget the cached key.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault status</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Is the app running, which vault is open, locked or not.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault unlock [--passphrase]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Cache the key in your login keychain, for shell hooks. Uses Touch ID through the app unless you pass <code>--passphrase</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">envault lock</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Forget the cached key.</span></div>
 </div>
 </section>
 
 <section id="everyday" aria-labelledby="everyday-h">
 <h2 id="everyday-h" style="margin: 0 0 16px; font-size: 28px; letter-spacing: -.02em">Everyday</h2>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault ls</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List projects and their items.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault get &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print an item’s contents.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault run &lt;project&gt; &lt;item&gt; -- CMD</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Run a command with the file’s variables set. Nothing is written to disk. <code>--redact</code> replaces secret values in its output with <code>[redacted:KEY]</code>.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault keys &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List the variable names in an env file, without values.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault pull &lt;project&gt; &lt;item&gt; [-o PATH]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Write the env file to disk, readable only by you.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault push &lt;project&gt; &lt;item&gt; &lt;FILE&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Create or update an item from a file; creates the project if needed.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault set &lt;project&gt; &lt;item&gt; KEY=VALUE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Set variables, creating the file if needed. <code>KEY=-</code> reads the value from stdin; <code>--generate KEY</code> stores a new random secret without printing it.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault unset &lt;project&gt; &lt;item&gt; KEY</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Remove variables. Every change is a new revision.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault history &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List revisions, with the Mac that made each.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault example &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print a .env.example: same keys and comments, secrets blanked.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault ls</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List projects and their items.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault get &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print an item’s contents.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault run &lt;project&gt; &lt;item&gt; -- CMD</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Run a command with the file’s variables set. Nothing is written to disk. <code>--redact</code> replaces secret values in its output with <code>[redacted:KEY]</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault keys &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List the variable names in an env file, without values.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault pull &lt;project&gt; &lt;item&gt; [-o PATH]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Write the env file to disk, readable only by you.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault push &lt;project&gt; &lt;item&gt; &lt;FILE&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Create or update an item from a file; creates the project if needed.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault set &lt;project&gt; &lt;item&gt; KEY=VALUE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Set variables, creating the file if needed. <code>KEY=-</code> reads the value from stdin; <code>--generate KEY</code> stores a new random secret without printing it.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault unset &lt;project&gt; &lt;item&gt; KEY</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Remove variables. Every change is a new revision.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault history &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">List revisions, with the Mac that made each.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">envault example &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print a .env.example: same keys and comments, secrets blanked.</span></div>
 </div>
 </section>
 
 <section id="agents" aria-labelledby="agents-h">
 <h2 id="agents-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">AI agents</h2>
-<p style="margin: 0 0 18px; color: var(--text2)">Claude Code, Cursor, Codex and other coding agents can use your secrets without reading them. Connect eVault as an MCP server, or let the agent use the <code>evault</code> command directly. Either way it can run tests, migrations and scripts with an env file loaded, see variable names, and add or rotate keys. Secret values in command output are replaced with <code>[redacted:KEY]</code>.</p>
+<p style="margin: 0 0 18px; color: var(--text2)">Claude Code, Cursor, Codex and other coding agents can use your secrets without reading them. Connect EnVault as an MCP server, or let the agent use the <code>envault</code> command directly. Either way it can run tests, migrations and scripts with an env file loaded, see variable names, and add or rotate keys. Secret values in command output are replaced with <code>[redacted:KEY]</code>.</p>
 <div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre; margin-bottom: 18px"><span style="color: #8A91A3"># Claude Code · Codex</span>
-$ claude mcp add evault -- evault mcp
-$ codex mcp add evault -- evault mcp
-<span style="color: #8A91A3"># Cursor and others: an MCP server with command "evault", args ["mcp"]</span>
+$ claude mcp add envault -- envault mcp
+$ codex mcp add envault -- envault mcp
+<span style="color: #8A91A3"># Cursor and others: an MCP server with command "envault", args ["mcp"]</span>
 
 <span style="color: #8A91A3"># agents that only use the shell: add the guide to AGENTS.md or CLAUDE.md</span>
-$ evault agent-guide &gt;&gt; AGENTS.md
-$ evault agent-guide --skill &gt; ~/.claude/skills/evault/SKILL.md</div>
-<p style="margin: 0 0 18px; color: var(--text2)">The command knows it is talking to an agent from the environment the agent sets (<code>CLAUDECODE</code>, <code>CURSOR_AGENT</code>, <code>GEMINI_CLI</code>, <code>CODEX_SANDBOX</code>, or <code>EVAULT_AGENT=name</code> for others). Then:</p>
+$ envault agent-guide &gt;&gt; AGENTS.md
+$ envault agent-guide --skill &gt; ~/.claude/skills/envault/SKILL.md</div>
+<p style="margin: 0 0 18px; color: var(--text2)">The command knows it is talking to an agent from the environment the agent sets (<code>CLAUDECODE</code>, <code>CURSOR_AGENT</code>, <code>GEMINI_CLI</code>, <code>CODEX_SANDBOX</code>, or <code>ENVAULT_AGENT=name</code> for others). Then:</p>
 <ul style="margin: 0 0 20px; padding-left: 22px; color: var(--text2); display: flex; flex-direction: column; gap: 6px">
 <li>it never asks for the passphrase; it exits with code 4 when the user has to unlock or approve something</li>
-<li><code>evault run</code> redacts output unless the agent passes <code>--no-redact</code></li>
+<li><code>envault run</code> redacts output unless the agent passes <code>--no-redact</code></li>
 <li>reading values (<code>get</code>, <code>pull</code>, <code>env</code>, <code>run --no-redact</code>, <code>deploy</code>) asks you with Touch ID, naming the agent and the file</li>
 <li>it goes through the app, so <strong>Settings › AI Agents</strong> applies: whether agents may see values (ask, never, allow), change env files, and how long one approval lasts. The same tab lists recent requests.</li>
 </ul>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault mcp</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Serve eVault over MCP (stdio). Tools: <code>status</code>, <code>list_items</code>, <code>list_keys</code>, <code>run_command</code>, <code>set_keys</code>, <code>unset_keys</code>, <code>get_values</code> (asks you), <code>scan</code>.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault agent-guide [--skill]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print instructions for agents, as Markdown or as a Claude Code skill.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault mcp</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Serve EnVault over MCP (stdio). Tools: <code>status</code>, <code>list_items</code>, <code>list_keys</code>, <code>run_command</code>, <code>set_keys</code>, <code>unset_keys</code>, <code>get_values</code> (asks you), <code>scan</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault agent-guide [--skill]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print instructions for agents, as Markdown or as a Claude Code skill.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">--json</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Machine-readable output for <code>ls</code>, <code>keys</code>, <code>status</code>, <code>history</code>, <code>links</code>, <code>scan</code> and changes. Errors become <code>{"error", "code"}</code> on stderr.</span></div>
 </div>
 <p style="margin: 0; font-size: 15px; color: var(--muted2)">These rules keep a well-meaning agent from pasting a key into a chat, a log or a commit. They are not a sandbox: an agent with a shell can do whatever your account can.</p>
@@ -155,15 +155,15 @@ $ evault agent-guide --skill &gt; ~/.claude/skills/evault/SKILL.md</div>
 
 <section id="shell" aria-labelledby="shell-h">
 <h2 id="shell-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Shell integration <span style="font-size: 13px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 2px 8px; border-radius: 99px; vertical-align: middle; letter-spacing: 0">Pro</span></h2>
-<p style="margin: 0 0 18px; color: var(--text2)">Link a folder to an env file; the hook exports its variables when you <code>cd</code> in and unsets them when you leave. Run <code>evault unlock</code> once so the hook never has to ask.</p>
-<div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre; margin-bottom: 18px"><span style="color: #8A91A3"># ~/.zshrc  (bash: ~/.bashrc · fish: evault hook fish | source)</span>
-eval "$(evault hook zsh)"
+<p style="margin: 0 0 18px; color: var(--text2)">Link a folder to an env file; the hook exports its variables when you <code>cd</code> in and unsets them when you leave. Run <code>envault unlock</code> once so the hook never has to ask.</p>
+<div style="overflow-x: auto; background: #12141A; box-shadow: 0 0 0 1px var(--term-ring); border-radius: 12px; padding: 18px 22px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 14px; line-height: 1.8; color: #C9CEDA; white-space: pre; margin-bottom: 18px"><span style="color: #8A91A3"># ~/.zshrc  (bash: ~/.bashrc · fish: envault hook fish | source)</span>
+eval "$(envault hook zsh)"
 
-$ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
+$ cd ~/code/shop &amp;&amp; envault link shop .env.local</div>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault link &lt;project&gt; &lt;item&gt; [DIR]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Bind a folder (default: the current one) to an env file.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault unlink [DIR] · evault links</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Remove a binding, or list them.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault env [--fish]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print <code>export</code> lines for the file linked to this folder.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault link &lt;project&gt; &lt;item&gt; [DIR]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Bind a folder (default: the current one) to an env file.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault unlink [DIR] · envault links</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Remove a binding, or list them.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">envault env [--fish]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Print <code>export</code> lines for the file linked to this folder.</span></div>
 </div>
 </section>
 
@@ -171,7 +171,7 @@ $ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
 <h2 id="import-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Import</h2>
 <p style="margin: 0 0 18px; color: var(--text2)">Bring secrets in from wherever they live now. An item with the same name is updated, not duplicated.</p>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault import &lt;project&gt; &lt;item&gt; &lt;FILE|-&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">A .env file, JSON (flat, Doppler or a 1Password item) or a .env.vault, decrypted with <code>$DOTENV_KEY</code>. <code>-</code> reads stdin.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault import &lt;project&gt; &lt;item&gt; &lt;FILE|-&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">A .env file, JSON (flat, Doppler or a 1Password item) or a .env.vault, decrypted with <code>$DOTENV_KEY</code>. <code>-</code> reads stdin.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">… --doppler [-- doppler args]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">From <code>doppler secrets download</code>, e.g. <code>-- --project shop --config prd</code>.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">… --1password &lt;item&gt; [-- op args]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">From <code>op item get</code>; each field becomes a variable.</span></div>
 </div>
@@ -180,11 +180,11 @@ $ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
 
 <section id="git" aria-labelledby="git-h">
 <h2 id="git-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Keeping secrets out of git</h2>
-<p style="margin: 0 0 18px; color: var(--text2)">The pre-commit hook scans what you are about to commit for AWS, GitHub, Stripe, Slack, OpenAI and Google keys, private key blocks, JWTs, secret-looking assignments and real .env files. Add <code>evault:allow</code> to a line that is a false positive; <code>git commit --no-verify</code> skips the check once.</p>
+<p style="margin: 0 0 18px; color: var(--text2)">The pre-commit hook scans what you are about to commit for AWS, GitHub, Stripe, Slack, OpenAI and Google keys, private key blocks, JWTs, secret-looking assignments and real .env files. Add <code>envault:allow</code> to a line that is a false positive; <code>git commit --no-verify</code> skips the check once.</p>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault protect [DIR] [--remove]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Install or remove the hook. Keeps any hook you already have and honours <code>core.hooksPath</code>.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault scan --staged</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">What the hook runs: scan the staged files.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault scan [DIR]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Scan a whole source tree, skipping node_modules, build folders and binaries.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault protect [DIR] [--remove]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Install or remove the hook. Keeps any hook you already have and honours <code>core.hooksPath</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault scan --staged</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">What the hook runs: scan the staged files.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">envault scan [DIR]</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Scan a whole source tree, skipping node_modules, build folders and binaries.</span></div>
 </div>
 </section>
 
@@ -192,19 +192,19 @@ $ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
 <h2 id="deploy-h" style="margin: 0 0 12px; font-size: 28px; letter-spacing: -.02em">Deploy</h2>
 <p style="margin: 0 0 18px; color: var(--text2)">Uses the vendors’ own CLIs and the logins you already have. <code>--dry-run</code> prints what would run.</p>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault deploy vercel &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px"><code>--target production|preview|development</code></span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">evault deploy cloudflare &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Worker secrets via <code>wrangler secret bulk</code>; pass wrangler options after <code>--</code>.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">evault deploy github &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Actions secrets via <code>gh secret set</code>; <code>--repo owner/name</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault deploy vercel &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px"><code>--target production|preview|development</code></span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">envault deploy cloudflare &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Worker secrets via <code>wrangler secret bulk</code>; pass wrangler options after <code>--</code>.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">envault deploy github &lt;project&gt; &lt;item&gt;</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Actions secrets via <code>gh secret set</code>; <code>--repo owner/name</code>.</span></div>
 </div>
 </section>
 
 <section id="env" aria-labelledby="env-h">
 <h2 id="env-h" style="margin: 0 0 16px; font-size: 28px; letter-spacing: -.02em">Options and variables</h2>
 <div style="background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">--vault DIR · $EVAULT_DIR</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Which vault. Default: the one open in the app, else the eVault folder in iCloud Drive.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">$EVAULT_PASSPHRASE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Passphrase for scripts and CI.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">EVAULT_NO_APP=1</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Never ask the eVault app; use the cache or the passphrase.</span></div>
-<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">EVAULT_AGENT=name · =0</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Treat the caller as an AI agent with that name, or (<code>0</code>) as a person.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">--vault DIR · $ENVAULT_DIR</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Which vault. Default: the one open in the app, else the EnVault folder in iCloud Drive.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">$ENVAULT_PASSPHRASE</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Passphrase for scripts and CI.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">ENVAULT_NO_APP=1</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Never ask the EnVault app; use the cache or the passphrase.</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">ENVAULT_AGENT=name · =0</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Treat the caller as an AI agent with that name, or (<code>0</code>) as a person.</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line2)"><code style="flex: 0 1 300px; font-weight: 500">Exit codes</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">1 error · 2 <code>scan</code> found secrets · 3 not found · 4 needs you (locked, approval) · 5 refused · 64 usage</span></div>
 <div style="display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 20px"><code style="flex: 0 1 300px; font-weight: 500">$DOTENV_KEY</code><span style="flex: 1 1 260px; color: var(--muted); font-size: 16px">Decrypts a .env.vault on import.</span></div>
 </div>
@@ -215,10 +215,10 @@ $ cd ~/code/shop &amp;&amp; evault link shop .env.local</div>
 
 <footer style="border-top: 1px solid var(--line); background: var(--surface)">
 <div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; font-size: 15px; color: var(--muted)">
-<span style="font-weight: 700; color: var(--ink); margin-right: auto">eVault</span>
+<span style="font-weight: 700; color: var(--ink); margin-right: auto">EnVault</span>
 <a href="./">Home</a>
 <a href="privacy.html">Privacy</a>
-<a href="https://github.com/dinhkhanh/eVault/issues">Support</a>
+<a href="https://github.com/dinhkhanh/envault/issues">Support</a>
 <span>© 2026 Dinh Khanh</span>
 </div>
 </footer>

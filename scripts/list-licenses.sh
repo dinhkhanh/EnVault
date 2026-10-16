@@ -1,6 +1,6 @@
 #!/bin/sh
 # List issued licenses from the vendor ledger, optionally filtered by a substring (email, name, id).
-LEDGER="$HOME/Library/Application Support/eVault Vendor/licenses.jsonl"
+LEDGER="$HOME/Library/Application Support/EnVault Vendor/licenses.jsonl"
 [ -f "$LEDGER" ] || { echo "no licenses issued yet"; exit 0; }
 python3 - "$LEDGER" "${1:-}" <<'PY'
 import sys, json

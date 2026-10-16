@@ -5,13 +5,13 @@ gen: Config/Signing.xcconfig
 	xcodegen generate
 
 build: gen
-	xcodebuild -project eVault.xcodeproj -scheme eVault -configuration Debug -derivedDataPath build build CODE_SIGN_IDENTITY=- | tail -3
+	xcodebuild -project EnVault.xcodeproj -scheme EnVault -configuration Debug -derivedDataPath build build CODE_SIGN_IDENTITY=- | tail -3
 
 run: build
-	open build/Build/Products/Debug/eVault.app
+	open build/Build/Products/Debug/EnVault.app
 
 test:
-	cd Packages/eVaultKit && swift test
+	cd Packages/EnVaultKit && swift test
 
 # Release build without a Developer ID: ad-hoc signed, folder sync only.
 # Recipients must right-click > Open the first time (Gatekeeper).
@@ -24,16 +24,16 @@ Config/Signing.xcconfig:
 	@echo ">> Created Config/Signing.xcconfig — put your team id in it for iCloud builds."
 
 build-icloud: gen
-	xcodebuild -project eVault.xcodeproj -scheme eVault-iCloud -configuration Debug-iCloud -derivedDataPath build -allowProvisioningUpdates -allowProvisioningDeviceRegistration build | tail -3
+	xcodebuild -project EnVault.xcodeproj -scheme EnVault-iCloud -configuration Debug-iCloud -derivedDataPath build -allowProvisioningUpdates -allowProvisioningDeviceRegistration build | tail -3
 
 run-icloud: build-icloud
-	open build/Build/Products/Debug-iCloud/eVault.app
+	open build/Build/Products/Debug-iCloud/EnVault.app
 
 archive: gen
 	scripts/release.sh
 
 clean:
-	rm -rf build eVault.xcodeproj Packages/eVaultKit/.build dist
+	rm -rf build EnVault.xcodeproj Packages/EnVaultKit/.build dist
 
 # Pull refunded license ids into App/RevokedLicenses.swift (release scripts do this too).
 revocations:

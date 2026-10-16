@@ -3,8 +3,12 @@ main = "src/index.ts"
 # Account that owns the dinhkhanh.dk zone (Tran@dinhkhanh.dk's Account).
 account_id = "d87d194717900d3e8e1c5a9ee68f59ac"
 compatibility_date = "2026-10-01"
-# Custom domain; until it is attached the workers.dev URL from `wrangler deploy` works too.
-routes = [{ pattern = "store.evault.dinhkhanh.dk", custom_domain = true }]
+# Custom domains. store.evault… is the pre-rename name: eVault builds, the Polar webhook
+# and links in old emails still use it, so keep it attached.
+routes = [
+  { pattern = "store.envault.dinhkhanh.dk", custom_domain = true },
+  { pattern = "store.evault.dinhkhanh.dk", custom_domain = true },
+]
 
 [[d1_databases]]
 binding = "DB"
@@ -14,14 +18,16 @@ database_id = "df3eae6c-9d89-4cd2-8313-8db53cae2334"
 [vars]
 # Public half of the license signing key; must match App/LicensePublicKey.swift.
 LICENSE_PUBLIC_KEY = "LR48ZIUF9ljixUBXir7O99t37u+/fRkIiGBPkDpaTP4="
-SITE_URL = "https://dinhkhanh.github.io/eVault/"
-# Polar checkout link for eVault Pro (dashboard > Checkout Links). /buy redirects here.
+SITE_URL = "https://dinhkhanh.github.io/envault/"
+# Used for links in emails, whichever domain the request came in on.
+STORE_URL = "https://store.envault.dinhkhanh.dk"
+# Polar checkout link for EnVault Pro (dashboard > Checkout Links). /buy redirects here.
 POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_oaritVRkh5lcTTi0TSQPnx2BCeECtffqZnmqZ4QJdP5"
 # Paddle fallback: a Paddle checkout URL. Only used when CHECKOUT_PROVIDER = "paddle".
 PADDLE_CHECKOUT_URL = ""
 CHECKOUT_PROVIDER = "polar"
 # Resend sender; the domain must be verified in Resend.
-FROM_EMAIL = "eVault <evault@updates.dinhkhanh.dk>"
+FROM_EMAIL = "EnVault <envault@updates.dinhkhanh.dk>"
 SUPPORT_EMAIL = "tran@dinhkhanh.dk"
 UPDATES_MONTHS = "12"
 # "resend" sends real mail; "log" prints to the worker log (local dev).
