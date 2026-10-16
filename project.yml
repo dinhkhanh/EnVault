@@ -57,7 +57,7 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Dinh Khanh"
         NSFaceIDUsageDescription: "EnVault uses Touch ID to unlock your vault."
-        SUFeedURL: https://github.com/dinhkhanh/envault/releases/latest/download/appcast.xml
+        SUFeedURL: https://github.com/dinhkhanh/EnVault/releases/latest/download/appcast.xml
         SUPublicEDKey: SRLHhBqtlIsBvuqpk/ONBFaAS629idQVYwoebgfGd/E=
         SUEnableInstallerLauncherService: true
         SUEnableDownloaderService: true

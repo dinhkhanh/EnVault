@@ -12,7 +12,7 @@
 
 ## Docs
 
-- [Command line reference](https://dinhkhanh.github.io/envault/cli.html): every command, unlocking, AI agents, shell integration, import, git hook, deploy
-- [Home](https://dinhkhanh.github.io/envault/): features, security model, pricing
-- [Privacy](https://dinhkhanh.github.io/envault/privacy.html)
-- [Source](https://github.com/dinhkhanh/envault)
+- [Command line reference](https://envault.app/cli.html): every command, unlocking, AI agents, shell integration, import, git hook, deploy
+- [Home](https://envault.app/): features, security model, pricing
+- [Privacy](https://envault.app/privacy.html)
+- [Source](https://github.com/dinhkhanh/EnVault)

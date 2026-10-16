@@ -4,10 +4,10 @@
 #   scripts/store.sh issue --email E --name N [--plan pro|team] [--seats N] [--no-notify]
 #   scripts/store.sh revoke (--id ID | --email E) [--reason R]
 #   scripts/store.sh resend --email E
-# Needs ENVAULT_STORE_URL (default https://store.envault.dinhkhanh.dk) and the admin token
+# Needs ENVAULT_STORE_URL (default https://store.envault.app) and the admin token
 # in the login keychain: security add-generic-password -s dk.dinhkhanh.evault.store-admin -a admin -w TOKEN
 set -eu
-STORE="${ENVAULT_STORE_URL:-https://store.envault.dinhkhanh.dk}"
+STORE="${ENVAULT_STORE_URL:-https://store.envault.app}"
 TOKEN="${ENVAULT_STORE_TOKEN:-$(security find-generic-password -s dk.dinhkhanh.evault.store-admin -w)}"
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 auth="Authorization: Bearer $TOKEN"

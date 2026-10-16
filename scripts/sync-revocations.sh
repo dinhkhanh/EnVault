@@ -1,10 +1,10 @@
 #!/bin/sh
 # Pull the revoked license ids from the store and write App/RevokedLicenses.swift.
 # Run before every release so refunded keys stop working on the new version.
-#   ENVAULT_STORE_URL=https://store.envault.dinhkhanh.dk scripts/sync-revocations.sh
+#   ENVAULT_STORE_URL=https://store.envault.app scripts/sync-revocations.sh
 set -eu
 cd "$(dirname "$0")/.."
-STORE="${ENVAULT_STORE_URL:-https://store.envault.dinhkhanh.dk}"
+STORE="${ENVAULT_STORE_URL:-https://store.envault.app}"
 OUT=App/RevokedLicenses.swift
 JSON=$(curl -fsS --max-time 15 "$STORE/revocations.json") || {
   echo "sync-revocations: $STORE unreachable, keeping $OUT as is" >&2

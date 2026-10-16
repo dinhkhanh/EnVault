@@ -342,7 +342,7 @@ payouts is the seller's job; nothing in the pipeline depends on it.
 
 - The store Worker (`store/`) is written and tested locally but not deployed:
   needs a Polar account (payout country Vietnam), the D1 database, secrets and
-  the custom domain `store.envault.dinhkhanh.dk` (§15).
+  the custom domain `store.envault.app` (§15).
 - Touch ID on ad-hoc signed builds uses the legacy keychain fallback (§5
   describes the Developer ID path).
 - The CLI gets the key from the running app (Mach-port agent, Touch ID per
