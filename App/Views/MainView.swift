@@ -20,26 +20,13 @@ struct MainView: View {
                     ToolHostView(tool: tool)
                         .id(tool.id)
                 }
-            } else {
+            } else if let project = model.selectedProject {
                 NavigationSplitView {
                     SidebarView(showNewProject: $showNewProject)
                         .navigationSplitViewColumnWidth(min: 200, ideal: 230)
                 } content: {
-                    if let project = model.selectedProject {
-                        ItemListView(project: project, showNewItem: $showNewItem)
-                            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-                    } else if model.projects.isEmpty {
-                        ContentUnavailableView {
-                            Label("Bring In Your .env Files", systemImage: "square.and.arrow.down.on.square")
-                        } description: {
-                            Text("Point EnVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
-                        } actions: {
-                            Button("Import Projects from Folder…") { showImportProjects = true }.buttonStyle(.borderedProminent)
-                            Button("New Empty Project") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
-                        }
-                    } else {
-                        ContentUnavailableView("No Project", systemImage: "folder", description: Text("Create a project to start storing env files."))
-                    }
+                    ItemListView(project: project, showNewItem: $showNewItem)
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 260)
                 } detail: {
                     if let item = model.selectedItem {
                         ItemDetailView(item: item)
@@ -47,6 +34,14 @@ struct MainView: View {
                     } else {
                         ContentUnavailableView("Nothing Selected", systemImage: "doc.text", description: Text("Select an item, or drop a .env file onto the list."))
                     }
+                }
+            } else {
+                // No project selected: sidebar + one pane, so the empty state has room.
+                NavigationSplitView {
+                    SidebarView(showNewProject: $showNewProject)
+                        .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+                } detail: {
+                    noProject
                 }
             }
         }
@@ -70,6 +65,21 @@ struct MainView: View {
                 Button { model.lock() } label: { Label("Lock", systemImage: "lock") }
                     .help("Lock the vault (⇧⌘L)")
             }
+        }
+    }
+
+    @ViewBuilder private var noProject: some View {
+        if model.projects.isEmpty {
+            ContentUnavailableView {
+                Label("Bring In Your .env Files", systemImage: "square.and.arrow.down.on.square")
+            } description: {
+                Text("Point EnVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
+            } actions: {
+                Button("Import Projects from Folder…") { showImportProjects = true }.buttonStyle(.borderedProminent)
+                Button("New Empty Project") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+            }
+        } else {
+            ContentUnavailableView("No Project", systemImage: "folder", description: Text("Select a project in the sidebar, or create one to start storing env files."))
         }
     }
 }

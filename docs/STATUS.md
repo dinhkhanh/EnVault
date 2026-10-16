@@ -36,7 +36,7 @@ this is the "where are we" page.
 
 ## Next actions (in order)
 
-1. Done 2026-10-15: Polar org, product "eVault Pro" $29, production checkout link (in `wrangler.toml`), webhook `https://store.evault.dinhkhanh.dk/webhooks/polar` (secret in the Worker). After the rename: rename the product to "EnVault Pro" in Polar (the plan comes from metadata or "team" in the name, so the store doesn't care) and optionally move the webhook to `store.envault…`.
+1. Done 2026-10-15: Polar org, product "eVault Pro" $29, production checkout link (in `wrangler.toml`), webhook `https://store.evault.dinhkhanh.dk/webhooks/polar` (secret in the Worker). Done 2026-10-16 after the rename: product renamed "EnVault Pro" in Polar (the plan comes from metadata or "team" in the name, so the store doesn't care).
 2. Done 2026-10-15: store deployed with all secrets (license key, admin token, Resend, Polar webhook).
 3. Buy once through the site, check the key email and activation in 0.3.6, refund in Polar and check the key turns revoked (`scripts/store.sh list`). Then announce.
 4. Done 2026-10-15: Apple account active, CloudKit schema in Production, `make archive` (Developer ID, notarized; notary profile `evault-notary` in the keychain) shipped 0.3.7. Releases from now on: `make archive`, not `release-unsigned`.
