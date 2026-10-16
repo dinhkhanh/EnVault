@@ -532,7 +532,10 @@ final class AppModel {
         Task { await store.lock() }
         projects = []
         items = []
+        // Unlocking starts on the empty "No Project" page, not the last project or tool.
+        selectedProjectId = nil
         selectedItemId = nil
+        selectedToolId = nil
         phase = .locked
         touchIDOfferArmed = true
         agentGrants = [:]
@@ -543,7 +546,6 @@ final class AppModel {
         touchIDOfferArmed = false
         errorMessage = nil
         await reload()
-        if selectedProjectId == nil { selectedProjectId = projects.first?.id }
         autoLock.touch()
     }
 
