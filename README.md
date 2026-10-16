@@ -178,7 +178,7 @@ on the issuing Mac. That file and the keychain signing key are the vendor's
 
 Free: 3 projects, folder sync, editor, history, Touch ID, CLI (including Touch ID through the app), import.
 Pro: unlimited projects, CloudKit sync, quick copy (menu bar and ⌥⌘E panel), developer tools,
-shell integration, env files kept in sync in project folders.
+shell integration, env files kept in sync (both ways) in project folders.
 The split lives in `LicenseKit/Entitlements.swift`.
 
 ## Updates
