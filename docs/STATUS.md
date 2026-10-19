@@ -1,6 +1,6 @@
 # EnVault — current state
 
-Snapshot as of **2026-10-16**. Update this file whenever something ships,
+Snapshot as of **2026-10-20**. Update this file whenever something ships,
 blocks, or changes hands. Design and rationale live in [PLAN.md](PLAN.md);
 this is the "where are we" page.
 
@@ -21,7 +21,8 @@ this is the "where are we" page.
 
 ## Decisions in force
 
-- Free: 3 projects, folder sync, editor, history, Touch ID, CLI, AI agent support (MCP). Pro $29 one-time: unlimited projects, CloudKit sync, menu bar quick copy, developer tools, shell integration, 12 months of updates. Team: later, subscription with seats.
+- Free: 3 projects, folder sync, editor, history, Touch ID, CLI, AI agent support (MCP). Pro $29 one-time: unlimited projects, CloudKit sync, menu bar quick copy, developer tools, shell integration, 12 months of updates. Team: in progress (below).
+- **Team plan** (decided 2026-10-19; plan + SRS: [EnVault Team Features — Plan & SRS](https://claude.ai/code/artifact/4eaf2c20-2ccf-4c13-abf6-f231b4143b79)): annual per-seat subscription, prices in the plan doc, no seat cap (performance is tested at 100 members). Members join a team vault on Free; the owner holds the Team license. Team 1.0 supports both CloudKit sharing and shared-folder (Dropbox, git) teams. Crypto review of the key and signing design (NFR-16): Claude Code Reviews.
 - Sync v1 = encrypted folder in iCloud Drive; CloudKit mirror is the Pro backend.
 - Licenses: offline Ed25519 keys (`EVL1.payload.sig`), no activation server, no analytics, no network entitlement in the app.
 - **Payments: Polar** (merchant of record; seller in Vietnam; Polar lists Vietnam as a payout country, pays VND to a local bank). **Paddle is the fallback** (USD payouts, Payoneer or USD account). Lemon Squeezy rejected.
@@ -31,6 +32,7 @@ this is the "where are we" page.
 
 | Item | Blocked on | Unblocks |
 |---|---|---|
+| Team Gate A (phase 0 spike) | The owner runs the spike runbook in the Team plan doc: two macOS accounts with two Apple IDs, Debug-iCloud build, Vault › Team Spike… | Team phase 1 (identity, several open vaults) |
 | First real sale verified | One purchase through the site's Buy button (then refund it in Polar): webhook → key → email → activates in 0.3.6 | Announcing |
 | Buy button on the site | nothing: live since 2026-10-15 (production checkout, real charges) | — |
 
@@ -40,7 +42,9 @@ this is the "where are we" page.
 2. Done 2026-10-15: store deployed with all secrets (license key, admin token, Resend, Polar webhook).
 3. Buy once through the site, check the key email and activation in 0.3.6, refund in Polar and check the key turns revoked (`scripts/store.sh list`). Then announce.
 4. Done 2026-10-15: Apple account active, CloudKit schema in Production, `make archive` (Developer ID, notarized; notary profile `evault-notary` in the keychain) shipped 0.3.7. Releases from now on: `make archive`, not `release-unsigned`.
-5. Later: Team plan (subscription with seats), iOS companion, Mac App Store or Setapp.
+5. Team plan, phase 0: spike harness merged to `main` on 2026-10-20 (PR #1, not released). `CloudKitTransport` has a shared scope, `VaultSync/CloudKitSharing.swift` creates and accepts zone-wide shares, and debug builds have Vault › Team Spike…. Next: run the runbook (Gate A), paste both logs into the plan doc, then phase 1.
+6. Next release: it carries PR #1's sync change to every Pro iCloud user. `CloudMirror` now syncs only the paths `SyncPaths` accepts (`vault.json`, `projects/**/*.evr`, and the team folders `identities/`, `keys/`, `members/`, `spike/`) and ignores a remote `vault.json` with another vault id. Release builds also declare `CKSharingSupported` and answer a share link with a "not available yet" alert. Before tagging, check iCloud sync both ways on a real vault.
+7. Later: iOS companion, Mac App Store or Setapp.
 
 ## Vendor secrets (never in the repo)
 
@@ -69,4 +73,4 @@ Restore on a new Mac or after a keychain reset:
 
 ## Known gaps
 
-See [PLAN.md §13](PLAN.md#13-known-gaps). Highlights: ad-hoc builds use the legacy keychain fallback; no second physical Mac verified through iCloud Drive (folder mode) yet. CloudKit sync confirmed working by the owner on 2026-10-15.
+See [PLAN.md §13](PLAN.md#13-known-gaps). Highlights: ad-hoc builds use the legacy keychain fallback; no second physical Mac verified through iCloud Drive (folder mode) yet. CloudKit sync confirmed working by the owner on 2026-10-15. Team: zone-wide CloudKit sharing is only covered by unit tests so far (Gate A pending).
