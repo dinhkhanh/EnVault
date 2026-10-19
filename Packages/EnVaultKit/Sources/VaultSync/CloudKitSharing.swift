@@ -18,6 +18,16 @@ public struct VaultShareParticipant: Hashable, Sendable {
     public var isOwner: Bool
     public var canWrite: Bool
     public var status: Status
+
+    public var displayName: String { name ?? email ?? userRecordName ?? "unknown participant" }
+
+    /// The same person on a freshly fetched share. The user record id is stable;
+    /// the lookup email can be missing after acceptance or differ in case.
+    func matches(_ p: CKShare.Participant) -> Bool {
+        if let mine = userRecordName, let theirs = p.userIdentity.userRecordID?.recordName { return mine == theirs }
+        guard let mine = email, let theirs = p.userIdentity.lookupInfo?.emailAddress else { return false }
+        return mine.caseInsensitiveCompare(theirs) == .orderedSame
+    }
 }
 
 public struct VaultShareInfo: Sendable {
@@ -81,19 +91,19 @@ public struct CloudKitSharing: @unchecked Sendable {
         return Self.info(try await save(share))
     }
 
-    public func setPermission(email: String, canWrite: Bool, on vaultId: UUID) async throws -> VaultShareInfo {
+    public func setPermission(of person: VaultShareParticipant, canWrite: Bool, on vaultId: UUID) async throws -> VaultShareInfo {
         guard let share = try await share(of: vaultId) else { throw CloudTransportError.other("The vault is not shared.") }
-        guard let p = share.participants.first(where: { $0.userIdentity.lookupInfo?.emailAddress == email }) else {
-            throw CloudTransportError.other("\(email) is not on the share.")
+        guard let p = share.participants.first(where: { person.matches($0) }) else {
+            throw CloudTransportError.other("\(person.displayName) is not on the share.")
         }
         p.permission = canWrite ? .readWrite : .readOnly
         return Self.info(try await save(share))
     }
 
-    public func removeParticipant(email: String, from vaultId: UUID) async throws -> VaultShareInfo {
+    public func removeParticipant(_ person: VaultShareParticipant, from vaultId: UUID) async throws -> VaultShareInfo {
         guard let share = try await share(of: vaultId) else { throw CloudTransportError.other("The vault is not shared.") }
-        guard let p = share.participants.first(where: { $0.userIdentity.lookupInfo?.emailAddress == email }) else {
-            throw CloudTransportError.other("\(email) is not on the share.")
+        guard let p = share.participants.first(where: { person.matches($0) }) else {
+            throw CloudTransportError.other("\(person.displayName) is not on the share.")
         }
         share.removeParticipant(p)
         return Self.info(try await save(share))
@@ -101,8 +111,11 @@ public struct CloudKitSharing: @unchecked Sendable {
 
     /// Deletes the share: every participant loses the zone. The owner's data stays.
     public func stopSharing(_ vaultId: UUID) async throws {
+        let id = Self.shareID(vaultId)
         do {
-            _ = try await db.modifyRecords(saving: [], deleting: [Self.shareID(vaultId)])
+            // Per-record failures come back in deleteResults, not as a thrown error.
+            let r = try await db.modifyRecords(saving: [], deleting: [id])
+            try r.deleteResults[id]?.get()
         } catch let e as CKError where e.code == .unknownItem {
             return
         } catch {
@@ -156,7 +169,14 @@ public struct CloudKitSharing: @unchecked Sendable {
     /// Leaves a shared vault: deleting the zone from the shared database removes this user from the share.
     public func leave(_ ref: SharedVaultRef) async throws {
         let zone = CloudKitTransport.zoneID(ref.vaultId, ownerName: ref.ownerName)
-        do { _ = try await container.sharedCloudDatabase.modifyRecordZones(saving: [], deleting: [zone]) } catch { throw CloudKitTransport.map(error) }
+        do {
+            let r = try await container.sharedCloudDatabase.modifyRecordZones(saving: [], deleting: [zone])
+            try r.deleteResults[zone]?.get()
+        } catch let e as CKError where e.code == .zoneNotFound {
+            return
+        } catch {
+            throw CloudKitTransport.map(error)
+        }
     }
 
     public func transport(for ref: SharedVaultRef) -> CloudKitTransport {

@@ -165,19 +165,24 @@ public actor CloudMirror {
 
     // MARK: - helpers
 
-    /// Relative paths of `vault.json` and every `.evr` under `projects/`.
+    /// Relative paths of `vault.json` and every visible file in the vault's
+    /// subfolders (`projects/` today; team vaults add more). Anything pulled is
+    /// therefore also kept: a remote file outside `projects/` is not mistaken
+    /// for a local deletion on the next push.
     func localFiles() -> [String] {
         var out: [String] = []
         let fm = FileManager.default
         if fm.fileExists(atPath: localRoot.appendingPathComponent(VaultHeader.fileName).path) { out.append(VaultHeader.fileName) }
-        let projects = localRoot.appendingPathComponent("projects")
-        guard let e = fm.enumerator(at: projects, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { return out }
         let base = localRoot.resolvingSymlinksInPath().path + "/"
-        for case let u as URL in e {
-            guard (try? u.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true, u.pathExtension == RevisionFile.fileExtension else { continue }
-            let full = u.resolvingSymlinksInPath().path
-            guard full.hasPrefix(base) else { continue }
-            out.append(String(full.dropFirst(base.count)))
+        let top = (try? fm.contentsOfDirectory(at: localRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        for dir in top where (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            guard let e = fm.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
+            for case let u as URL in e {
+                guard (try? u.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+                let full = u.resolvingSymlinksInPath().path
+                guard full.hasPrefix(base) else { continue }
+                out.append(String(full.dropFirst(base.count)))
+            }
         }
         return out.sorted()
     }

@@ -20,22 +20,33 @@ final class TeamSpikeModel {
     }
 
     /// Written by `Write Probe`; the reader logs how long it took to arrive.
+    /// Plaintext in the vault zone, so it carries only a time and a random
+    /// per-window tag, never a name. Delete Probes removes them.
     struct Probe: Codable {
-        var writtenAt: Date
-        var by: String
+        /// Seconds since 1970, full precision (ISO 8601 dates drop the fraction).
+        var writtenAt: Double
+        var tag: String
     }
 
     var log: [LogLine] = []
     var share: VaultShareInfo?
     var sharedVaults: [SharedVaultRef] = []
-    var busy = false
+    /// Operations in flight; the window is disabled while any runs.
+    private var running = 0
+    var busy: Bool { running > 0 }
     /// The open iCloud vault, set by the view. Nil when the app is in folder mode.
     var ownerVaultId: UUID?
 
     private let sharing = CloudKitSharing()
     private let own = CloudKitTransport()
     private var tokens: [String: Data] = [:]
-    private let host = Host.current().localizedName ?? "this Mac"
+    /// Zones being fetched, and those asked to fetch again once that finishes.
+    private var fetching: Set<String> = []
+    private var refetch: Set<String> = []
+    /// Probe paths in the owner's zone, from our writes and from fetches.
+    private var ownProbes: Set<String> = []
+    /// Identifies this window's probes in the other window's log.
+    let tag = String(UUID().uuidString.prefix(4))
     private var subscribedShared = false
 
     private init() {
@@ -51,8 +62,8 @@ final class TeamSpikeModel {
 
     private func run(_ label: String, _ body: @escaping @MainActor () async throws -> Void) {
         Task {
-            busy = true
-            defer { busy = false }
+            running += 1
+            defer { running -= 1 }
             do { try await body() } catch { note("\(label): \(error.localizedDescription)", error: true) }
         }
     }
@@ -83,19 +94,19 @@ final class TeamSpikeModel {
         }
     }
 
-    func setWrite(email: String, _ canWrite: Bool) {
+    func setWrite(_ person: VaultShareParticipant, _ canWrite: Bool) {
         guard let id = ownerVaultId else { return }
-        run("Permission \(email)") { [self] in
-            share = try await sharing.setPermission(email: email, canWrite: canWrite, on: id)
-            note("\(email) is now \(canWrite ? "read-write" : "read-only")")
+        run("Permission \(person.displayName)") { [self] in
+            share = try await sharing.setPermission(of: person, canWrite: canWrite, on: id)
+            note("\(person.displayName) is now \(canWrite ? "read-write" : "read-only")")
         }
     }
 
-    func remove(email: String) {
+    func remove(_ person: VaultShareParticipant) {
         guard let id = ownerVaultId else { return }
-        run("Remove \(email)") { [self] in
-            share = try await sharing.removeParticipant(email: email, from: id)
-            note("Removed \(email)")
+        run("Remove \(person.displayName)") { [self] in
+            share = try await sharing.removeParticipant(person, from: id)
+            note("Removed \(person.displayName)")
         }
     }
 
@@ -115,22 +126,18 @@ final class TeamSpikeModel {
 
     func writeOwnProbe() {
         guard let id = ownerVaultId else { return }
-        run("Probe own zone") { [self] in try await writeProbe(own, vaultId: id, label: "Own zone") }
+        run("Probe own zone") { [self] in ownProbes.insert(try await writeProbe(own, vaultId: id, label: "Own zone")) }
     }
 
+    /// Deletes the probes seen so far. The incremental fetch first picks up any
+    /// written since; only the first fetch of a session reads the whole zone.
     func deleteProbes() {
         guard let id = ownerVaultId else { return }
         run("Delete probes") { [self] in
-            var token: Data?
-            var probes: [String] = []
-            var more = true
-            while more {
-                let c = try await own.fetchChanges(vaultId: id, since: token)
-                probes += c.files.map(\.path).filter { $0.hasPrefix("spike/") }
-                token = c.token
-                more = c.moreComing
-            }
+            try await fetch(own, vaultId: id, key: "private-\(id)", label: "Own zone")
+            let probes = Array(ownProbes)
             if !probes.isEmpty { try await own.delete(paths: probes, vaultId: id) }
+            ownProbes.subtract(probes)
             note("Deleted \(probes.count) probe files")
         }
     }
@@ -220,12 +227,23 @@ final class TeamSpikeModel {
         }
     }
 
+    /// One fetch per zone at a time: a call while one runs asks it to go again
+    /// instead of reading the same token and processing the same changes twice.
     private func fetch(_ t: CloudKitTransport, vaultId: UUID, key: String, label: String) async throws {
+        guard !fetching.contains(key) else { refetch.insert(key); return }
+        fetching.insert(key)
+        defer { fetching.remove(key) }
+        repeat {
+            refetch.remove(key)
+            try await fetchOnce(t, vaultId: vaultId, key: key, label: label)
+        } while refetch.contains(key)
+    }
+
+    private func fetchOnce(_ t: CloudKitTransport, vaultId: UUID, key: String, label: String) async throws {
         var token = tokens[key]
         var files = 0, deleted = 0
         var more = true
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
+        let isOwn = key == "private-\(vaultId)"
         while more {
             let c: CloudChanges
             do {
@@ -240,10 +258,14 @@ final class TeamSpikeModel {
                     let ok = (try? VaultHeader.decode(f.data))?.vaultId == vaultId
                     note("\(label): vault.json \(ok ? "decodes and matches the zone" : "does NOT match the zone")", error: !ok)
                 }
-                if f.path.hasPrefix("spike/"), let p = try? dec.decode(Probe.self, from: f.data) {
-                    note(String(format: "%@: probe from %@ arrived %.1f s after it was written", label, p.by, Date().timeIntervalSince(p.writtenAt)))
+                if f.path.hasPrefix("spike/") {
+                    if isOwn { ownProbes.insert(f.path) }
+                    if let p = try? JSONDecoder().decode(Probe.self, from: f.data), p.tag != tag {
+                        note(String(format: "%@: probe %@ arrived %.2f s after it was written", label, p.tag, Date().timeIntervalSince1970 - p.writtenAt))
+                    }
                 }
             }
+            if isOwn { ownProbes.subtract(c.deletedPaths) }
             deleted += c.deletedPaths.count
             token = c.token
             more = c.moreComing
@@ -252,12 +274,13 @@ final class TeamSpikeModel {
         note("\(label): \(files) new or changed files, \(deleted) deleted")
     }
 
-    private func writeProbe(_ t: CloudKitTransport, vaultId: UUID, label: String) async throws {
-        let enc = JSONEncoder()
-        enc.dateEncodingStrategy = .iso8601
+    @discardableResult
+    private func writeProbe(_ t: CloudKitTransport, vaultId: UUID, label: String) async throws -> String {
         let path = "spike/\(ULID().string).json"
-        try await t.upload([CloudFile(path: path, data: try enc.encode(Probe(writtenAt: Date(), by: host)))], vaultId: vaultId, overwrite: false)
-        note("\(label): wrote \(path)")
+        let probe = Probe(writtenAt: Date().timeIntervalSince1970, tag: tag)
+        try await t.upload([CloudFile(path: path, data: try JSONEncoder().encode(probe))], vaultId: vaultId, overwrite: false)
+        note("\(label): wrote probe \(tag) at \(path)")
+        return path
     }
 }
 
@@ -282,10 +305,20 @@ struct TeamSpikeView: View {
         .frame(minWidth: 820, minHeight: 560)
         .disabled(spike.busy)
         .onAppear {
-            spike.ownerVaultId = model.syncMode == .iCloud ? model.vaultId : nil
-            if spike.ownerVaultId != nil { spike.refreshShare() }
+            followOpenVault()
             spike.refreshShared()
         }
+        .onChange(of: model.vaultId) { followOpenVault() }
+        .onChange(of: model.syncMode) { followOpenVault() }
+    }
+
+    /// The owner panel always acts on the vault the main window has open.
+    private func followOpenVault() {
+        let id = model.syncMode == .iCloud ? model.vaultId : nil
+        guard id != spike.ownerVaultId || spike.share == nil else { return }
+        spike.ownerVaultId = id
+        spike.share = nil
+        if id != nil { spike.refreshShare() }
     }
 
     @ViewBuilder private var ownerSection: some View {
@@ -304,14 +337,14 @@ struct TeamSpikeView: View {
                     ForEach(share.participants, id: \.self) { p in
                         HStack {
                             VStack(alignment: .leading) {
-                                Text(p.name ?? p.email ?? p.userRecordName ?? "unknown")
+                                Text(p.displayName)
                                 Text("\(p.isOwner ? "owner" : (p.canWrite ? "read-write" : "read-only")) · \(p.status.rawValue)")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if !p.isOwner, let e = p.email {
-                                Button(p.canWrite ? "Make Read-Only" : "Allow Writes") { spike.setWrite(email: e, !p.canWrite) }
-                                Button("Remove", role: .destructive) { spike.remove(email: e) }
+                            if !p.isOwner {
+                                Button(p.canWrite ? "Make Read-Only" : "Allow Writes") { spike.setWrite(p, !p.canWrite) }
+                                Button("Remove", role: .destructive) { spike.remove(p) }
                             }
                         }
                     }
@@ -360,7 +393,7 @@ struct TeamSpikeView: View {
     private var logView: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Log").font(.headline)
+                Text("Log · probe tag \(spike.tag)").font(.headline)
                 Spacer()
                 Button("Copy") {
                     let f = ISO8601DateFormatter()
