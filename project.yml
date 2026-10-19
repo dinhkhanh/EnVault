@@ -63,7 +63,7 @@ targets:
         SUEnableDownloaderService: true
         SUScheduledCheckInterval: 86400
         EVReleaseDate: $(ENVAULT_RELEASE_DATE)
-        # Lets the app accept CloudKit share links (Team; only debug builds create shares so far).
+        # Lets the app receive CloudKit share links; release builds explain that Team isn't out yet (AppDelegate).
         CKSharingSupported: true
     settings:
       base:

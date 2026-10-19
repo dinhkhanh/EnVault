@@ -18,12 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .cloudKitPush, object: nil, userInfo: note.subscriptionID.map { ["subscriptionID": $0] })
     }
 
-    #if DEBUG
-    /// A vault share link opened from Mail, Messages or Safari (Team phase 0 spike; needs `CKSharingSupported`).
+    /// A vault share link opened from Mail, Messages or Safari (`CKSharingSupported`).
+    /// Only debug builds can join shared vaults so far (Team phase 0 spike).
     func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
+        #if DEBUG
         TeamSpikeModel.shared.accept(metadata)
+        #else
+        let alert = NSAlert()
+        alert.messageText = "Shared vaults aren't available yet"
+        alert.informativeText = "This link opens a vault someone shared with you. Team sharing comes in a later version of EnVault."
+        alert.runModal()
+        #endif
     }
-    #endif
 
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         Self.log.info("remote notifications unavailable: \(error.localizedDescription, privacy: .public)")

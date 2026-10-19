@@ -135,6 +135,26 @@ private struct Device {
         #expect(await a.store.item(item.id)?.modifiedBy.name == "Mac B")
     }
 
+    @Test func filesOutsideProjectsSurviveASync() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        await a.mirror.sync()
+        // Written by another client straight into the zone (a spike probe, a team identity…).
+        try await cloud.upload([CloudFile(path: "spike/probe.json", data: Data("{}".utf8))], vaultId: vaultId, overwrite: false)
+        await a.mirror.sync()
+        await a.mirror.sync()
+        #expect(try await cloud.fetchFile(path: "spike/probe.json", vaultId: vaultId) != nil)
+        #expect(FileManager.default.fileExists(atPath: a.root.appendingPathComponent("spike/probe.json").path))
+
+        // A file written locally outside projects/ goes up too.
+        let local = a.root.appendingPathComponent("identities/me.json")
+        try FileManager.default.createDirectory(at: local.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: local)
+        await a.mirror.sync()
+        #expect(try await cloud.fetchFile(path: "identities/me.json", vaultId: vaultId) != nil)
+    }
+
     @Test func compactionPropagatesAsDeletion() async throws {
         let cloud = MemoryCloudTransport()
         let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")

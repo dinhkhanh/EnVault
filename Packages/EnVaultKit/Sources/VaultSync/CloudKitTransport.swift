@@ -166,7 +166,8 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
 
     public func listVaults() async throws -> [UUID] {
         try await db.allRecordZones().compactMap { z in
-            guard z.zoneID.ownerName == ownerName else { return nil }
+            // The shared database mixes every owner's zones; the private one holds only ours.
+            if case .shared = scope, z.zoneID.ownerName != ownerName { return nil }
             return Self.vaultId(zoneName: z.zoneID.zoneName)
         }
     }
