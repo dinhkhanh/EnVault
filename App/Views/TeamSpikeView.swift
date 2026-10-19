@@ -43,8 +43,8 @@ final class TeamSpikeModel {
     /// Zones being fetched, and those asked to fetch again once that finishes.
     private var fetching: Set<String> = []
     private var refetch: Set<String> = []
-    /// Probe paths in the owner's zone, from our writes and from fetches.
-    private var ownProbes: Set<String> = []
+    /// Probe paths per owned vault zone, from our writes and from fetches.
+    private var ownProbes: [UUID: Set<String>] = [:]
     /// Identifies this window's probes in the other window's log.
     let tag = String(UUID().uuidString.prefix(4))
     private var subscribedShared = false
@@ -54,6 +54,14 @@ final class TeamSpikeModel {
             let sub = note.userInfo?["subscriptionID"] as? String
             MainActor.assumeIsolated { TeamSpikeModel.shared.pushReceived(subscriptionID: sub) }
         }
+    }
+
+    /// Applies a share result only if its vault is still the one open; a late
+    /// answer for the previous vault is dropped.
+    private func apply(_ info: VaultShareInfo?, for id: UUID) -> Bool {
+        guard id == ownerVaultId else { return false }
+        share = info
+        return true
     }
 
     func note(_ text: String, error: Bool = false) {
@@ -73,23 +81,25 @@ final class TeamSpikeModel {
     func shareVault() {
         guard let id = ownerVaultId else { return }
         run("Share") { [self] in
-            share = try await sharing.shareVault(id, title: "EnVault vault")
-            note("Shared vault-\(id.uuidString.prefix(8)); link \(share?.url?.absoluteString ?? "none yet")")
+            let info = try await sharing.shareVault(id, title: "EnVault vault")
+            guard apply(info, for: id) else { return }
+            note("Shared vault-\(id.uuidString.prefix(8)); link \(info.url?.absoluteString ?? "none yet")")
         }
     }
 
     func refreshShare() {
         guard let id = ownerVaultId else { return }
         run("Refresh share") { [self] in
-            share = try await sharing.info(of: id)
-            note(share == nil ? "Vault is not shared" : "Share has \(share!.participants.count) participants")
+            let info = try await sharing.info(of: id)
+            guard apply(info, for: id) else { return }
+            note(info.map { "Share has \($0.participants.count) participants" } ?? "Vault is not shared")
         }
     }
 
     func add(email: String, canWrite: Bool) {
         guard let id = ownerVaultId else { return }
         run("Add \(email)") { [self] in
-            share = try await sharing.addParticipant(email: email, canWrite: canWrite, to: id)
+            _ = apply(try await sharing.addParticipant(email: email, canWrite: canWrite, to: id), for: id)
             note("Added \(email) (\(canWrite ? "read-write" : "read-only")); send them the link")
         }
     }
@@ -97,7 +107,7 @@ final class TeamSpikeModel {
     func setWrite(_ person: VaultShareParticipant, _ canWrite: Bool) {
         guard let id = ownerVaultId else { return }
         run("Permission \(person.displayName)") { [self] in
-            share = try await sharing.setPermission(of: person, canWrite: canWrite, on: id)
+            _ = apply(try await sharing.setPermission(of: person, canWrite: canWrite, on: id), for: id)
             note("\(person.displayName) is now \(canWrite ? "read-write" : "read-only")")
         }
     }
@@ -105,7 +115,7 @@ final class TeamSpikeModel {
     func remove(_ person: VaultShareParticipant) {
         guard let id = ownerVaultId else { return }
         run("Remove \(person.displayName)") { [self] in
-            share = try await sharing.removeParticipant(person, from: id)
+            _ = apply(try await sharing.removeParticipant(person, from: id), for: id)
             note("Removed \(person.displayName)")
         }
     }
@@ -114,7 +124,7 @@ final class TeamSpikeModel {
         guard let id = ownerVaultId else { return }
         run("Stop sharing") { [self] in
             try await sharing.stopSharing(id)
-            share = nil
+            _ = apply(nil, for: id)
             note("Stopped sharing")
         }
     }
@@ -126,7 +136,10 @@ final class TeamSpikeModel {
 
     func writeOwnProbe() {
         guard let id = ownerVaultId else { return }
-        run("Probe own zone") { [self] in ownProbes.insert(try await writeProbe(own, vaultId: id, label: "Own zone")) }
+        run("Probe own zone") { [self] in
+            let path = try await writeProbe(own, vaultId: id, label: "Own zone")
+            ownProbes[id, default: []].insert(path)
+        }
     }
 
     /// Deletes the probes seen so far. The incremental fetch first picks up any
@@ -135,9 +148,9 @@ final class TeamSpikeModel {
         guard let id = ownerVaultId else { return }
         run("Delete probes") { [self] in
             try await fetch(own, vaultId: id, key: "private-\(id)", label: "Own zone")
-            let probes = Array(ownProbes)
+            let probes = Array(ownProbes[id] ?? [])
             if !probes.isEmpty { try await own.delete(paths: probes, vaultId: id) }
-            ownProbes.subtract(probes)
+            ownProbes[id]?.subtract(probes)
             note("Deleted \(probes.count) probe files")
         }
     }
@@ -175,10 +188,12 @@ final class TeamSpikeModel {
         }
     }
 
-    func fetch(_ ref: SharedVaultRef) {
+    /// `checkZone` (the Fetch button) first confirms the zone still exists, for a
+    /// clear error after removal; pushes skip it so latency stays one round trip.
+    func fetch(_ ref: SharedVaultRef, checkZone: Bool = true) {
         run("Fetch shared") { [self] in
             let t = sharing.transport(for: ref)
-            try await t.ensureVault(ref.vaultId)
+            if checkZone { try await t.ensureVault(ref.vaultId) }
             try await fetch(t, vaultId: ref.vaultId, key: "shared-\(ref.ownerName)-\(ref.vaultId)", label: "Shared \(ref.vaultId.uuidString.prefix(8))")
         }
     }
@@ -221,7 +236,7 @@ final class TeamSpikeModel {
     private func pushReceived(subscriptionID: String?) {
         note("Push received (\(subscriptionID ?? "no subscription id"))")
         if subscriptionID == "envault-shared" {
-            for ref in sharedVaults { fetch(ref) }
+            for ref in sharedVaults { fetch(ref, checkZone: false) }
         } else if ownerVaultId != nil {
             fetchOwn()
         }
@@ -259,13 +274,13 @@ final class TeamSpikeModel {
                     note("\(label): vault.json \(ok ? "decodes and matches the zone" : "does NOT match the zone")", error: !ok)
                 }
                 if f.path.hasPrefix("spike/") {
-                    if isOwn { ownProbes.insert(f.path) }
+                    if isOwn { ownProbes[vaultId, default: []].insert(f.path) }
                     if let p = try? JSONDecoder().decode(Probe.self, from: f.data), p.tag != tag {
                         note(String(format: "%@: probe %@ arrived %.2f s after it was written", label, p.tag, Date().timeIntervalSince1970 - p.writtenAt))
                     }
                 }
             }
-            if isOwn { ownProbes.subtract(c.deletedPaths) }
+            if isOwn { ownProbes[vaultId]?.subtract(c.deletedPaths) }
             deleted += c.deletedPaths.count
             token = c.token
             more = c.moreComing

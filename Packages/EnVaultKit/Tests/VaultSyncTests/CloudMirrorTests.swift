@@ -155,6 +155,71 @@ private struct Device {
         #expect(try await cloud.fetchFile(path: "identities/me.json", vaultId: vaultId) != nil)
     }
 
+    @Test func untrustedPathsAreIgnored() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        await a.mirror.sync()
+        let outside = a.root.deletingLastPathComponent().appendingPathComponent("escaped-\(UUID().uuidString).txt")
+        let evil = ["../\(outside.lastPathComponent)", "projects/../../\(outside.lastPathComponent)",
+                    "projects//x.evr", "spike/.hidden", "spike/a|b.json", "team.json", "projects/p/notes.txt"]
+        try await cloud.upload(evil.map { CloudFile(path: $0, data: Data("x".utf8)) }, vaultId: vaultId, overwrite: false)
+        await a.mirror.sync()
+        #expect(!FileManager.default.fileExists(atPath: outside.path))
+        #expect(!FileManager.default.fileExists(atPath: a.root.appendingPathComponent("team.json").path))
+        // Ignored, not deleted: a root-level file another client wrote stays in the cloud.
+        #expect(try await cloud.fetchFile(path: "team.json", vaultId: vaultId) != nil)
+
+        // Remote deletions of untrusted paths never touch local files.
+        let victim = a.root.deletingLastPathComponent().appendingPathComponent("victim-\(UUID().uuidString).txt")
+        try Data("keep".utf8).write(to: victim)
+        defer { try? FileManager.default.removeItem(at: victim) }
+        try await cloud.delete(paths: ["../\(victim.lastPathComponent)"], vaultId: vaultId)
+        await a.mirror.sync()
+        #expect(FileManager.default.fileExists(atPath: victim.path))
+    }
+
+    @Test func strayLocalFilesStayLocal() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        let p = try await a.store.createProject(name: "app")
+        _ = try await a.store.createItem(in: p.id, name: ".env", payload: .envFile(text: "A=1"))
+        let dir = a.root.appendingPathComponent("projects/\(p.id.uuidString)")
+        for name in ["Icon\r", "x.evr~", "notes.txt"] { try Data("x".utf8).write(to: dir.appendingPathComponent(name)) }
+        try Data("x".utf8).write(to: a.root.appendingPathComponent("stray.json"))
+        let before = await cloud.fileCount(vaultId)
+        await a.mirror.sync()
+        // header + project meta + item revision, and nothing else
+        #expect(await cloud.fileCount(vaultId) == before + 3)
+    }
+
+    @Test func foreignHeaderIsIgnored() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        await a.mirror.sync()
+        let other = try KeyHierarchy.createVault(passphrase: "attacker", kdf: fastKDF).header
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: try other.encoded())], vaultId: vaultId, overwrite: true)
+        await a.mirror.sync()
+        let local = try VaultHeader.decode(Data(contentsOf: a.root.appendingPathComponent(VaultHeader.fileName)))
+        #expect(local.vaultId == vaultId)
+        let reopened = try await VaultStore.open(storage: LocalFolderStorage(root: a.root), device: macA)
+        try await reopened.unlock(passphrase: "pw")
+    }
+
+    @Test func syncablePaths() {
+        #expect(SyncPaths.isSyncable("vault.json"))
+        #expect(SyncPaths.isSyncable("projects/A/items/B/01J.evr"))
+        #expect(SyncPaths.isSyncable("members/01J.evr"))
+        #expect(!SyncPaths.isSyncable("projects/A/notes.txt"))
+        #expect(!SyncPaths.isSyncable("devices/x.json"))
+        #expect(!SyncPaths.isSyncable("../x"))
+        #expect(!SyncPaths.isSyncable("spike/..") && !SyncPaths.isSyncable("spike/"))
+        #expect(!SyncPaths.isSyncable("/spike/x.json"))
+        #expect(!SyncPaths.isSyncable("spike/caf\u{e9}.json"))
+    }
+
     @Test func compactionPropagatesAsDeletion() async throws {
         let cloud = MemoryCloudTransport()
         let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")

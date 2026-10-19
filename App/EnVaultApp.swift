@@ -29,7 +29,13 @@ struct EnVaultApp: App {
                     await model.start()
                     QuickCopyPanelController.shared.openMain = { openWindow(id: "main"); NSApp.activate() }
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { _ in model.remotePushReceived() }
+                // Pushes for vaults shared with this account don't concern the vault open here.
+                .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { note in
+                    if note.userInfo?["subscriptionID"] as? String != "envault-shared" { model.remotePushReceived() }
+                }
+                #if DEBUG
+                .onReceive(NotificationCenter.default.publisher(for: .showTeamSpike)) { _ in openWindow(id: "team-spike") }
+                #endif
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.appActivated() }
         }
         .defaultSize(width: 1100, height: 700)

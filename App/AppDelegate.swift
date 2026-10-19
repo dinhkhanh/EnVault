@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Only debug builds can join shared vaults so far (Team phase 0 spike).
     func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
         #if DEBUG
+        NotificationCenter.default.post(name: .showTeamSpike, object: nil)
         TeamSpikeModel.shared.accept(metadata)
         #else
         let alert = NSAlert()
@@ -38,4 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension Notification.Name {
     static let cloudKitPush = Notification.Name("envault.cloudKitPush")
+    /// Debug only: a share link was opened, so bring up the Team Spike window to show the result.
+    static let showTeamSpike = Notification.Name("envault.showTeamSpike")
 }
