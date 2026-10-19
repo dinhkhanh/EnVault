@@ -14,9 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
-        guard CKNotification(fromRemoteNotificationDictionary: userInfo) != nil else { return }
-        NotificationCenter.default.post(name: .cloudKitPush, object: nil)
+        guard let note = CKNotification(fromRemoteNotificationDictionary: userInfo) else { return }
+        NotificationCenter.default.post(name: .cloudKitPush, object: nil, userInfo: note.subscriptionID.map { ["subscriptionID": $0] })
     }
+
+    #if DEBUG
+    /// A vault share link opened from Mail, Messages or Safari (Team phase 0 spike; needs `CKSharingSupported`).
+    func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
+        TeamSpikeModel.shared.accept(metadata)
+    }
+    #endif
 
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         Self.log.info("remote notifications unavailable: \(error.localizedDescription, privacy: .public)")

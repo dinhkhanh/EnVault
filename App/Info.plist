@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CKSharingSupported</key>
+	<true/>
 	<key>EVReleaseDate</key>
 	<string>$(ENVAULT_RELEASE_DATE)</string>
 	<key>LSApplicationCategoryType</key>
