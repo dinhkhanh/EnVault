@@ -22,7 +22,7 @@ SITE_URL = "https://envault.app/"
 # Used for links in emails, whichever domain the request came in on.
 STORE_URL = "https://store.envault.app"
 # Polar checkout link for EnVault Pro (dashboard > Checkout Links). /buy redirects here.
-POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_oaritVRkh5lcTTi0TSQPnx2BCeECtffqZnmqZ4QJdP5"
+POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_Nnoa6yJSWH0xN7DFZ6pedVfLK85ZsMxjZCmUw4Etp67"
 # Paddle fallback: a Paddle checkout URL. Only used when CHECKOUT_PROVIDER = "paddle".
 PADDLE_CHECKOUT_URL = ""
 CHECKOUT_PROVIDER = "polar"
