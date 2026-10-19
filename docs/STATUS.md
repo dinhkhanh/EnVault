@@ -48,7 +48,7 @@ this is the "where are we" page.
 |---|---|
 | License signing key (Ed25519 private) | login keychain `dk.dinhkhanh.evault.license-signing`; backup in password manager; also becomes the Worker secret `LICENSE_PRIVATE_KEY` |
 | License public key | `App/LicensePublicKey.swift`, `store/wrangler.toml` (`LICENSE_PUBLIC_KEY`) |
-| Sparkle EdDSA key | login keychain, account `ed25519` (from `generate_keys`); backup in password manager; public key in `project.yml` (`SUPublicEDKey`) |
+| Sparkle EdDSA key | login keychain; on the release Mac the current `SRLH…` key is account `ed25519-srlh` (account `ed25519` there holds the retired `sEM9…` key), so release with `SPARKLE_ACCOUNT=ed25519-srlh make archive`; backup in password manager; public key in `project.yml` (`SUPublicEDKey`) |
 | Store admin token | Worker secret `ADMIN_TOKEN`; keychain `dk.dinhkhanh.evault.store-admin` |
 | Polar / Paddle / Resend secrets | Worker secrets only (Resend key "envault-store (Cloudflare Worker)", sending-only, scoped to `envault.app`) |
 | Apple team id | git-ignored `Config/Signing.xcconfig` |
