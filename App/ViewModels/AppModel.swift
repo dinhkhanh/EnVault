@@ -5,8 +5,9 @@ import VaultSync
 import ToolKit
 import EnvKit
 
-/// Single source of truth for the UI. Wraps the `VaultStore` actor and keeps
-/// value-type snapshots that SwiftUI can render synchronously.
+/// Single source of truth for the UI. The open vault is a `VaultSession`
+/// (store, files, sync, snapshots); this model owns what spans it: lock
+/// state, selection, Touch ID, recovery, the CLI agent.
 @MainActor
 @Observable
 final class AppModel {
@@ -24,15 +25,20 @@ final class AppModel {
     }
 
     private(set) var phase: Phase = .loading
-    private(set) var syncMode: SyncMode = .folder
-    private(set) var vaultURL: URL?
-    private(set) var vaultId: UUID?
-    private(set) var projects: [Project] = []
-    private(set) var items: [Item] = []
-    private(set) var lastRefresh: Date?
-    private(set) var syncStatus: SyncStatus = .idle
-    private(set) var lastCloudSync: Date?
+    /// The open vault, if any.
+    private(set) var session: VaultSession?
+    /// Progress of a download that runs before its session exists (opening or moving an iCloud vault).
+    private(set) var downloadStatus: SyncStatus?
     var errorMessage: String?
+
+    var syncMode: SyncMode { session?.mode ?? .folder }
+    var vaultURL: URL? { session?.url }
+    var vaultId: UUID? { session?.vaultId }
+    var projects: [Project] { session?.projects ?? [] }
+    var items: [Item] { session?.items ?? [] }
+    var lastRefresh: Date? { session?.lastRefresh }
+    var syncStatus: SyncStatus { downloadStatus ?? session?.syncStatus ?? .idle }
+    var lastCloudSync: Date? { session?.lastCloudSync }
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
     /// Set when the vault opens locked or gets locked; the next time EnVault is (or becomes)
@@ -65,12 +71,8 @@ final class AppModel {
     var selectedToolId: String?
     var searchText = ""
 
-    @ObservationIgnored private var store: VaultStore?
-    @ObservationIgnored private var watcher: FolderWatcher?
-    @ObservationIgnored private var watchTask: Task<Void, Never>?
-    @ObservationIgnored private var mirror: CloudMirror?
-    @ObservationIgnored private var cloudTimer: Task<Void, Never>?
-    @ObservationIgnored private var pushDebounce: Task<Void, Never>?
+    private var store: VaultStore? { session?.store }
+    private var mirror: CloudMirror? { session?.mirror }
     @ObservationIgnored private var autoLock: AutoLock!
     @ObservationIgnored private let keychain = KeychainVaultKeyStore()
     @ObservationIgnored private lazy var cloud: CloudVaultTransport = {
@@ -178,21 +180,16 @@ final class AppModel {
     /// Opens (locked) the vault in `url`. Shows an error if there is none.
     func openVault(at url: URL, mode: SyncMode) async {
         do {
-            let storage = LocalFolderStorage(root: url)
-            let s = try await VaultStore.open(storage: storage)
-            store = s
-            vaultURL = url
-            vaultId = await s.vaultId
-            syncMode = mode
-            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
-            hasBiometricKey = keychain.hasCachedKey(vaultId: vaultId!)
+            let s = try await VaultStore.open(storage: LocalFolderStorage(root: url))
+            let id = await s.vaultId
+            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(id.uuidString, forKey: Self.iCloudVaultKey) }
+            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode))
+            hasBiometricKey = keychain.hasCachedKey(vaultId: id)
             hasRecoveryKey = await s.hasRecoveryKey
             phase = .locked
             errorMessage = nil
             touchIDOfferArmed = true
             offerTouchIDIfAppropriate()
-            startWatching()
-            if mode == .iCloud { startCloud() }
         } catch {
             errorMessage = error.localizedDescription
             if phase == .loading { phase = .noVault }
@@ -202,22 +199,15 @@ final class AppModel {
     func createVault(at url: URL, passphrase: String, mode: SyncMode) async {
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            let storage = LocalFolderStorage(root: url)
-            let s = try await VaultStore.create(storage: storage, passphrase: passphrase)
-            store = s
-            vaultURL = url
-            vaultId = await s.vaultId
-            syncMode = mode
-            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(vaultId!.uuidString, forKey: Self.iCloudVaultKey) }
+            let s = try await VaultStore.create(storage: LocalFolderStorage(root: url), passphrase: passphrase)
+            let id = await s.vaultId
+            if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(id.uuidString, forKey: Self.iCloudVaultKey) }
+            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode))
             hasBiometricKey = false
             errorMessage = nil
             pendingRecoveryKey = try await s.createRecoveryKey()
             hasRecoveryKey = true
-            startWatching()
-            if mode == .iCloud {
-                startCloud()
-                try await mirror?.bootstrap()
-            }
+            if mode == .iCloud { try await mirror?.bootstrap() }
             await becameUnlocked()
         } catch {
             errorMessage = error.localizedDescription
@@ -227,15 +217,25 @@ final class AppModel {
     /// Forget the current vault (does not delete any files).
     func closeVault() {
         lock()
-        stopWatching()
-        stopCloud()
+        session?.close()
+        session = nil
         VaultLocation.forget()
         UserDefaults.standard.removeObject(forKey: Self.iCloudVaultKey)
-        store = nil
-        vaultURL = nil
-        vaultId = nil
-        syncMode = .folder
         phase = .noVault
+    }
+
+    /// Makes `new` the open vault: replaces any previous session, starts
+    /// watching its folder and, in iCloud mode, syncing it.
+    private func begin(_ new: VaultSession) {
+        session?.close()
+        new.didReload = { [weak self] in self?.sessionDidReload() }
+        new.reportError = { [weak self] in self?.errorMessage = $0 }
+        session = new
+        downloadStatus = nil
+        new.startWatching()
+        if new.mode == .iCloud, cloudAvailable {
+            new.startCloud(transport: cloud, stateURL: Self.stateURL(for: new.vaultId))
+        }
     }
 
     // MARK: - iCloud (CloudKit) mode
@@ -305,13 +305,13 @@ final class AppModel {
             let m = CloudMirror(vaultId: id, localRoot: root, stateURL: Self.stateURL(for: id), transport: cloud)
             let haveLocal = await VaultStore.vaultExists(in: LocalFolderStorage(root: root))
             if download || !haveLocal {
-                syncStatus = .syncing
+                downloadStatus = .syncing
                 try await m.pull()
-                syncStatus = .idle
+                downloadStatus = nil
             }
             await openVault(at: root, mode: .iCloud)
         } catch {
-            syncStatus = .error(error.localizedDescription)
+            downloadStatus = .error(error.localizedDescription)
             errorMessage = error.localizedDescription
             if phase == .loading { phase = .noVault }
         }
@@ -342,10 +342,10 @@ final class AppModel {
         let importState = FileManager.default.temporaryDirectory.appendingPathComponent("evault-import-\(id.uuidString).json")
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            syncStatus = .syncing
+            downloadStatus = .syncing
             try await CloudMirror(vaultId: id, localRoot: root, stateURL: importState, transport: eVaultCloud).pull()
             try? FileManager.default.removeItem(at: importState)
-            syncStatus = .idle
+            downloadStatus = nil
             guard await VaultStore.vaultExists(in: LocalFolderStorage(root: root)) else {
                 throw VaultError.io("that vault is empty in eVault's iCloud; open eVault on the Mac that made it and let it sync")
             }
@@ -353,43 +353,17 @@ final class AppModel {
             try await mirror?.bootstrap()
             await syncNow()
         } catch {
-            syncStatus = .error(error.localizedDescription)
+            downloadStatus = .error(error.localizedDescription)
             errorMessage = error.localizedDescription
         }
     }
 
-    private func startCloud() {
-        guard cloudAvailable, let vaultId, let vaultURL else { return }
-        mirror = CloudMirror(vaultId: vaultId, localRoot: vaultURL, stateURL: Self.stateURL(for: vaultId), transport: cloud)
-        cloudTimer?.cancel()
-        cloudTimer = Task { [weak self] in
-            await self?.syncNow()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(300))
-                await self?.syncNow()
-            }
-        }
-    }
-
-    private func stopCloud() {
-        cloudTimer?.cancel(); cloudTimer = nil
-        pushDebounce?.cancel(); pushDebounce = nil
-        mirror = nil
-        syncStatus = .idle
-        lastCloudSync = nil
-    }
-
-    /// Full pull + push. Safe to call any time, locked or not.
+    /// Full pull + push. Safe to call any time, locked or not. Clears a
+    /// failed download's status, as the open vault's own sync now speaks.
     func syncNow() async {
-        guard let mirror else { return }
-        syncStatus = .syncing
-        let r = await mirror.sync()
-        syncStatus = await mirror.status
-        lastCloudSync = await mirror.lastSync
-        if r.pulled > 0 {
-            try? await store?.reloadHeader()
-            await refreshFromDisk()
-        }
+        guard let session else { return }
+        downloadStatus = nil
+        await session.syncNow()
     }
 
     /// A CloudKit silent push arrived: something changed remotely.
@@ -410,24 +384,9 @@ final class AppModel {
         Task { await unlockWithBiometrics() }
     }
 
-    /// Local files changed (our own writes): push soon, coalesced.
-    private func schedulePush() {
-        guard mirror != nil else { return }
-        pushDebounce?.cancel()
-        pushDebounce = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, let self, let mirror = self.mirror else { return }
-            self.syncStatus = .syncing
-            _ = try? await mirror.push()
-            self.syncStatus = await mirror.status
-            self.lastCloudSync = await mirror.lastSync
-        }
-    }
+    private func schedulePush() { session?.schedulePush() }
 
-    func resetCloudState() async {
-        await mirror?.reset()
-        await syncNow()
-    }
+    func resetCloudState() async { await session?.resetCloudState() }
 
     // MARK: - Lock / unlock
 
@@ -537,8 +496,8 @@ final class AppModel {
         if let vaultId { fileLinks.vaultLocked(vaultId: vaultId) }
         autoLock.stop()
         Task { await store.lock() }
-        projects = []
-        items = []
+        session?.isUnlocked = false
+        session?.clear()
         identity = nil
         // Unlocking starts on the empty "No Project" page, not the last project or tool.
         selectedProjectId = nil
@@ -551,6 +510,7 @@ final class AppModel {
 
     private func becameUnlocked() async {
         phase = .unlocked
+        session?.isUnlocked = true
         touchIDOfferArmed = false
         errorMessage = nil
         await reload()
@@ -560,44 +520,15 @@ final class AppModel {
 
     func userActivity() { autoLock.touch() }
 
-    // MARK: - Folder watching / refresh
-
-    /// Watches the vault folder from the moment it is opened. Locked: only
-    /// cloud pushes happen. Unlocked: new revisions are also indexed.
-    private func startWatching() {
-        stopWatching()
-        guard let url = vaultURL else { return }
-        let w = FolderWatcher(url: url)
-        watcher = w
-        watchTask = Task { [weak self] in
-            for await _ in w.changes {
-                guard let self, !Task.isCancelled else { return }
-                await self.refreshFromDisk()
-                self.schedulePush()
-            }
-        }
-    }
-
-    private func stopWatching() {
-        watchTask?.cancel(); watchTask = nil
-        watcher?.stop(); watcher = nil
-    }
+    // MARK: - Refresh
 
     /// Picks up revisions written by other devices or the CLI.
-    func refreshFromDisk() async {
-        guard let store, phase == .unlocked else { return }
-        do {
-            if try await store.refresh() { await reload() }
-            lastRefresh = Date()
-        } catch {
-            errorMessage = "Sync read failed: \(error.localizedDescription)"
-        }
-    }
+    func refreshFromDisk() async { await session?.refreshFromDisk() }
 
-    private func reload() async {
-        guard let store else { return }
-        projects = await store.projects()
-        items = await store.allItems()
+    private func reload() async { await session?.reload() }
+
+    /// The open vault's snapshots changed: keep the selection valid and linked files current.
+    private func sessionDidReload() {
         if let pid = selectedProjectId, !projects.contains(where: { $0.id == pid }) { selectedProjectId = projects.first?.id }
         if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
         if phase == .unlocked, let vaultId { fileLinks.syncAll(vaultId: vaultId) }
