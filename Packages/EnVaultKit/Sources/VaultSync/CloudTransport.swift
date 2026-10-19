@@ -22,6 +22,8 @@ public enum CloudTransportError: Error, Sendable, Equatable {
     case tokenExpired
     case zoneMissing
     case notSignedIn
+    /// A shared vault this user may only read (or no longer may use at all).
+    case permissionDenied
     case other(String)
 }
 

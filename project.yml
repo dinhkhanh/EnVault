@@ -63,6 +63,8 @@ targets:
         SUEnableDownloaderService: true
         SUScheduledCheckInterval: 86400
         EVReleaseDate: $(ENVAULT_RELEASE_DATE)
+        # Lets the app accept CloudKit share links (Team; only debug builds create shares so far).
+        CKSharingSupported: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dk.dinhkhanh.envault

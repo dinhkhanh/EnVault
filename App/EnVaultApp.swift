@@ -65,8 +65,19 @@ struct EnVaultApp: App {
                     if let u = model.vaultURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }
                 }
                 .disabled(model.vaultURL == nil)
+                #if DEBUG
+                Divider()
+                Button("Team Spike…") { openWindow(id: "team-spike") }
+                    .disabled(!model.cloudAvailable)
+                #endif
             }
         }
+
+        #if DEBUG
+        Window("Team Spike", id: "team-spike") {
+            TeamSpikeView().environment(model)
+        }
+        #endif
 
         Settings {
             SettingsView().environment(model).environment(licenses)

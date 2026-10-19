@@ -23,7 +23,8 @@ public enum CloudKitAvailability {
     }
 }
 
-/// `CloudVaultTransport` on the user's private CloudKit database.
+/// `CloudVaultTransport` on the user's private CloudKit database, or (scope
+/// `.shared`) on a vault zone another user shares with this one.
 ///
 /// Layout: one custom record zone per vault (`vault-<uuid>`), one record of
 /// type `VaultFile` per file. Record name = path with `/` replaced by `|`.
@@ -34,29 +35,64 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
     public static let recordType = "VaultFile"
     static let inlineLimit = 900_000
 
-    private let container: CKContainer
-    private var db: CKDatabase { container.privateCloudDatabase }
+    /// Whose zones this transport reads and writes.
+    public enum Scope: Sendable, Equatable {
+        /// Zones this user owns, in the private database.
+        case `private`
+        /// Zones owned by `ownerName` (a user record name) and shared with this user.
+        case shared(ownerName: String)
+    }
 
-    public init(containerIdentifier: String = CloudKitAvailability.containerIdentifier) {
+    private let container: CKContainer
+    public let scope: Scope
+    private var db: CKDatabase {
+        switch scope {
+        case .private: container.privateCloudDatabase
+        case .shared: container.sharedCloudDatabase
+        }
+    }
+    private var ownerName: String {
+        switch scope {
+        case .private: CKCurrentUserDefaultName
+        case .shared(let owner): owner
+        }
+    }
+
+    public init(containerIdentifier: String = CloudKitAvailability.containerIdentifier, scope: Scope = .private) {
         container = CKContainer(identifier: containerIdentifier)
+        self.scope = scope
     }
 
     public func accountStatus() async throws -> CKAccountStatus { try await container.accountStatus() }
 
-    static func zoneID(_ vaultId: UUID) -> CKRecordZone.ID {
-        CKRecordZone.ID(zoneName: "vault-\(vaultId.uuidString)", ownerName: CKCurrentUserDefaultName)
+    static func zoneName(_ vaultId: UUID) -> String { "vault-\(vaultId.uuidString)" }
+    static func vaultId(zoneName n: String) -> UUID? {
+        n.hasPrefix("vault-") ? UUID(uuidString: String(n.dropFirst(6))) : nil
     }
-    static func recordID(path: String, vaultId: UUID) -> CKRecord.ID {
+    static func zoneID(_ vaultId: UUID, ownerName: String = CKCurrentUserDefaultName) -> CKRecordZone.ID {
+        CKRecordZone.ID(zoneName: zoneName(vaultId), ownerName: ownerName)
+    }
+    private func zoneID(_ vaultId: UUID) -> CKRecordZone.ID { Self.zoneID(vaultId, ownerName: ownerName) }
+    private func recordID(path: String, vaultId: UUID) -> CKRecord.ID {
         CKRecord.ID(recordName: path.replacingOccurrences(of: "/", with: "|"), zoneID: zoneID(vaultId))
     }
 
+    /// Private scope: creates the zone. Shared scope: only the owner can create
+    /// zones, so this checks the shared zone is still there.
     public func ensureVault(_ vaultId: UUID) async throws {
-        let zone = CKRecordZone(zoneID: Self.zoneID(vaultId))
-        _ = try await db.modifyRecordZones(saving: [zone], deleting: [])
+        switch scope {
+        case .private:
+            let zone = CKRecordZone(zoneID: zoneID(vaultId))
+            _ = try await db.modifyRecordZones(saving: [zone], deleting: [])
+        case .shared:
+            do { _ = try await db.recordZone(for: zoneID(vaultId)) } catch { throw Self.map(error) }
+        }
     }
 
     public func subscribe(_ vaultId: UUID) async throws {
-        let sub = CKDatabaseSubscription(subscriptionID: "envault-\(vaultId.uuidString)")
+        // One database subscription covers every zone shared with this user.
+        let id = scope == .private ? "envault-\(vaultId.uuidString)" : "envault-shared"
+        let sub = CKDatabaseSubscription(subscriptionID: id)
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         sub.notificationInfo = info
@@ -67,7 +103,7 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
         var tempFiles: [URL] = []
         defer { for t in tempFiles { try? FileManager.default.removeItem(at: t) } }
         let records: [CKRecord] = files.map { f in
-            let r = CKRecord(recordType: Self.recordType, recordID: Self.recordID(path: f.path, vaultId: vaultId))
+            let r = CKRecord(recordType: Self.recordType, recordID: recordID(path: f.path, vaultId: vaultId))
             r["path"] = f.path as NSString
             if f.data.count <= Self.inlineLimit {
                 r["data"] = f.data as NSData
@@ -89,7 +125,7 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
     }
 
     public func delete(paths: [String], vaultId: UUID) async throws {
-        let ids = paths.map { Self.recordID(path: $0, vaultId: vaultId) }
+        let ids = paths.map { recordID(path: $0, vaultId: vaultId) }
         let result = try await db.modifyRecords(saving: [], deleting: ids, savePolicy: .ifServerRecordUnchanged, atomically: false)
         for (_, r) in result.deleteResults {
             if case .failure(let err) = r {
@@ -104,7 +140,7 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
             try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKServerChangeToken.self, from: $0)
         }
         do {
-            let r = try await db.recordZoneChanges(inZoneWith: Self.zoneID(vaultId), since: serverToken)
+            let r = try await db.recordZoneChanges(inZoneWith: zoneID(vaultId), since: serverToken)
             var files: [CloudFile] = []
             for (_, res) in r.modificationResultsByID {
                 guard case .success(let mod) = res else { continue }
@@ -130,14 +166,14 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
 
     public func listVaults() async throws -> [UUID] {
         try await db.allRecordZones().compactMap { z in
-            let n = z.zoneID.zoneName
-            return n.hasPrefix("vault-") ? UUID(uuidString: String(n.dropFirst(6))) : nil
+            guard z.zoneID.ownerName == ownerName else { return nil }
+            return Self.vaultId(zoneName: z.zoneID.zoneName)
         }
     }
 
     public func fetchFile(path: String, vaultId: UUID) async throws -> Data? {
         do {
-            let rec = try await db.record(for: Self.recordID(path: path, vaultId: vaultId))
+            let rec = try await db.record(for: recordID(path: path, vaultId: vaultId))
             if let d = rec["data"] as? Data { return d }
             if let a = rec["asset"] as? CKAsset, let u = a.fileURL { return try Data(contentsOf: u) }
             return nil
@@ -150,6 +186,7 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
         guard let ck = error as? CKError else { return error }
         switch ck.code {
         case .notAuthenticated: return CloudTransportError.notSignedIn
+        case .permissionFailure: return CloudTransportError.permissionDenied
         case .changeTokenExpired: return CloudTransportError.tokenExpired
         case .zoneNotFound, .userDeletedZone: return CloudTransportError.zoneMissing
         default: return CloudTransportError.other(ck.localizedDescription)
@@ -163,6 +200,7 @@ extension CloudTransportError: LocalizedError {
         case .tokenExpired: "iCloud change token expired."
         case .zoneMissing: "The vault no longer exists in iCloud."
         case .notSignedIn: "Not signed in to iCloud on this Mac."
+        case .permissionDenied: "This iCloud account may not change that vault."
         case .other(let s): s
         }
     }
