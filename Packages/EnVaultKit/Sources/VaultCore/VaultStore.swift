@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// The single entry point to a vault. Owns the vault key while unlocked,
 /// maintains an in-memory index of all revisions, and writes new revisions.
@@ -8,6 +9,7 @@ import Foundation
 /// vault.json
 /// projects/<projectId>/meta/<ulid>.evr
 /// projects/<projectId>/items/<itemId>/<ulid>.evr
+/// projects/<IdentityLayout.namespace>/identity/<identityId>/<ulid>.evr
 /// ```
 public actor VaultStore {
     public let storage: VaultStorage
@@ -17,6 +19,7 @@ public actor VaultStore {
     private var vaultKey: VaultKey?
     private var projectRevisions: [UUID: [ProjectRevision]] = [:]   // sorted ascending by id
     private var itemRevisions: [UUID: [ItemRevision]] = [:]         // sorted ascending by id
+    private var identityRevisions: [UUID: [IdentityRevision]] = [:] // sorted ascending by id
     private var indexedPaths: Set<String> = []
 
     public var isUnlocked: Bool { vaultKey != nil }
@@ -92,6 +95,7 @@ public actor VaultStore {
     private func clearIndex() {
         projectRevisions = [:]
         itemRevisions = [:]
+        identityRevisions = [:]
         indexedPaths = []
     }
 
@@ -103,7 +107,8 @@ public actor VaultStore {
     private enum Pending: Sendable {
         case project(VaultPath, ownerId: UUID, revisionId: ULID)
         case item(VaultPath, ownerId: UUID, revisionId: ULID)
-        var path: VaultPath { switch self { case .project(let p, _, _), .item(let p, _, _): p } }
+        case identity(VaultPath, ownerId: UUID, revisionId: ULID)
+        var path: VaultPath { switch self { case .project(let p, _, _), .item(let p, _, _), .identity(let p, _, _): p } }
     }
 
     /// Scans storage for revision files not yet indexed and decrypts them.
@@ -117,6 +122,18 @@ public actor VaultStore {
         for pid in try await storage.list(projectsDir) {
             guard let projectId = UUID(uuidString: pid) else { continue }
             let pdir = projectsDir.appending(pid)
+            if projectId == IdentityLayout.namespace {
+                let idDir = pdir.appending("identity")
+                for iid in try await storage.list(idDir) {
+                    guard let identityId = UUID(uuidString: iid) else { continue }
+                    for file in try await storage.list(idDir.appending(iid)) {
+                        let path = idDir.appending(iid).appending(file)
+                        guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
+                        pending.append(.identity(path, ownerId: identityId, revisionId: rid))
+                    }
+                }
+                continue
+            }
             for file in try await storage.list(pdir.appending("meta")) {
                 let path = pdir.appending("meta").appending(file)
                 guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
@@ -149,6 +166,9 @@ public actor VaultStore {
                 case .item(let path, let owner, let rid):
                     insert(try RevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: owner, revisionId: rid, key: vk))
                     indexedPaths.insert(path.string)
+                case .identity(let path, let owner, let rid):
+                    insert(try RevisionFile.decode(IdentityRevision.self, from: data, vaultId: vaultId, scope: .identity, ownerId: owner, revisionId: rid, key: vk))
+                    indexedPaths.insert(path.string)
                 }
             }
             done += batch.count
@@ -176,6 +196,14 @@ public actor VaultStore {
             if list[i].id != rev.id { list.insert(rev, at: i) }
         } else { list.append(rev) }
         itemRevisions[rev.itemId] = list
+    }
+
+    private func insert(_ rev: IdentityRevision) {
+        var list = identityRevisions[rev.identityId] ?? []
+        if let i = list.firstIndex(where: { $0.id >= rev.id }) {
+            if list[i].id != rev.id { list.insert(rev, at: i) }
+        } else { list.append(rev) }
+        identityRevisions[rev.identityId] = list
     }
 
     // MARK: - Reading
@@ -219,6 +247,37 @@ public actor VaultStore {
             guard let latest = revs.last, latest.projectId == projectId, !latest.deleted else { return nil }
             return Item(revision: latest, revisionCount: revs.count)
         }
+    }
+
+    // MARK: - Identity (Team, FR-1)
+
+    /// This person's Team identity, or nil before the first use of Team features.
+    /// If two offline Macs each created one, the older one wins on every Mac, so
+    /// the choice is the same everywhere; the newer one is never used.
+    public func identity() throws -> UserIdentity? {
+        guard let revs = identityRevisions.values.min(by: { $0[0].id < $1[0].id }), let latest = revs.last else { return nil }
+        return try latest.identity()
+    }
+
+    /// Returns the existing identity, or creates one with fresh keys.
+    @discardableResult
+    public func createIdentity(name: String) async throws -> UserIdentity {
+        if let existing = try identity() { return existing }
+        let rev = IdentityRevision(id: ULID(), identityId: UUID(), name: name, createdAt: Date(),
+                                   agreementKey: Curve25519.KeyAgreement.PrivateKey().rawRepresentation,
+                                   signingKey: Curve25519.Signing.PrivateKey().rawRepresentation)
+        try await write(rev)
+        return try rev.identity()
+    }
+
+    /// A new name keeps the keys (and so the safety code).
+    @discardableResult
+    public func renameIdentity(_ name: String) async throws -> UserIdentity {
+        guard let current = try identity(), var rev = identityRevisions[current.id]?.last else { throw VaultError.io("No identity yet") }
+        rev.id = ULID()
+        rev.name = name
+        try await write(rev)
+        return try rev.identity()
     }
 
     // MARK: - Writing
@@ -360,6 +419,15 @@ public actor VaultStore {
         guard let vk = vaultKey else { throw VaultError.locked }
         let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .project, ownerId: rev.projectId, revisionId: rev.id, key: vk)
         let path = projectPath(projectId: rev.projectId, revisionId: rev.id)
+        try await storage.writeNew(path, data: data)
+        insert(rev)
+        indexedPaths.insert(path.string)
+    }
+
+    private func write(_ rev: IdentityRevision) async throws {
+        guard let vk = vaultKey else { throw VaultError.locked }
+        let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .identity, ownerId: rev.identityId, revisionId: rev.id, key: vk)
+        let path = VaultPath("projects", IdentityLayout.namespace.uuidString, "identity", rev.identityId.uuidString, "\(rev.id.string).\(RevisionFile.fileExtension)")
         try await storage.writeNew(path, data: data)
         insert(rev)
         indexedPaths.insert(path.string)

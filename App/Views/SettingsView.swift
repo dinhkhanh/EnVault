@@ -99,6 +99,9 @@ struct VaultSettings: View {
                 }
                 Button("Close Vault…") { model.closeVault() }
             }
+            #if DEBUG
+            if model.phase == .unlocked { TeamIdentitySection() }
+            #endif
             Section("Recovery Key") {
                 Text(model.hasRecoveryKey ? "A recovery key exists. Generating a new one invalidates the old one." : "No recovery key. Without one, a forgotten passphrase means the vault is lost.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -312,3 +315,37 @@ struct CopyableCommand: View {
         }
     }
 }
+
+#if DEBUG
+/// Team phase 1 (FR-1, FR-2). Debug builds only until Team ships.
+struct TeamIdentitySection: View {
+    @Environment(AppModel.self) private var model
+    @State private var name = NSFullUserName()
+
+    var body: some View {
+        Section("Team Identity") {
+            if let identity = model.identity {
+                TextField("Name", text: $name)
+                    .onSubmit { Task { await model.renameIdentity(name) } }
+                LabeledContent("Safety code") {
+                    Text(identity.safetyCode).font(.body.monospaced()).textSelection(.enabled)
+                }
+                Text("A team admin compares this code with you before giving you access. It is the same on every Mac that opens this vault.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                Text("Creates the keys teammates use to share vaults with you. They are stored, encrypted, in this vault and sync to your other Macs.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    TextField("Name", text: $name)
+                    Button("Create Identity") { Task { await model.createIdentity(name: name.trimmingCharacters(in: .whitespaces)) } }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .task {
+            await model.loadIdentity()
+            if let n = model.identity?.name { name = n }
+        }
+    }
+}
+#endif
