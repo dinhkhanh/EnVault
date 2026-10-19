@@ -16,6 +16,29 @@ struct CloudMirrorState: Codable {
     var lastSync: Date?
 }
 
+/// Which relative paths a vault syncs. Shared zones let other Apple IDs write
+/// records, so a remote path is untrusted: anything outside these shapes is
+/// ignored in both directions (never written, uploaded or deleted).
+public enum SyncPaths {
+    /// Folders a team vault adds next to `projects/`. `spike` holds the phase 0 probes.
+    static let teamFolders: Set<String> = ["identities", "keys", "members", "spike"]
+
+    public static func isSyncable(_ path: String) -> Bool {
+        if path == VaultHeader.fileName { return true }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 2, parts.allSatisfy(isSafeComponent) else { return false }
+        if parts[0] == "projects" { return path.hasSuffix(".\(RevisionFile.fileExtension)") }
+        return teamFolders.contains(String(parts[0]))
+    }
+
+    /// Letters, digits, `.`, `_`, `-`; no leading dot, so no `.`, `..` or hidden files.
+    /// No `/` or `|` either: record names encode `/` as `|`.
+    static func isSafeComponent(_ c: Substring) -> Bool {
+        guard let first = c.first, first != "." else { return false }
+        return c.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-") }
+    }
+}
+
 /// Keeps a local vault folder and its cloud copy identical.
 ///
 /// Push: every local file not yet uploaded goes up (create-only), and
@@ -92,8 +115,11 @@ public actor CloudMirror {
                 continue
             }
             for f in changes.files {
+                guard SyncPaths.isSyncable(f.path) else { continue }
                 let path = VaultPath(f.path.split(separator: "/").map(String.init))
                 if f.path == VaultHeader.fileName {
+                    // Someone else's header (another vault's, or garbage) never replaces ours.
+                    guard (try? JSONDecoder().decode(HeaderIdentity.self, from: f.data))?.vaultId == vaultId else { continue }
                     // Only act on a header we have not seen (uploaded or downloaded) before.
                     // Our own upload echoing back has the same hash and is skipped.
                     let h = Self.hash(f.data)
@@ -114,7 +140,7 @@ public actor CloudMirror {
                 }
                 state.uploaded.insert(f.path)
             }
-            for p in changes.deletedPaths {
+            for p in changes.deletedPaths where SyncPaths.isSyncable(p) {
                 let path = VaultPath(p.split(separator: "/").map(String.init))
                 if try await storage.exists(path) { try await storage.delete(path) }
                 state.uploaded.remove(p)
@@ -154,7 +180,7 @@ public actor CloudMirror {
         }
         // Local deletions (compaction) → remote deletions.
         let local = Set(localFiles())
-        let gone = state.uploaded.filter { !local.contains($0) && $0 != VaultHeader.fileName }
+        let gone = state.uploaded.filter { !local.contains($0) && $0 != VaultHeader.fileName && SyncPaths.isSyncable($0) }
         if !gone.isEmpty {
             try await transport.delete(paths: Array(gone), vaultId: vaultId)
             state.uploaded.subtract(gone)
@@ -165,24 +191,19 @@ public actor CloudMirror {
 
     // MARK: - helpers
 
-    /// Relative paths of `vault.json` and every visible file in the vault's
-    /// subfolders (`projects/` today; team vaults add more). Anything pulled is
-    /// therefore also kept: a remote file outside `projects/` is not mistaken
-    /// for a local deletion on the next push.
+    /// Relative paths of every local file `SyncPaths` accepts: `vault.json`,
+    /// revisions under `projects/`, and the team folders.
     func localFiles() -> [String] {
-        var out: [String] = []
         let fm = FileManager.default
-        if fm.fileExists(atPath: localRoot.appendingPathComponent(VaultHeader.fileName).path) { out.append(VaultHeader.fileName) }
         let base = localRoot.resolvingSymlinksInPath().path + "/"
-        let top = (try? fm.contentsOfDirectory(at: localRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
-        for dir in top where (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-            guard let e = fm.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
-            for case let u as URL in e {
-                guard (try? u.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
-                let full = u.resolvingSymlinksInPath().path
-                guard full.hasPrefix(base) else { continue }
-                out.append(String(full.dropFirst(base.count)))
-            }
+        guard let e = fm.enumerator(at: localRoot, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { return [] }
+        var out: [String] = []
+        for case let u as URL in e {
+            guard (try? u.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+            let full = u.resolvingSymlinksInPath().path
+            guard full.hasPrefix(base) else { continue }
+            let rel = String(full.dropFirst(base.count))
+            if SyncPaths.isSyncable(rel) { out.append(rel) }
         }
         return out.sorted()
     }
@@ -202,6 +223,9 @@ public actor CloudMirror {
         saveState()
     }
 }
+
+/// Just enough of a header to see which vault it belongs to.
+private struct HeaderIdentity: Decodable { var vaultId: UUID }
 
 extension Array {
     func chunked(_ size: Int) -> [[Element]] {
