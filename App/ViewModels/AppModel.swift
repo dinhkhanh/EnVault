@@ -5,9 +5,12 @@ import VaultSync
 import ToolKit
 import EnvKit
 
-/// Single source of truth for the UI. The open vault is a `VaultSession`
-/// (store, files, sync, snapshots); this model owns what spans it: lock
-/// state, selection, Touch ID, recovery, the CLI agent.
+/// Single source of truth for the UI. Each open vault is a `VaultSession`
+/// (store, files, sync, snapshots). The first is the personal vault, which
+/// owns unlocking, Touch ID, recovery, the identity, the CLI agent and linked
+/// files. Others are attached only while it is unlocked (team vaults from
+/// phase 2) and dropped on lock. The sidebar's switcher picks which vault's
+/// projects and items the window shows and edits.
 @MainActor
 @Observable
 final class AppModel {
@@ -25,20 +28,34 @@ final class AppModel {
     }
 
     private(set) var phase: Phase = .loading
-    /// The open vault, if any.
-    private(set) var session: VaultSession?
+    /// Open vaults, the personal vault first.
+    private(set) var sessions: [VaultSession] = []
+    /// The vault the window shows; nil = the personal vault.
+    var selectedVaultId: UUID? {
+        didSet {
+            guard selectedVaultId != oldValue else { return }
+            selectedProjectId = nil
+            selectedItemId = nil
+            selectedToolId = nil
+        }
+    }
+    var personal: VaultSession? { sessions.first }
+    /// The vault whose projects and items the window shows and edits.
+    var session: VaultSession? { sessions.first { $0.vaultId == selectedVaultId } ?? personal }
     /// Progress of a download that runs before its session exists (opening or moving an iCloud vault).
     private(set) var downloadStatus: SyncStatus?
     var errorMessage: String?
 
-    var syncMode: SyncMode { session?.mode ?? .folder }
-    var vaultURL: URL? { session?.url }
-    var vaultId: UUID? { session?.vaultId }
+    // The personal vault's location and sync state (Settings, the Vault menu, the CLI agent).
+    var syncMode: SyncMode { personal?.mode ?? .folder }
+    var vaultURL: URL? { personal?.url }
+    var vaultId: UUID? { personal?.vaultId }
+    var syncStatus: SyncStatus { downloadStatus ?? personal?.syncStatus ?? .idle }
+    var lastCloudSync: Date? { personal?.lastCloudSync }
+    var lastRefresh: Date? { personal?.lastRefresh }
+    // The selected vault's content.
     var projects: [Project] { session?.projects ?? [] }
     var items: [Item] { session?.items ?? [] }
-    var lastRefresh: Date? { session?.lastRefresh }
-    var syncStatus: SyncStatus { downloadStatus ?? session?.syncStatus ?? .idle }
-    var lastCloudSync: Date? { session?.lastCloudSync }
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
     /// Set when the vault opens locked or gets locked; the next time EnVault is (or becomes)
@@ -71,8 +88,9 @@ final class AppModel {
     var selectedToolId: String?
     var searchText = ""
 
-    private var store: VaultStore? { session?.store }
-    private var mirror: CloudMirror? { session?.mirror }
+    /// The personal vault's store: unlocking, recovery, passphrase, identity, CLI.
+    private var store: VaultStore? { personal?.store }
+    private var mirror: CloudMirror? { personal?.mirror }
     @ObservationIgnored private var autoLock: AutoLock!
     @ObservationIgnored private let keychain = KeychainVaultKeyStore()
     @ObservationIgnored private lazy var cloud: CloudVaultTransport = {
@@ -122,8 +140,9 @@ final class AppModel {
         Prefs.registerDefaults()
         autoLock = AutoLock { [weak self] in self?.lock() }
         fileLinks.hooks = .init(
-            item: { [weak self] id in self?.items.first { $0.id == id } },
-            history: { [weak self] id in await self?.history(of: id) ?? [] },
+            // Linked files belong to the personal vault, whichever vault the window shows.
+            item: { [weak self] id in self?.personal?.items.first { $0.id == id } },
+            history: { [weak self] id in await self?.personal?.store.history(of: id) ?? [] },
             save: { [weak self] id, payload in await self?.saveFromLinkedFile(id, payload: payload) ?? false })
     }
 
@@ -183,7 +202,7 @@ final class AppModel {
             let s = try await VaultStore.open(storage: LocalFolderStorage(root: url))
             let id = await s.vaultId
             if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(id.uuidString, forKey: Self.iCloudVaultKey) }
-            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode))
+            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode, name: "Personal"))
             hasBiometricKey = keychain.hasCachedKey(vaultId: id)
             hasRecoveryKey = await s.hasRecoveryKey
             phase = .locked
@@ -202,7 +221,7 @@ final class AppModel {
             let s = try await VaultStore.create(storage: LocalFolderStorage(root: url), passphrase: passphrase)
             let id = await s.vaultId
             if mode == .folder { try VaultLocation.save(url) } else { UserDefaults.standard.set(id.uuidString, forKey: Self.iCloudVaultKey) }
-            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode))
+            begin(VaultSession(store: s, url: url, vaultId: id, mode: mode, name: "Personal"))
             hasBiometricKey = false
             errorMessage = nil
             pendingRecoveryKey = try await s.createRecoveryKey()
@@ -217,20 +236,21 @@ final class AppModel {
     /// Forget the current vault (does not delete any files).
     func closeVault() {
         lock()
-        session?.close()
-        session = nil
+        for s in sessions { s.close() }
+        sessions = []
+        selectedVaultId = nil
         VaultLocation.forget()
         UserDefaults.standard.removeObject(forKey: Self.iCloudVaultKey)
         phase = .noVault
     }
 
-    /// Makes `new` the open vault: replaces any previous session, starts
+    /// Makes `new` the personal vault: replaces every open session, starts
     /// watching its folder and, in iCloud mode, syncing it.
     private func begin(_ new: VaultSession) {
-        session?.close()
-        new.didReload = { [weak self] in self?.sessionDidReload() }
-        new.reportError = { [weak self] in self?.errorMessage = $0 }
-        session = new
+        for s in sessions { s.close() }
+        wire(new)
+        sessions = [new]
+        selectedVaultId = nil
         downloadStatus = nil
         new.startWatching()
         if new.mode == .iCloud, cloudAvailable {
@@ -358,12 +378,17 @@ final class AppModel {
         }
     }
 
-    /// Full pull + push. Safe to call any time, locked or not. Clears a
-    /// failed download's status, as the open vault's own sync now speaks.
+    private func wire(_ s: VaultSession) {
+        s.didReload = { [weak self, weak s] in if let s { self?.sessionDidReload(s) } }
+        s.reportError = { [weak self] in self?.errorMessage = $0 }
+    }
+
+    /// Full pull + push of every open vault. Safe to call any time, locked or
+    /// not. Clears a failed download's status, as the vault's own sync now speaks.
     func syncNow() async {
-        guard let session else { return }
+        guard !sessions.isEmpty else { return }
         downloadStatus = nil
-        await session.syncNow()
+        for s in sessions { await s.syncNow() }
     }
 
     /// A CloudKit silent push arrived: something changed remotely.
@@ -372,7 +397,7 @@ final class AppModel {
     /// The app became active: catch up in case a push was missed.
     func appActivated() {
         offerTouchIDIfAppropriate()
-        if mirror != nil { Task { await syncNow() } }
+        if sessions.contains(where: { $0.mirror != nil }) { Task { await syncNow() } }
     }
 
     /// Prompts Touch ID if the vault is locked, a key is cached, EnVault is frontmost, and
@@ -384,9 +409,7 @@ final class AppModel {
         Task { await unlockWithBiometrics() }
     }
 
-    private func schedulePush() { session?.schedulePush() }
-
-    func resetCloudState() async { await session?.resetCloudState() }
+    func resetCloudState() async { await personal?.resetCloudState() }
 
     // MARK: - Lock / unlock
 
@@ -456,7 +479,7 @@ final class AppModel {
         do {
             let k = try await store.createRecoveryKey()
             hasRecoveryKey = true
-            schedulePush()
+            personal?.schedulePush()
             return k
         } catch {
             errorMessage = error.localizedDescription
@@ -483,7 +506,7 @@ final class AppModel {
         do {
             try await store.resetPassphrase(new: new)
             needsPassphraseReset = false
-            schedulePush()
+            personal?.schedulePush()
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -492,12 +515,19 @@ final class AppModel {
     }
 
     func lock() {
-        guard phase == .unlocked, let store else { return }
-        if let vaultId { fileLinks.vaultLocked(vaultId: vaultId) }
+        guard phase == .unlocked, let personal else { return }
+        fileLinks.vaultLocked(vaultId: personal.vaultId)
         autoLock.stop()
-        Task { await store.lock() }
-        session?.isUnlocked = false
-        session?.clear()
+        // Attached vaults go away entirely; they come back with the next unlock.
+        for s in sessions.dropFirst() {
+            s.close()
+            Task { await s.store.lock() }
+        }
+        sessions = [personal]
+        selectedVaultId = nil
+        Task { await personal.store.lock() }
+        personal.isUnlocked = false
+        personal.clear()
         identity = nil
         // Unlocking starts on the empty "No Project" page, not the last project or tool.
         selectedProjectId = nil
@@ -510,7 +540,7 @@ final class AppModel {
 
     private func becameUnlocked() async {
         phase = .unlocked
-        session?.isUnlocked = true
+        personal?.isUnlocked = true
         touchIDOfferArmed = false
         errorMessage = nil
         await reload()
@@ -522,28 +552,59 @@ final class AppModel {
 
     // MARK: - Refresh
 
-    /// Picks up revisions written by other devices or the CLI.
-    func refreshFromDisk() async { await session?.refreshFromDisk() }
+    /// Picks up revisions written by other devices or the CLI, in every open vault.
+    func refreshFromDisk() async {
+        for s in sessions { await s.refreshFromDisk() }
+    }
 
     private func reload() async { await session?.reload() }
 
-    /// The open vault's snapshots changed: keep the selection valid and linked files current.
-    private func sessionDidReload() {
-        if let pid = selectedProjectId, !projects.contains(where: { $0.id == pid }) { selectedProjectId = projects.first?.id }
-        if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
-        if phase == .unlocked, let vaultId { fileLinks.syncAll(vaultId: vaultId) }
+    /// A vault's snapshots changed: keep the selection valid if it is the one
+    /// shown, and keep linked files current (personal vault only for now).
+    private func sessionDidReload(_ s: VaultSession) {
+        if s === session {
+            if let pid = selectedProjectId, !projects.contains(where: { $0.id == pid }) { selectedProjectId = projects.first?.id }
+            if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
+        }
+        if phase == .unlocked, s === personal { fileLinks.syncAll(vaultId: s.vaultId) }
     }
+
+    #if DEBUG
+    /// Debug only until team vaults exist (phase 2): opens another folder vault
+    /// next to the personal one, unlocked with its own passphrase, to exercise
+    /// the switcher. Dropped on lock like every attached vault.
+    func attachVault(at url: URL, passphrase: String) async {
+        guard phase == .unlocked else { return }
+        errorMessage = nil
+        do {
+            let s = try await VaultStore.open(storage: LocalFolderStorage(root: url))
+            let id = await s.vaultId
+            if sessions.contains(where: { $0.vaultId == id }) { selectedVaultId = id; return }
+            try await s.unlock(passphrase: passphrase)
+            let new = VaultSession(store: s, url: url, vaultId: id, mode: .folder, name: url.lastPathComponent)
+            wire(new)
+            new.isUnlocked = true
+            sessions.append(new)
+            new.startWatching()
+            await new.reload()
+            selectedVaultId = id
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
 
     // MARK: - Mutations
 
-    private func perform(_ op: @escaping (VaultStore) async throws -> Void) async {
-        guard let store else { return }
+    /// Runs a change on `target` (default: the vault shown), then refreshes and pushes it.
+    private func perform(on target: VaultSession? = nil, _ op: @escaping (VaultStore) async throws -> Void) async {
+        guard let s = target ?? session else { return }
         autoLock.touch()
         do {
-            try await op(store)
-            await reload()
+            try await op(s.store)
+            await s.reload()
             errorMessage = nil
-            schedulePush()
+            s.schedulePush()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -564,12 +625,12 @@ final class AppModel {
     }
 
     func createIdentity(name: String) async {
-        await perform { try await $0.createIdentity(name: name) }
+        await perform(on: personal) { try await $0.createIdentity(name: name) }
         await loadIdentity()
     }
 
     func renameIdentity(_ name: String) async {
-        await perform { try await $0.renameIdentity(name) }
+        await perform(on: personal) { try await $0.renameIdentity(name) }
         await loadIdentity()
     }
 
@@ -601,7 +662,7 @@ final class AppModel {
     /// An edit made in a linked file (see `FileLinkStore`), saved as a new revision.
     func saveFromLinkedFile(_ id: UUID, payload: ItemPayload) async -> Bool {
         var ok = false
-        await perform { try await $0.updateItem(id, payload: payload); ok = true }
+        await perform(on: personal) { try await $0.updateItem(id, payload: payload); ok = true }
         return ok
     }
 
@@ -611,7 +672,7 @@ final class AppModel {
     }
 
     func history(of itemId: UUID) async -> [ItemRevision] {
-        await store?.history(of: itemId) ?? []
+        await session?.store.history(of: itemId) ?? []
     }
 
     func restore(_ rev: ItemRevision) async { await perform { try await $0.restore(rev) } }
@@ -619,7 +680,7 @@ final class AppModel {
 
     func changePassphrase(current: String, new: String) async -> Bool {
         var ok = false
-        await perform { try await $0.changePassphrase(current: current, new: new); ok = true }
+        await perform(on: personal) { try await $0.changePassphrase(current: current, new: new); ok = true }
         return ok
     }
 

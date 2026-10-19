@@ -75,6 +75,8 @@ struct EnVaultApp: App {
                 Divider()
                 Button("Team Spike…") { openWindow(id: "team-spike") }
                     .disabled(!model.cloudAvailable)
+                Button("Attach Another Vault…") { openWindow(id: "attach-vault") }
+                    .disabled(model.phase != .unlocked)
                 #endif
             }
         }
@@ -83,6 +85,10 @@ struct EnVaultApp: App {
         Window("Team Spike", id: "team-spike") {
             TeamSpikeView().environment(model)
         }
+        Window("Attach Vault", id: "attach-vault") {
+            AttachVaultView().environment(model)
+        }
+        .windowResizability(.contentSize)
         #endif
 
         Settings {

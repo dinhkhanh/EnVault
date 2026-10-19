@@ -194,6 +194,11 @@ struct EnvFileView: View {
     /// Writes the file into a folder now and again whenever the item changes.
     private func linkFolder() {
         guard let vaultId = model.vaultId else { return }
+        // Linked files are tracked per personal vault only, until they learn about attached vaults.
+        guard model.session === model.personal else {
+            model.errorMessage = "Keeping files in sync works only in your personal vault for now."
+            return
+        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

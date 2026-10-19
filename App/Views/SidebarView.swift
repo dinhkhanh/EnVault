@@ -30,6 +30,12 @@ struct SidebarView: View {
             })
     }
 
+    private var vaultSelection: Binding<UUID?> {
+        Binding(
+            get: { model.session?.vaultId },
+            set: { id in model.selectedVaultId = id == model.personal?.vaultId ? nil : id })
+    }
+
     var body: some View {
         List(selection: selection) {
             Section("Projects") {
@@ -54,6 +60,17 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .top) {
+            // Only with more than one open vault (team vaults from phase 2; debug: Vault › Attach Another Vault…).
+            if model.sessions.count > 1 {
+                Picker("Vault", selection: vaultSelection) {
+                    ForEach(model.sessions, id: \.vaultId) { s in Text(s.name).tag(Optional(s.vaultId)) }
+                }
+                .labelsHidden()
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Menu {

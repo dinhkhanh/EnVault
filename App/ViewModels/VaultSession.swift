@@ -12,6 +12,8 @@ final class VaultSession {
     let url: URL
     let vaultId: UUID
     let mode: AppModel.SyncMode
+    /// Shown in the sidebar's vault switcher.
+    let name: String
 
     private(set) var projects: [Project] = []
     private(set) var items: [Item] = []
@@ -31,11 +33,12 @@ final class VaultSession {
     @ObservationIgnored private var cloudTimer: Task<Void, Never>?
     @ObservationIgnored private var pushDebounce: Task<Void, Never>?
 
-    init(store: VaultStore, url: URL, vaultId: UUID, mode: AppModel.SyncMode) {
+    init(store: VaultStore, url: URL, vaultId: UUID, mode: AppModel.SyncMode, name: String) {
         self.store = store
         self.url = url
         self.vaultId = vaultId
         self.mode = mode
+        self.name = name
     }
 
     /// Stops watching and syncing. The store itself is left as it is.
