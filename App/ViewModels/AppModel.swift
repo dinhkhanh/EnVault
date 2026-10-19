@@ -244,9 +244,12 @@ final class AppModel {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return support.appendingPathComponent("EnVault/Vaults/\(vaultId.uuidString)", isDirectory: true)
     }
+    /// Debug-iCloud builds share this container with release builds but sync to
+    /// CloudKit Development, so they keep their own record of what was uploaded.
     private static func stateURL(for vaultId: UUID) -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("EnVault/SyncState/\(vaultId.uuidString).json")
+        let name = CloudKitAvailability.isProduction ? vaultId.uuidString : "\(vaultId.uuidString)-development"
+        return support.appendingPathComponent("EnVault/SyncState/\(name).json")
     }
 
     func createVaultInICloud(passphrase: String) async {

@@ -92,6 +92,27 @@ private struct Device {
         #expect(await b.store.item(item.id)?.payload.primaryText == "A=2")
     }
 
+    /// Sync state written against one iCloud database (a debug build on CloudKit
+    /// Development) must not stop uploads to another one that lacks the vault.
+    @Test func missingZoneUploadsEverythingAgain() async throws {
+        let devCloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: devCloud, passphrase: "pw")
+        defer { a.cleanup() }
+        let p = try await a.store.createProject(name: "app")
+        let item = try await a.store.createItem(in: p.id, name: ".env", payload: .envFile(text: "A=1"))
+        await a.mirror.sync()
+
+        // Same folder and state file, other database: the zone is missing there.
+        let prodCloud = MemoryCloudTransport()
+        let mirror = CloudMirror(vaultId: vaultId, localRoot: a.root, stateURL: a.root.appendingPathComponent(".sync/state.json"), transport: prodCloud)
+        #expect(await mirror.sync().pushed == 3) // header + project meta + item
+        #expect(await prodCloud.fileCount(vaultId) == 3)
+
+        let b = try await Device.join(cloud: prodCloud, vaultId: vaultId, passphrase: "pw")
+        defer { b.cleanup() }
+        #expect(await b.store.item(item.id)?.payload.primaryText == "A=1")
+    }
+
     @Test func editsFlowBothWays() async throws {
         let cloud = MemoryCloudTransport()
         let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")

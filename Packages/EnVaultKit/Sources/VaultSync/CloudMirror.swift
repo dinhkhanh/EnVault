@@ -82,8 +82,13 @@ public actor CloudMirror {
                 state.changeToken = nil
                 continue
             } catch CloudTransportError.zoneMissing {
+                // Nothing of this vault is in the cloud (new, deleted, or our state was
+                // written against another CloudKit environment): forget what we uploaded
+                // so the next push sends everything.
                 try await transport.ensureVault(vaultId)
                 state.changeToken = nil
+                state.uploaded = []
+                state.headerHash = nil
                 continue
             }
             for f in changes.files {

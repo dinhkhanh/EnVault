@@ -12,6 +12,15 @@ public enum CloudKitAvailability {
         guard let services = value as? [String] else { return false }
         return services.contains("CloudKit")
     }
+
+    /// Whether this build talks to the Production CloudKit environment. Exported
+    /// Developer ID builds carry the environment entitlement; development-signed
+    /// builds (Debug-iCloud) have none and use Development.
+    public static var isProduction: Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-container-environment" as CFString, nil)
+        return (value as? String) == "Production"
+    }
 }
 
 /// `CloudVaultTransport` on the user's private CloudKit database.
