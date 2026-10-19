@@ -35,13 +35,13 @@ rm -rf "$OUT/dmg"
 cp "$OUT/EnVault-$VERSION.dmg" "$OUT/EnVault.dmg"
 (cd "$OUT" && shasum -a 256 EnVault-$VERSION.dmg EnVault.dmg EnVault-$VERSION.zip) | tee "$OUT/SHA256SUMS"
 # Sparkle appcast: signs the zip with the EdDSA key from the keychain
-# (account ed25519, or $SPARKLE_ACCOUNT; it must match SUPublicEDKey).
+# (account ed25519-srlh, or $SPARKLE_ACCOUNT; it must match SUPublicEDKey).
 GA=$(find build/SourcePackages -name generate_appcast -type f | head -1)
 if [ -n "$GA" ]; then
   # Sparkle wants exactly one archive per version: feed it the zip only.
   rm -rf "$OUT/appcast-src" && mkdir -p "$OUT/appcast-src"
   cp "$OUT/EnVault-$VERSION.zip" "$OUT/appcast-src/"
-  "$GA" --account "${SPARKLE_ACCOUNT:-ed25519}" --download-url-prefix "https://github.com/dinhkhanh/EnVault/releases/download/v$VERSION/" -o "$OUT/appcast.xml" "$OUT/appcast-src" >/dev/null
+  "$GA" --account "${SPARKLE_ACCOUNT:-ed25519-srlh}" --download-url-prefix "https://github.com/dinhkhanh/EnVault/releases/download/v$VERSION/" -o "$OUT/appcast.xml" "$OUT/appcast-src" >/dev/null
   # eVault (builds 17 and below) has another bundle id, so Sparkle can't install EnVault over it;
   # for those builds the update is informational and links to the download page.
   perl -0pi -e 's{(\s*)</item>}{$1    <sparkle:informationalUpdate><sparkle:belowVersion>18</sparkle:belowVersion></sparkle:informationalUpdate>$1    <link>https://envault.app/</link>$1</item>}' "$OUT/appcast.xml"
