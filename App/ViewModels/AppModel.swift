@@ -539,6 +539,7 @@ final class AppModel {
         Task { await store.lock() }
         projects = []
         items = []
+        identity = nil
         // Unlocking starts on the empty "No Project" page, not the last project or tool.
         selectedProjectId = nil
         selectedItemId = nil
@@ -615,6 +616,30 @@ final class AppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: - Team identity (FR-1, FR-2)
+
+    /// What views may show of the identity; the private keys stay in the store.
+    struct IdentitySummary: Equatable, Sendable {
+        var name: String
+        var safetyCode: String
+    }
+    private(set) var identity: IdentitySummary?
+
+    func loadIdentity() async {
+        let current = (try? await store?.identity()) ?? nil
+        identity = current.map { IdentitySummary(name: $0.name, safetyCode: $0.safetyCode) }
+    }
+
+    func createIdentity(name: String) async {
+        await perform { try await $0.createIdentity(name: name) }
+        await loadIdentity()
+    }
+
+    func renameIdentity(_ name: String) async {
+        await perform { try await $0.renameIdentity(name) }
+        await loadIdentity()
     }
 
     func createProject(name: String, tags: [String] = []) async {

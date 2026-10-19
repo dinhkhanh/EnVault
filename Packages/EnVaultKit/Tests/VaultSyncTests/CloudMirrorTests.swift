@@ -220,6 +220,20 @@ private struct Device {
         #expect(!SyncPaths.isSyncable("spike/caf\u{e9}.json"))
     }
 
+    @Test func identityReachesTheSecondMac() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        let me = try await a.store.createIdentity(name: "Ada")
+        await a.mirror.sync()
+        let b = try await Device.join(cloud: cloud, vaultId: vaultId, passphrase: "pw")
+        defer { b.cleanup() }
+        #expect(try await b.store.identity()?.safetyCode == me.safetyCode)
+        // Releases up to 0.7.1 keep only projects/**/*.evr; the identity sits inside that.
+        let path = try #require(await a.mirror.localFiles().first { $0.contains("/identity/") })
+        #expect(path.hasPrefix("projects/") && path.hasSuffix(".evr"))
+    }
+
     @Test func compactionPropagatesAsDeletion() async throws {
         let cloud = MemoryCloudTransport()
         let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
