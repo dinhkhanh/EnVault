@@ -30,6 +30,17 @@ public enum AIAgents {
         public init(enabled: Bool = true, values: Values = .ask, writes: Bool = true, approvalMinutes: Int = 5) {
             self.enabled = enabled; self.values = values; self.writes = writes; self.approvalMinutes = approvalMinutes
         }
+
+        /// This policy, no looser than a team's rules (FR-23): a member's own
+        /// setting can only be stricter.
+        public func restricted(by team: TeamAgentRules?) -> Policy {
+            guard let team else { return self }
+            var p = self
+            p.enabled = enabled && team.enabled
+            p.writes = writes && team.writes
+            p.values = [values, team.values].max { $0.strictness < $1.strictness }!
+            return p
+        }
     }
 
     /// The agent running this process, from the environment it sets, or nil
@@ -70,6 +81,9 @@ public enum AIAgents {
     - `envault example <project> <item>`: a .env.example (secret values blanked).
     - `envault scan [DIR]`: look for leaked secrets in a source tree.
     - `envault status --json`: is EnVault running, which vault, what agents may do.
+    - Team vaults: `envault teams --json` lists them; add `--team NAME` to any
+      command above (MCP tools take a `team` argument). A team's rules may be
+      stricter than the user's, and items marked for people only are hidden.
 
     Rules:
     - Never write real secret values into files in the repo, commit messages,
@@ -90,4 +104,20 @@ public enum AIAgents {
     ---
 
     """ + guide
+}
+
+extension AIAgents.Policy.Values {
+    /// never > ask > allow.
+    var strictness: Int { switch self { case .allow: 0; case .ask: 1; case .never: 2 } }
+}
+
+/// What a team vault's owner or admins allow AI agents (FR-23). Plain data in
+/// a signed membership event; every member's own setting can only be stricter.
+public struct TeamAgentRules: Codable, Equatable, Sendable {
+    public var enabled: Bool
+    public var values: AIAgents.Policy.Values
+    public var writes: Bool
+    public init(enabled: Bool = true, values: AIAgents.Policy.Values = .ask, writes: Bool = true) {
+        self.enabled = enabled; self.values = values; self.writes = writes
+    }
 }

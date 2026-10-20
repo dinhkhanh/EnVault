@@ -73,6 +73,7 @@ struct TeamMembersView: View {
                         Section("Asking to Join") { ForEach(team.pending) { pendingRow($0) } }
                     }
                     Section("Members") { ForEach(team.members) { memberRow($0, team: team) } }
+                    agentSection(team)
                     if team.role == .owner, model.teamVaultsAvailable { inviteSection }
                     Section {
                         Button("Membership Log…") { showLog = true }
@@ -137,6 +138,37 @@ struct TeamMembersView: View {
             Text("\(team.lateEvents.count) membership change\(team.lateEvents.count == 1 ? "" : "s") arrived after newer ones. That happens when an admin was offline, but check the member list is what you expect.")
             Button("Looks Right") { Task { await model.dismissLateEvents(in: session) } }
         }
+    }
+
+    /// FR-23: the team's rules for AI agents. Each member's own setting can only be stricter.
+    @ViewBuilder private func agentSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        let rules = team.agentRules ?? TeamAgentRules()
+        Section {
+            if team.canManage {
+                Toggle("Allow AI agents", isOn: Binding(get: { rules.enabled }, set: { v in var r = rules; r.enabled = v; Task { await model.setAgentRules(r, in: session) } }))
+                Picker("Secret values", selection: Binding(get: { rules.values }, set: { v in var r = rules; r.values = v; Task { await model.setAgentRules(r, in: session) } })) {
+                    Text("Never").tag(AIAgents.Policy.Values.never)
+                    Text("Ask each time").tag(AIAgents.Policy.Values.ask)
+                    Text("As each member's setting allows").tag(AIAgents.Policy.Values.allow)
+                }
+                .disabled(!rules.enabled)
+                Toggle("May change env files", isOn: Binding(get: { rules.writes }, set: { v in var r = rules; r.writes = v; Task { await model.setAgentRules(r, in: session) } }))
+                    .disabled(!rules.enabled)
+            } else {
+                Text(team.agentRules == nil ? "No team rule: your own setting applies." : describe(rules))
+            }
+        } header: {
+            Text("AI Agents")
+        } footer: {
+            Text("Applies to the envault command and its MCP server in this vault. Each member's own setting (Settings › AI Agents) can only make it stricter. Mark a project or item For People Only from its menu to keep agents away from it entirely.")
+                .font(.caption)
+        }
+    }
+
+    private func describe(_ r: TeamAgentRules) -> String {
+        guard r.enabled else { return "AI agents are not allowed in this vault." }
+        let values = switch r.values { case .never: "never see values"; case .ask: "need approval for each look at values"; case .allow: "see values as each member's setting allows" }
+        return "AI agents \(values) and \(r.writes ? "may" : "may not") change env files."
     }
 
     /// FR-14: what people who left could read, until each value is changed.
@@ -387,6 +419,8 @@ struct MembershipLogView: View {
         case .rotated: return "\(by) rotated the team key"
         case .named(let who): return who == e.author ? "\(by) set their name" : "\(by) named \(n(who))"
         case .titled: return "\(by) named the vault"
+        case .agentRules(let r): return "\(by) set the rules for AI agents" + (r.enabled ? "" : " (not allowed)")
+        case .humansOnly(_, let on): return on ? "\(by) marked something for people only" : "\(by) opened something to AI agents again"
         }
     }
 
@@ -398,6 +432,7 @@ struct MembershipLogView: View {
         case .removed, .left: "person.badge.minus"
         case .rotated: "key"
         case .named, .titled: "pencil"
+        case .agentRules, .humansOnly: "cpu"
         }
     }
 }

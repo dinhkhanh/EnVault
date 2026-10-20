@@ -25,9 +25,13 @@ public enum Agent {
         /// What will be touched, for the prompt and the activity log ("api/prod.env").
         public var detail: String?
         /// `storage`: the file operation (`AppVaultStorage.Op`), "/"-joined vault paths, and data to write.
+        /// `vaultId` set: a team vault's files instead of the open vault's (apps before team vaults ignore it).
         public var storageOp: String?
         public var paths: [String]?
         public var data: Data?
+        /// `requestKey` for a team vault: its rules for AI agents, which the
+        /// app applies on top of its own setting (FR-23).
+        public var teamRules: TeamAgentRules?
 
         public init(op: Op, vaultId: UUID? = nil, requestId: UUID? = nil, client: String? = nil,
                     agent: String? = nil, purpose: String? = nil, detail: String? = nil) {
@@ -43,6 +47,8 @@ public enum Agent {
         public var agent: String?
         public var purpose: AIAgents.Purpose
         public var detail: String?
+        /// The team vault's rules, when the key is for working in one.
+        public var teamRules: TeamAgentRules?
     }
 
     public struct Info: Codable, Sendable {
@@ -124,9 +130,10 @@ public struct AgentClient {
     /// Asks the app for the key of `vaultId`. Blocks while the user answers the
     /// Touch ID prompt, up to `timeout`.
     public func requestKey(vaultId: UUID, client: String, agent: String? = nil, purpose: AIAgents.Purpose = .use,
-                           detail: String? = nil, timeout: TimeInterval = 120) throws -> VaultKey {
-        let start = try send(Agent.Request(op: .requestKey, vaultId: vaultId, client: client,
-                                           agent: agent, purpose: purpose.rawValue, detail: detail))
+                           detail: String? = nil, teamRules: TeamAgentRules? = nil, timeout: TimeInterval = 120) throws -> VaultKey {
+        var req = Agent.Request(op: .requestKey, vaultId: vaultId, client: client, agent: agent, purpose: purpose.rawValue, detail: detail)
+        req.teamRules = teamRules
+        let start = try send(req)
         guard start.ok, let id = start.requestId else { throw Agent.Failure(start.error ?? "refused", denied: start.denied == true) }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -150,7 +157,8 @@ public final class AgentServer {
     public typealias Authorizer = @MainActor (Agent.KeyRequest) async throws -> VaultKey
     /// The open vault's storage, for a CLI that can't read the app's container.
     /// Gets the requesting AI agent (nil for a person); throws to refuse.
-    public typealias StorageProvider = @MainActor (_ agent: String?) throws -> any VaultStorage
+    /// `vaultId`: a team vault the app keeps; nil for the vault it has open.
+    public typealias StorageProvider = @MainActor (_ agent: String?, _ vaultId: UUID?) throws -> any VaultStorage
 
     private let info: InfoProvider
     private let authorize: Authorizer
@@ -220,7 +228,8 @@ public final class AgentServer {
                 client: Self.sanitize(req.client ?? "envault"),
                 agent: req.agent.map { Self.sanitize($0, fallback: "AI agent") },
                 purpose: req.purpose.flatMap(AIAgents.Purpose.init(rawValue:)) ?? .use,
-                detail: req.detail.map { Self.sanitize($0, fallback: "") }.flatMap { $0.isEmpty ? nil : $0 })
+                detail: req.detail.map { Self.sanitize($0, fallback: "") }.flatMap { $0.isEmpty ? nil : $0 },
+                teamRules: req.teamRules)
             Task { @MainActor in
                 do {
                     let key = try await authorize(request)
@@ -262,7 +271,7 @@ public final class AgentServer {
         if op == .writeNew, req.data == nil { return .failure("nothing to write") }
         let store: any VaultStorage
         do {
-            store = try provider(req.agent.map { Self.sanitize($0, fallback: "AI agent") })
+            store = try provider(req.agent.map { Self.sanitize($0, fallback: "AI agent") }, req.vaultId)
         } catch let f as Agent.Failure {
             return .failure(f.message, denied: f.denied)
         } catch {
@@ -334,16 +343,19 @@ public struct AppVaultStorage: VaultStorage {
     public enum Op: String, Codable, Sendable { case exists, read, readMany, list, writeNew }
 
     public let agent: String?
+    /// A team vault the app keeps, or nil for the vault it has open.
+    public let vaultId: UUID?
     public let portName: String
 
-    public init(agent: String?, portName: String = Agent.portName) {
+    public init(agent: String?, vaultId: UUID? = nil, portName: String = Agent.portName) {
         self.agent = agent
+        self.vaultId = vaultId
         self.portName = portName
     }
 
     private func call(_ op: Op, _ paths: [VaultPath], data: Data? = nil) throws -> Agent.Response {
         guard let client = AgentClient(name: portName) else { throw Agent.Failure("EnVault quit; open it again") }
-        var req = Agent.Request(op: .storage, agent: agent)
+        var req = Agent.Request(op: .storage, vaultId: vaultId, agent: agent)
         req.storageOp = op.rawValue
         req.paths = paths.map(\.string)
         req.data = data

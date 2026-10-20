@@ -24,6 +24,10 @@ struct ItemListView: View {
                     .tag(item.id)
                     .contextMenu {
                         Button("Rename…") { renaming = item }
+                        if let team = model.session?.team, team.canManage {
+                            let on = team.humansOnly.contains(item.id)
+                            Button(on ? "Open to AI Agents Again" : "For People Only") { Task { await model.setHumansOnly(item.id, !on) } }
+                        }
                         Menu("Move to") {
                             ForEach(model.projects.filter { $0.id != project.id }) { p in
                                 Button(p.name) { Task { await model.updateItem(item.id, projectId: p.id) } }
@@ -100,6 +104,9 @@ struct ItemRow: View {
                 Text("\(Text(item.modifiedAt, style: .relative)) ago").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if model.session?.team?.humansOnly.contains(item.id) == true {
+                Image(systemName: "person.fill").font(.caption2).foregroundStyle(.secondary).help("For people only: AI agents never get it")
+            }
             if let readers = model.session?.team?.exposed[item.id], let team = model.session?.team {
                 Image(systemName: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.red)
                     .help("\(readers.map(team.name).sorted().formatted(.list(type: .and))) could read the current value before leaving. Rotate it.")

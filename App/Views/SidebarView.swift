@@ -117,10 +117,17 @@ struct ProjectRow: View {
         HStack {
             Label(project.name, systemImage: "folder")
             Spacer()
+            if model.session?.team?.humansOnly.contains(project.id) == true {
+                Image(systemName: "person.fill").font(.caption2).foregroundStyle(.secondary).help("For people only: AI agents never get it")
+            }
             Text(String(project.itemCount)).foregroundStyle(.secondary).font(.caption)
         }
         .contextMenu {
             Button("Rename…", action: onRename)
+            if let team = model.session?.team, team.canManage {
+                let on = team.humansOnly.contains(project.id)
+                Button(on ? "Open to AI Agents Again" : "For People Only") { Task { await model.setHumansOnly(project.id, !on) } }
+            }
             if !targets.isEmpty {
                 Menu("Copy to Team Vault") {
                     ForEach(targets, id: \.vaultId) { t in Button(t.name) { Task { await model.copyProject(project.id, to: t, move: false) } } }

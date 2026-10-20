@@ -63,13 +63,14 @@ import Foundation
         _ = try await created.createProject(name: "api")
 
         let name = "dk.dinhkhanh.envault.agent.test-\(UUID().uuidString.prefix(8))"
-        final class Agents: @unchecked Sendable { var seen: [String?] = [] }
+        final class Agents: @unchecked Sendable { var seen: [String?] = []; var vaults: [UUID?] = [] }
         let agents = Agents()
         let server = AgentServer(
             info: { Agent.Info(vaultId: nil, vaultPath: dir.path, mode: "icloud", locked: true, appVersion: "test", cliPath: nil) },
             authorize: { _ in throw Agent.Failure("no") },
-            storage: { agent in
+            storage: { agent, vaultId in
                 agents.seen.append(agent)
+                agents.vaults.append(vaultId)
                 if agent == "Blocked" { throw Agent.Failure("agents off", denied: true) }
                 return local
             })
@@ -89,6 +90,12 @@ import Foundation
         _ = try await check.unlock(passphrase: "pw-123456")
         #expect(await check.allItems().map(\.name) == [".env"])
         #expect(agents.seen.contains("Claude Code"))
+        #expect(agents.vaults.allSatisfy { $0 == nil })   // the open vault
+
+        // A team vault's files are asked for by id.
+        let team = UUID()
+        _ = try await Task.detached { try await AppVaultStorage(agent: nil, vaultId: team, portName: name).exists(VaultPath("vault.json")) }.value
+        #expect(agents.vaults.last == team)
 
         // Replacing, deleting and leaving the folder are refused.
         await #expect(throws: (any Error).self) { try await proxy.writeReplace(VaultPath("vault.json"), data: Data()) }

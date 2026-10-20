@@ -11,7 +11,7 @@ import EnvKit
 // app to read values. `envault mcp` serves the same as MCP tools.
 
 let usage = """
-usage: envault [--vault DIR] [--json] <command>
+usage: envault [--vault DIR] [--team NAME|ID] [--json] <command>
 
   ls                                  list projects and items
   keys <project> <item>               list an env file's variable names (no values)
@@ -25,6 +25,7 @@ usage: envault [--vault DIR] [--json] <command>
                                       run CMD with the env file's variables set; --redact replaces secret
                                       values in its output with [redacted:KEY] (the default for AI agents)
   history <project> <item>            list revisions
+  teams                               list the team vaults you belong to (use one with --team NAME)
   init                                create a new vault in DIR
   import <project> <item> <FILE|->    import a .env, JSON (Doppler, 1Password item) or .env.vault ($DOTENV_KEY) file
   import <project> <item> --doppler [-- doppler args]            from `doppler secrets download`
@@ -51,6 +52,8 @@ usage: envault [--vault DIR] [--json] <command>
 
 Vault folder: --vault, $ENVAULT_DIR, the vault open in the EnVault app, the iCloud Drive EnVault folder,
               or the app's iCloud-synced vault.
+Team vaults:  --team NAME|ID or $ENVAULT_TEAM works with every command that reads or changes items, and in
+              `link`; they unlock with your personal vault (one approval) and are read through the EnVault app.
 Key:          `envault unlock`'s cache, the running EnVault app (Touch ID), $ENVAULT_PASSPHRASE, or a prompt.
               Set ENVAULT_NO_APP=1 to never ask the app.
 --json:       machine-readable output (ls, keys, status, history, links, scan, version, set, unset, push,
@@ -86,6 +89,7 @@ let env = ProcessInfo.processInfo.environment
 let json = takeFlag("--json")
 let quiet = takeFlag("--quiet")
 let vaultDir = takeOption("--vault") ?? env["ENVAULT_DIR"]
+let teamSelector = takeOption("--team") ?? env["ENVAULT_TEAM"].flatMap { $0.isEmpty ? nil : $0 }
 let home = env["HOME"] ?? NSHomeDirectory()
 let useApp = env["ENVAULT_NO_APP"].map { $0.isEmpty || $0 == "0" } ?? true
 let aiAgent = AIAgents.detect(env)
@@ -139,7 +143,7 @@ let vaultless: Set<String> = ["scan", "protect", "version", "--version", "status
 let root = URL(fileURLWithPath: vaultDir ?? (vaultless.contains(command) ? "" : defaultVaultDir(askApp: command != "init")), isDirectory: true)
 
 let session = Session(root: root, agent: aiAgent, useApp: useApp, client: "envault \(command)",
-                      interactive: aiAgent == nil, cachedOnly: quiet)
+                      interactive: aiAgent == nil, cachedOnly: quiet, team: teamSelector)
 
 // JSON shapes
 struct ItemJSON: Encodable { var name: String; var kind: String; var revisions: Int }
@@ -147,6 +151,7 @@ struct ProjectJSON: Encodable { var name: String; var items: [ItemJSON] }
 struct KeyJSON: Encodable { var name: String; var empty: Bool; var redacted: Bool }
 struct KeysJSON: Encodable { var project: String; var item: String; var keys: [KeyJSON] }
 struct RevisionJSON: Encodable { var id: String; var modifiedAt: Date; var device: String; var deleted: Bool }
+struct TeamJSON: Encodable { var id: String; var name: String?; var role: String?; var access: String }
 struct FindingJSON: Encodable { var file: String; var line: Int; var kind: String; var excerpt: String }
 struct ScanJSON: Encodable { var findings: [FindingJSON] }
 struct ResultJSON: Encodable { var ok = true; var message: String; var keys: [String]? = nil }
@@ -180,9 +185,9 @@ do {
         print("created vault at \(root.path)")
 
     case "ls":
-        let store = try await session.unlocked(.use)
+        let store = try await session.content(.use)
         var projects: [ProjectJSON] = []
-        for p in await store.projects() {
+        for p in await store.projects(includeDeleted: false) {
             projects.append(ProjectJSON(name: p.name, items: await store.items(in: p.id).map {
                 ItemJSON(name: $0.name, kind: $0.kind.rawValue, revisions: $0.revisionCount)
             }))
@@ -192,21 +197,21 @@ do {
 
     case "keys":
         guard args.count == 2 else { usageError() }
-        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let store = try await session.content(.use, "\(args[0])/\(args[1])")
         let doc = try envDoc(try await find(store, args[0], args[1]))
         let keys = doc.entries.map { KeyJSON(name: $0.key, empty: $0.value.isEmpty, redacted: EnvRedactor.redacts($0)) }
         output(keys.map(\.name).joined(separator: "\n"), json: KeysJSON(project: args[0], item: args[1], keys: keys))
 
     case "get":
         guard args.count == 2 else { usageError() }
-        let store = try await session.unlocked(.reveal, "\(args[0])/\(args[1])")
+        let store = try await session.content(.reveal, "\(args[0])/\(args[1])")
         let item = try await find(store, args[0], args[1])
         FileHandle.standardOutput.write(Data(item.payload.primaryText.utf8))
 
     case "pull":
         guard args.count >= 2 else { usageError() }
         let out = takeOption("-o") ?? args[1]
-        let store = try await session.unlocked(.reveal, "\(args[0])/\(args[1])")
+        let store = try await session.content(.reveal, "\(args[0])/\(args[1])")
         let item = try await find(store, args[0], args[1])
         try item.payload.primaryText.write(toFile: out, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: out)
@@ -215,7 +220,7 @@ do {
     case "push":
         guard args.count == 3 else { usageError() }
         let text = try String(contentsOfFile: args[2], encoding: .utf8)
-        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let store = try await session.content(.write, "\(args[0])/\(args[1])")
         let msg = try await upsert(store, project: args[0], item: args[1], text: text)
         output(msg, json: ResultJSON(message: msg))
 
@@ -237,7 +242,7 @@ do {
             pairs.append((String(a[..<eq]), value))
         }
         pairs += generate.map { ($0, generateSecret()) }
-        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let store = try await session.content(.write, "\(args[0])/\(args[1])")
         let msg = try await editEnv(store, project: args[0], item: args[1], set: pairs, unset: [])
         let names = pairs.map(\.key)
         let text = msg + (generate.isEmpty ? "" : "\ngenerated \(generate.joined(separator: ", ")) (32 random bytes, base64url)")
@@ -245,7 +250,7 @@ do {
 
     case "unset":
         guard args.count >= 3 else { usageError() }
-        let store = try await session.unlocked(.write, "\(args[0])/\(args[1])")
+        let store = try await session.content(.write, "\(args[0])/\(args[1])")
         let msg = try await editEnv(store, project: args[0], item: args[1], set: [], unset: Array(args.dropFirst(2)))
         output(msg, json: ResultJSON(message: msg, keys: Array(args.dropFirst(2))))
 
@@ -279,7 +284,7 @@ do {
             }
         }
         let n = DotEnv.parse(text).entries.count
-        let store = try await session.unlocked(.write, "\(project)/\(itemName)")
+        let store = try await session.content(.write, "\(project)/\(itemName)")
         let msg = try await upsert(store, project: project, item: itemName, text: text)
         output("\(msg)\n\(n) key\(n == 1 ? "" : "s")", json: ResultJSON(message: msg, keys: DotEnv.parse(text).entries.map(\.key)))
 
@@ -287,7 +292,7 @@ do {
         let redactFlag = takeFlag("--redact"), noRedact = takeFlag("--no-redact")
         let redact = redactFlag || (aiAgent != nil && !noRedact)
         guard let dash = args.firstIndex(of: "--"), dash == 2, args.count > 3 else { usageError() }
-        let store = try await session.unlocked(redact || aiAgent == nil ? .use : .reveal, "\(args[0])/\(args[1])")
+        let store = try await session.content(redact || aiAgent == nil ? .use : .reveal, "\(args[0])/\(args[1])")
         let doc = try envDoc(try await find(store, args[0], args[1]))
         var childEnv = env
         for (k, v) in doc.values { childEnv[k] = v }
@@ -308,12 +313,26 @@ do {
 
     case "history":
         guard args.count == 2 else { usageError() }
-        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let store = try await session.content(.use, "\(args[0])/\(args[1])")
         let item = try await find(store, args[0], args[1])
         let revs = await store.history(of: item.id)
         let f = ISO8601DateFormatter()
         output(revs.map { "\($0.id)  \(f.string(from: $0.modifiedAt))  \($0.device.name)\($0.deleted ? "  [deleted]" : "")" }.joined(separator: "\n"),
                json: revs.map { RevisionJSON(id: "\($0.id)", modifiedAt: $0.modifiedAt, device: $0.device.name, deleted: $0.deleted) })
+
+    case "teams":
+        let teams = try await session.teamVaults(.use, "the list of team vaults")
+        func describe(_ a: TeamAccess) -> (role: String?, access: String) {
+            switch a {
+            case .member(let r): (r.rawValue, "member")
+            case .awaitingKey(let r): (r.rawValue, "waiting for the key")
+            case .notMember: (nil, "waiting for approval")
+            case .removed: (nil, "removed")
+            case .locked: (nil, "locked")
+            }
+        }
+        let rows = teams.map { t in TeamJSON(id: t.id.uuidString, name: t.title, role: describe(t.access).role, access: describe(t.access).access) }
+        output(rows.isEmpty ? "no team vaults" : rows.map { "\($0.name ?? "untitled")  \($0.id.prefix(8))  \($0.role ?? $0.access)" }.joined(separator: "\n"), json: rows)
 
     case "unlock":
         refuseForAgent("`envault unlock` caches the vault key for every later command; ask the user to run it in their own terminal")
@@ -336,12 +355,12 @@ do {
     case "link":
         guard args.count >= 2 else { usageError() }
         let dir = URL(fileURLWithPath: args.count > 2 ? args[2] : FileManager.default.currentDirectoryPath).standardizedFileURL.path
-        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let store = try await session.content(.use, "\(args[0])/\(args[1])")
         _ = try await find(store, args[0], args[1])
         var links = Links.load().filter { $0.path != dir }
-        links.append(Link(path: dir, project: args[0], item: args[1]))
+        links.append(Link(path: dir, project: args[0], item: args[1], team: teamSelector))
         try Links.save(links)
-        print("linked \(dir) → \(args[0])/\(args[1])")
+        print("linked \(dir) → \(teamSelector.map { "\($0) › " } ?? "")\(args[0])/\(args[1])")
 
     case "unlink":
         let dir = URL(fileURLWithPath: args.first ?? FileManager.default.currentDirectoryPath).standardizedFileURL.path
@@ -350,14 +369,16 @@ do {
 
     case "links":
         let links = Links.load().sorted(by: { $0.path < $1.path })
-        output(links.map { "\($0.path)  →  \($0.project)/\($0.item)" }.joined(separator: "\n"), json: links)
+        output(links.map { "\($0.path)  →  \($0.team.map { "\($0) › " } ?? "")\($0.project)/\($0.item)" }.joined(separator: "\n"), json: links)
 
     case "env":
         // Shell hooks in an agent's shell stay silent: agents use `envault run`.
         if quiet, aiAgent != nil { exit(0) }
         guard let link = Links.match(FileManager.default.currentDirectoryPath) else { if quiet { exit(0) } else { fail("no env file linked to this directory; run `envault link <project> <item>`", .notFound) } }
-        let store: VaultStore
-        do { store = try await session.unlocked(.reveal, "\(link.project)/\(link.item)") } catch let e as CLIError where quiet && e.code == .needsUser { exit(0) }
+        var linked = session
+        linked.team = link.team
+        let store: any VaultContent
+        do { store = try await linked.content(.reveal, "\(link.project)/\(link.item)") } catch let e as CLIError where quiet && e.code == .needsUser { exit(0) }
         guard let item = try? await find(store, link.project, link.item) else { if quiet { exit(0) } else { fail("linked item \(link.item) no longer exists", .notFound) } }
         let doc = try envDoc(item)
         if args.contains("--fish") {
@@ -376,7 +397,7 @@ do {
         let dash = args.firstIndex(of: "--")
         let extra = dash.map { Array(args[($0 + 1)...]) } ?? []
         let dry = args.contains("--dry-run")
-        let store = try await session.unlocked(dry ? .use : .reveal, "\(args[1])/\(args[2]) to \(target)")
+        let store = try await session.content(dry ? .use : .reveal, "\(args[1])/\(args[2]) to \(target)")
         let doc = try envDoc(try await find(store, args[1], args[2]))
         switch target {
         case "vercel":
@@ -393,7 +414,7 @@ do {
 
     case "example":
         guard args.count == 2 else { usageError() }
-        let store = try await session.unlocked(.use, "\(args[0])/\(args[1])")
+        let store = try await session.content(.use, "\(args[0])/\(args[1])")
         FileHandle.standardOutput.write(Data(EnvHygiene.example(from: try envDoc(try await find(store, args[0], args[1]))).utf8))
 
     case "scan" where args.contains("--staged"):

@@ -34,6 +34,10 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
         case name(member: UUID, name: SealedName)
         /// The vault's own display name, sealed under a team key; owner or admin.
         case title(SealedName)
+        /// What AI agents may do in this vault (FR-23); owner or admin.
+        case agentRules(TeamAgentRules)
+        /// Marks a project or item "humans only": agents never get it (FR-24); owner or admin.
+        case humansOnly(target: UUID, on: Bool)
     }
 
     public var id: ULID
@@ -66,6 +70,10 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
             c.add("name"); c.add(member); c.add(name.epoch); c.add(name.box)
         case .title(let name):
             c.add("title"); c.add(name.epoch); c.add(name.box)
+        case .agentRules(let r):
+            c.add("agentRules"); c.add(r.enabled ? "1" : "0"); c.add(r.values.rawValue); c.add(r.writes ? "1" : "0")
+        case .humansOnly(let target, let on):
+            c.add("humansOnly"); c.add(target); c.add(on ? "1" : "0")
         }
         return c.data
     }
@@ -111,6 +119,10 @@ public struct TeamState: Sendable {
     public private(set) var names: [UUID: SealedName] = [:]
     /// The vault's latest sealed display name.
     public private(set) var title: SealedName?
+    /// The team's rules for AI agents, nil until an admin sets them.
+    public private(set) var agentRules: TeamAgentRules?
+    /// Projects and items agents never get.
+    public private(set) var humansOnly: Set<UUID> = []
     /// When each former member was last removed.
     public private(set) var removedAt: [UUID: ULID] = [:]
     /// Events ignored, with the reason (shown in the membership log, FR-18/FR-19).
@@ -199,6 +211,12 @@ public struct TeamState: Sendable {
             guard by.canManage else { return "only an owner or admin renames the vault" }
             guard epoch(name.epoch) != nil else { return "unknown key epoch" }
             title = name
+        case .agentRules(let rules):
+            guard by.canManage else { return "only an owner or admin sets the rules for AI agents" }
+            agentRules = rules
+        case .humansOnly(let target, let on):
+            guard by.canManage else { return "only an owner or admin marks things humans only" }
+            if on { humansOnly.insert(target) } else { humansOnly.remove(target) }
         }
         return nil
     }

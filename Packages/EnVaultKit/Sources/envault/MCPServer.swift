@@ -76,6 +76,8 @@ struct MCPServer {
     // MARK: - Tools
 
     private func call(_ name: String, _ a: [String: Any], _ session: Session) async throws -> String {
+        var session = session
+        if let team = a["team"] as? String, !team.isEmpty { session.team = team }
         func str(_ k: String) throws -> String {
             guard let v = a[k] as? String, !v.isEmpty else { throw CLIError("missing argument \(k)", code: .usage) }
             return v
@@ -89,9 +91,9 @@ struct MCPServer {
                                         agent: session.agent, agentPolicy: info?.agents))
 
         case "list_items":
-            let store = try await session.unlocked(.use)
+            let store = try await session.content(.use)
             var projects: [ProjectJSON] = []
-            for p in await store.projects() {
+            for p in await store.projects(includeDeleted: false) {
                 projects.append(ProjectJSON(name: p.name, items: await store.items(in: p.id).map {
                     ItemJSON(name: $0.name, kind: $0.kind.rawValue, revisions: $0.revisionCount)
                 }))
@@ -100,7 +102,7 @@ struct MCPServer {
 
         case "list_keys":
             let (project, item) = (try str("project"), try str("item"))
-            let store = try await session.unlocked(.use, "\(project)/\(item)")
+            let store = try await session.content(.use, "\(project)/\(item)")
             let doc = try envDoc(try await find(store, project, item))
             return Self.json(KeysJSON(project: project, item: item, keys: doc.entries.map {
                 KeyJSON(name: $0.key, empty: $0.value.isEmpty, redacted: EnvRedactor.redacts($0))
@@ -110,7 +112,7 @@ struct MCPServer {
             let (project, item, command) = (try str("project"), try str("item"), try str("command"))
             let cwd = a["cwd"] as? String
             let timeout = min(max((a["timeout_seconds"] as? Int) ?? 120, 1), 600)
-            let store = try await session.unlocked(.use, "\(project)/\(item)")
+            let store = try await session.content(.use, "\(project)/\(item)")
             let doc = try envDoc(try await find(store, project, item))
             var env = ProcessInfo.processInfo.environment
             for (k, v) in doc.values { env[k] = v }
@@ -133,7 +135,7 @@ struct MCPServer {
             let generate = a["generate"] as? [String] ?? []
             pairs += generate.map { ($0, generateSecret()) }
             guard !pairs.isEmpty else { throw CLIError("nothing to set: pass values or generate", code: .usage) }
-            let store = try await session.unlocked(.write, "\(project)/\(item)")
+            let store = try await session.content(.write, "\(project)/\(item)")
             let msg = try await editEnv(store, project: project, item: item, set: pairs, unset: [])
             return msg + "\nset " + pairs.map(\.key).joined(separator: ", ")
                 + (generate.isEmpty ? "" : "\ngenerated new random values for \(generate.joined(separator: ", ")) (32 bytes, base64url); they were not shown to you")
@@ -141,20 +143,27 @@ struct MCPServer {
         case "unset_keys":
             let (project, item) = (try str("project"), try str("item"))
             guard let keys = a["keys"] as? [String], !keys.isEmpty else { throw CLIError("missing argument keys", code: .usage) }
-            let store = try await session.unlocked(.write, "\(project)/\(item)")
+            let store = try await session.content(.write, "\(project)/\(item)")
             return try await editEnv(store, project: project, item: item, set: [], unset: keys)
 
         case "get_values":
             let (project, item) = (try str("project"), try str("item"))
             let keys = a["keys"] as? [String]
             let detail = "\(project)/\(item)" + (keys.map { " (\($0.joined(separator: ", ")))" } ?? "")
-            let store = try await session.unlocked(.reveal, detail)
+            let store = try await session.content(.reveal, detail)
             let doc = try envDoc(try await find(store, project, item))
             let wanted = keys.map(Set.init)
             if let wanted, let missing = wanted.subtracting(doc.entries.map(\.key)).sorted().first {
                 throw CLIError("no variable \(missing) in \(project)/\(item)", code: .notFound)
             }
             return doc.entries.filter { wanted?.contains($0.key) ?? true }.map(DotEnv.serialize).joined(separator: "\n")
+
+        case "list_teams":
+            let teams = try await session.teamVaults(.use, "the list of team vaults")
+            return Self.json(teams.map { t -> TeamJSON in
+                let role: String? = switch t.access { case .member(let r), .awaitingKey(let r): r.rawValue; default: nil }
+                return TeamJSON(id: t.id.uuidString, name: t.title, role: role, access: role == nil ? "not a member" : "member")
+            })
 
         case "scan":
             let dir = (a["path"] as? String) ?? FileManager.default.currentDirectoryPath
@@ -165,10 +174,14 @@ struct MCPServer {
         }
     }
 
-    static let projectItem: [String: Any] = [
+    static let team: [String: Any] = [
+        "team": ["type": "string", "description": "A team vault's name or id (see list_teams). Omit for the user's personal vault."],
+    ]
+
+    static let projectItem: [String: Any] = team.merging([
         "project": ["type": "string", "description": "Project name in EnVault (see list_items)."],
         "item": ["type": "string", "description": "Env file name in the project, e.g. .env.production (see list_items)."],
-    ]
+    ]) { $1 }
 
     static func schema(_ props: [String: Any] = [:], required: [String] = []) -> [String: Any] {
         ["type": "object", "properties": props, "required": required, "additionalProperties": false]
@@ -180,6 +193,9 @@ struct MCPServer {
          "inputSchema": schema(), "annotations": ["readOnlyHint": true]],
         ["name": "list_items", "title": "List env files",
          "description": "List projects and their env files / secrets (names only).",
+         "inputSchema": schema(team), "annotations": ["readOnlyHint": true]],
+        ["name": "list_teams", "title": "List team vaults",
+         "description": "List the team vaults the user belongs to, with their role. Pass a team's name as `team` to the other tools to work in it.",
          "inputSchema": schema(), "annotations": ["readOnlyHint": true]],
         ["name": "list_keys", "title": "List variable names",
          "description": "List the variable names in an env file, without values. `redacted` tells whether run_command hides that value in output.",

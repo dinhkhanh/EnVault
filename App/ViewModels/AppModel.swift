@@ -901,6 +901,16 @@ final class AppModel {
         await reconcileShare(s)
     }
 
+    func setAgentRules(_ rules: TeamAgentRules, in s: VaultSession) async {
+        await performOnTeam(s) { try await $0.setAgentRules(rules) }
+    }
+
+    /// Marks a project or item of the vault shown "for people only" (FR-24).
+    func setHumansOnly(_ id: UUID, _ on: Bool) async {
+        guard let s = session, s.isTeam else { return }
+        await performOnTeam(s) { try await $0.setHumansOnly(id, on) }
+    }
+
     func renameTeamVault(_ s: VaultSession, to title: String) async {
         await performOnTeam(s) { try await $0.setTitle(title) }
     }
@@ -1158,9 +1168,9 @@ final class AppModel {
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try await self.authorizeCLI(request)
             },
-            storage: { [weak self] agent in
+            storage: { [weak self] agent, vaultId in
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
-                return try self.vaultStorageForCLI(agent: agent)
+                return try self.vaultStorageForCLI(agent: agent, vaultId: vaultId)
             })
         agentRunning = server.start()
         agent = server
@@ -1184,14 +1194,17 @@ final class AppModel {
         guard let store, let vaultId else { throw refuse("no vault is open in EnVault", denied: false) }
         guard r.vaultId == vaultId else { throw refuse("EnVault has a different vault open; pass --vault for this one", denied: false) }
 
-        var policy = Prefs.agentPolicy
+        // A team vault's rules can only make this Mac's setting stricter (FR-23).
+        let own = Prefs.agentPolicy
+        var policy = own.restricted(by: r.teamRules)
         if let agent = r.agent {
-            guard policy.enabled else { throw refuse("AI agents are turned off in EnVault Settings › AI Agents") }
+            func whose(_ ownAllows: Bool) -> String { ownAllows ? "this team vault's rules" : "Settings › AI Agents" }
+            guard policy.enabled else { throw refuse("AI agents are turned off (\(whose(own.enabled)))") }
             if r.purpose == .reveal, policy.values == .never {
-                throw refuse("EnVault doesn't show secret values to AI agents (Settings › AI Agents); use `envault run` instead")
+                throw refuse("EnVault doesn't show secret values to AI agents (\(whose(own.values != .never))); use `envault run` instead")
             }
             if r.purpose == .write, !policy.writes {
-                throw refuse("AI agents may not change env files (Settings › AI Agents)")
+                throw refuse("AI agents may not change env files (\(whose(own.writes)))")
             }
             let mustAsk = r.purpose == .reveal && policy.values == .ask
             if !mustAsk, phase == .unlocked, let until = agentGrants[agent], until > Date(), let key = await store.currentVaultKey() {
@@ -1229,8 +1242,9 @@ final class AppModel {
     }
 
     /// The open vault's files for the CLI, which can't read this app's
-    /// container itself in iCloud mode. Ciphertext; the key is a separate request.
-    private func vaultStorageForCLI(agent: String?) throws -> any VaultStorage {
+    /// container itself in iCloud mode, or a team vault's (`vaultId`; FR-22).
+    /// Ciphertext; the key is a separate request, and team vaults unlock with it.
+    private func vaultStorageForCLI(agent: String?, vaultId: UUID?) throws -> any VaultStorage {
         guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
             throw Agent.Failure("the command line is turned off in EnVault Settings › Command Line", denied: true)
         }
@@ -1238,6 +1252,14 @@ final class AppModel {
             throw Agent.Failure("AI agents are turned off in EnVault Settings › AI Agents", denied: true)
         }
         guard store != nil, let vaultURL else { throw Agent.Failure("no vault is open in EnVault") }
+        if let vaultId, vaultId != self.vaultId {
+            // Any team vault this Mac keeps, locked or not: the files are ciphertext.
+            let root = Self.localRoot(for: vaultId)
+            guard TeamFeatures.enabled, FileManager.default.fileExists(atPath: root.appendingPathComponent(VaultHeader.fileName).path) else {
+                throw Agent.Failure("this Mac has no team vault \(vaultId.uuidString.prefix(8)); open it in EnVault first")
+            }
+            return LocalFolderStorage(root: root)
+        }
         return LocalFolderStorage(root: vaultURL)
     }
 
