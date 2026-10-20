@@ -108,3 +108,37 @@ test("manual issue without notification, and resend with rate limit", async () =
   s.store.resends = [];
   assert.equal(await resendKeys(s, "dev@example.com"), "none");
 });
+
+test("team renewals and seat changes: renewal mail, new key per seat count, old one revoked", async () => {
+  const s = await testServices();
+  const team = { name: "EnVault Team", metadata: { plan: "team" } };
+  const sub = { id: "sub_t", current_period_end: "2027-10-20T00:00:00Z" };
+  const first = polarOrderPaid({ id: "ord_t1", product: team, seats: 3, subscription_id: "sub_t", subscription: sub, billing_reason: "subscription_create" });
+  await applyAction(s, "polar", "evt_t1", first.type, polarAction(first));
+  assert.equal(s.mailer.sent.at(-1)!.subject, "Your EnVault Team purchase");
+
+  // Seats go up mid-year: Polar bills the difference with billing_reason subscription_update.
+  const more = polarOrderPaid({ id: "ord_t2", product: team, seats: 5, subscription_id: "sub_t", subscription: sub, billing_reason: "subscription_update" });
+  await applyAction(s, "polar", "evt_t2", more.type, polarAction(more));
+  const [a, b] = s.store.licenses;
+  assert.equal(b.seats, 5); assert.equal(b.plan, "team"); assert.equal(b.order_id, "ord_t2");
+  assert.equal(a.status, "revoked"); assert.match(a.revoke_reason ?? "", /replaced/);
+  assert.equal(s.mailer.sent.at(-1)!.subject, "Your EnVault Team key for 5 seats");
+
+  // Seats go down with no charge: subscription.updated.
+  const fewer = { type: "subscription.updated", data: { id: "sub_t", seats: 4, status: "active", current_period_end: sub.current_period_end } };
+  await applyAction(s, "polar", "evt_t3", fewer.type, polarAction(fewer));
+  assert.equal(s.store.licenses.length, 3);
+  assert.equal(s.store.licenses[2].seats, 4); assert.equal(s.store.licenses[1].status, "revoked");
+  // The same count again (any other subscription change) issues nothing.
+  const same = { type: "subscription.updated", data: { id: "sub_t", seats: 4, status: "active" } };
+  assert.equal((await applyAction(s, "polar", "evt_t4", same.type, polarAction(same))).body, "seats unchanged");
+
+  // Yearly renewal: a new key with a new expiry, worded as a renewal.
+  const renew = polarOrderPaid({ id: "ord_t3", product: team, seats: 4, subscription_id: "sub_t",
+    subscription: { id: "sub_t", current_period_end: "2028-10-20T00:00:00Z" }, billing_reason: "subscription_cycle" });
+  await applyAction(s, "polar", "evt_t5", renew.type, polarAction(renew));
+  assert.equal(s.store.licenses[3].expires_at, "2028-10-27T00:00:00Z");
+  assert.equal(s.mailer.sent.at(-1)!.subject, "Your EnVault Team renewal");
+  assert.ok(s.mailer.sent.at(-1)!.text.includes("renewed"));
+});
