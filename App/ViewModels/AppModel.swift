@@ -796,6 +796,7 @@ final class AppModel {
         let isCloud = record.kind == TeamRecord.cloudKit
         let s = VaultSession(store: team, url: root, vaultId: record.vaultId, mode: isCloud ? .iCloud : .folder, name: title ?? "Team vault")
         s.seenURL = Self.seenURL(for: record.vaultId)
+        s.hostsShare = isCloud && record.zoneOwner == nil
         s.didSyncTeam = { [weak self] in await self?.reconcileShare($0) }
         wire(s)
         s.isUnlocked = true
@@ -849,8 +850,8 @@ final class AppModel {
     /// upload; the owner's Mac makes a viewer read-only once approved.
     func invite(email: String, to s: VaultSession) async -> URL? {
         guard let sharing, s.isTeam else { errorMessage = "Invites need iCloud (CloudKit)."; return nil }
-        guard s.team?.role == .owner else {
-            errorMessage = "Only the owner's Mac can invite people for now."
+        guard s.hostsShare else {
+            errorMessage = "Only the Mac of the person who created this vault can invite people for now."
             return nil
         }
         do {
@@ -1011,6 +1012,26 @@ final class AppModel {
         await performOnTeam(s) { try await $0.setHumansOnly(id, on) }
     }
 
+    /// Hands ownership to an admin (FR-29). Billing moves with a new license (phase 4).
+    func transferOwnership(to member: UUID, in s: VaultSession) async {
+        await performOnTeam(s) { try await $0.transferOwnership(to: member) }
+    }
+
+    /// Exports the vault as a new personal vault in `folder` (FR-30). Returns whether it worked.
+    func exportTeamVault(_ s: VaultSession, to folder: URL, passphrase: String) async -> Bool {
+        guard let t = s.teamStore else { return false }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        do {
+            try await t.exportAsPersonalVault(to: LocalFolderStorage(root: folder), passphrase: passphrase)
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func renameTeamVault(_ s: VaultSession, to title: String) async {
         await performOnTeam(s) { try await $0.setTitle(title) }
     }
@@ -1120,7 +1141,7 @@ final class AppModel {
     /// member by who uploaded the member's join request, as CloudKit recorded
     /// it; nobody can claim that for someone else.
     private func reconcileShare(_ s: VaultSession) async {
-        guard let sharing, let t = s.teamStore, let mirror = s.mirror, s.team?.role == .owner,
+        guard let sharing, let t = s.teamStore, let mirror = s.mirror, s.hostsShare,
               let info = try? await sharing.info(of: s.vaultId) else { return }
         let state = await t.state
         var byUser: [String: UUID] = [:]

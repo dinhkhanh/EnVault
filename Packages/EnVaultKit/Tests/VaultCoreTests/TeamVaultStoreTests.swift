@@ -130,6 +130,41 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await store.items(in: p.id).count == 2)           // people still see everything
     }
 
+    @Test func ownershipMovesToAnAdmin() async throws {
+        let (store, macs) = try await team()
+        await #expect(throws: VaultError.self) { try await store.transferOwnership(to: cyd.id) }   // a member
+        let onBob = try await open(macs[bob.id]!, as: bob)
+        await #expect(throws: VaultError.self) { try await onBob.transferOwnership(to: bob.id) }  // not the owner
+        try await store.transferOwnership(to: bob.id)
+        let s = await store.state
+        #expect(s.owner == bob.id && s.role(of: ada.id) == .admin)
+        #expect(store.header.owner.id == ada.id)                      // the pinned root stays
+        // The new owner can do what owners do; the old one can now be removed.
+        await sync(macs[ada.id]!, macs[bob.id]!)
+        try await onBob.refresh()
+        try await onBob.remove(ada.id)
+        #expect(await onBob.state.members[ada.id] == nil)
+        #expect(await onBob.log().contains { $0.change == .ownershipTransferred(bob.id) })
+    }
+
+    @Test func aTeamVaultExportsAsAPersonalVault() async throws {
+        let (store, macs) = try await team()
+        let p = try await store.createProject(name: "api")
+        let item = try await store.createItem(in: p.id, name: ".env", payload: secret)
+        try await store.updateItem(item.id, payload: .envFile(text: "API_KEY=2"))
+        let target = MemoryStorage()
+        let kdf = KDFParams(iterations: 1_000, salt: SecureRandom.bytes(32))
+        await #expect(throws: VaultError.self) {
+            try await open(macs[cyd.id]!, as: cyd).exportAsPersonalVault(to: MemoryStorage(), passphrase: "pw-123456", kdf: kdf)
+        }
+        try await store.exportAsPersonalVault(to: target, passphrase: "pw-123456", kdf: kdf)
+        let personal = try await VaultStore.open(storage: target)
+        try await personal.unlock(passphrase: "pw-123456")
+        let copied = try #require(await personal.allItems().first)
+        #expect(await personal.projects().map(\.name) == ["api"])
+        #expect(await personal.history(of: copied.id).map(\.payload) == [.envFile(text: "API_KEY=2"), secret])
+    }
+
     @Test func everyRoleSeesTheSameVault() async throws {
         let (_, macs) = try await team()
         let onCyd = try await open(macs[cyd.id]!, as: cyd)

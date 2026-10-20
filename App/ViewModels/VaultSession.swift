@@ -47,6 +47,10 @@ final class VaultSession {
     private(set) var team: TeamSnapshot?
     /// Where this Mac keeps the membership events it has applied (team vaults).
     @ObservationIgnored var seenURL: URL?
+    /// An iCloud team vault in this person's own iCloud: this Mac edits its
+    /// share. That's whoever created it, even after handing ownership on (FR-29),
+    /// because a CloudKit zone can't move to another Apple ID.
+    var hostsShare = false
     /// After a team vault synced: the owner's Mac keeps the CloudKit share in step.
     @ObservationIgnored var didSyncTeam: (VaultSession) async -> Void = { _ in }
 

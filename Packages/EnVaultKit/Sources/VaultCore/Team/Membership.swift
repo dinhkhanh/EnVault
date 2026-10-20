@@ -41,6 +41,9 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
         /// An invitation sent as a file (folder mode, FR-6): the role offered
         /// and when it lapses (seconds since 1970). Join requests name it.
         case invite(id: ULID, role: TeamRole, expires: Int64)
+        /// The owner hands ownership to an admin and becomes an admin (FR-29).
+        /// The header keeps the first owner: it is the root every Mac pins.
+        case transferOwnership(to: UUID)
     }
 
     public var id: ULID
@@ -79,6 +82,8 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
             c.add("humansOnly"); c.add(target); c.add(on ? "1" : "0")
         case .invite(let id, let role, let expires):
             c.add("invite"); c.add(id); c.add(role.rawValue); c.add(String(expires))
+        case .transferOwnership(let to):
+            c.add("transferOwnership"); c.add(to)
         }
         return c.data
     }
@@ -173,6 +178,9 @@ public struct TeamState: Sendable {
 
     public func role(of member: UUID) -> TeamRole? { members[member]?.role }
 
+    /// Who owns the vault now: the header's owner until ownership is handed over.
+    public var owner: UUID? { members.first { $0.value.role == .owner }?.key }
+
     /// The member's role as of `revision`: what decides whether a revision with
     /// that id was theirs to write (FR-18).
     public func role(of member: UUID, at revision: ULID) -> TeamRole? {
@@ -233,6 +241,11 @@ public struct TeamState: Sendable {
             guard by.canManage else { return "only an owner or admin invites" }
             guard role != .owner else { return "nobody is invited as owner" }
             invites[id] = Invite(role: role, expiresAt: Date(timeIntervalSince1970: TimeInterval(expires)), by: e.author)
+        case .transferOwnership(let to):
+            guard by == .owner else { return "only the owner hands over ownership" }
+            guard let target = members[to], target.role == .admin else { return "ownership goes to an admin" }
+            set(to, Member(identity: target.identity, role: .owner), at: e.id)
+            set(e.author, Member(identity: author.identity, role: .admin), at: e.id)
         }
         return nil
     }
