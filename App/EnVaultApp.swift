@@ -25,11 +25,12 @@ struct EnVaultApp: App {
                     UpgradeSheet(feature: licenses.upgradePrompt).environment(licenses)
                 }
                 .frame(minWidth: 900, minHeight: 560)
+                // The owner's Mac hands its Team key to the team vaults it owns (FR-28).
+                .onChange(of: licenses.licenseKey, initial: true) { _, key in model.ownLicenseKey = key }
                 .task {
                     await model.start()
                     QuickCopyPanelController.shared.openMain = { openWindow(id: "main"); NSApp.activate() }
                 }
-                // Pushes for vaults shared with this account don't concern the vault open here.
                 // Pushes for the private database (own vaults) and, with team vaults on, the shared one.
                 .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { note in
                     if TeamFeatures.enabled || note.userInfo?["subscriptionID"] as? String != "envault-shared" { model.remotePushReceived() }

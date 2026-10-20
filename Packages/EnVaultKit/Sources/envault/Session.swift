@@ -2,6 +2,7 @@ import Foundation
 import Security
 import VaultCore
 import EnvKit
+import LicenseKit
 
 // MARK: - Errors and exit codes
 
@@ -139,7 +140,11 @@ struct Session {
     /// of the team vaults the person belongs to.
     func content(_ purpose: AIAgents.Purpose, _ detail: String? = nil) async throws -> any VaultContent {
         guard let team else { return try await unlocked(purpose, detail) }
-        guard let agent else { return try await teamVault(team, purpose, detail).store }
+        guard let agent else {
+            let store = try await teamVault(team, purpose, detail).store
+            if purpose == .write { try await Self.checkWritable(store) }
+            return store
+        }
         // An agent: the team's rules are inside the vault, so open it for use
         // first, then have EnVault approve the real purpose under those rules (FR-23).
         let (store, personalId) = try await teamVault(team, .use, detail)
@@ -148,7 +153,18 @@ struct Session {
             try approveUnderTeamRules(rules, agent: agent, purpose: purpose, vaultId: personalId, detail: "team \(team)" + (detail.map { ": \($0)" } ?? ""))
         }
         await store.hideHumansOnly()   // FR-24
+        if purpose == .write { try await Self.checkWritable(store) }
         return store
+    }
+
+    /// FR-27: a team vault whose license lapsed past the grace period is read-only
+    /// here too. (Revoked keys are only known to the app; it ships the list.)
+    static func checkWritable(_ store: TeamVaultStore) async throws {
+        guard let verifier = try? LicenseVerifier(publicKeyBase64: VendorKey.licensePublicKey) else { return }
+        let status = TeamLicenseStatus.evaluate(await store.licenseKey, verifier: verifier)
+        guard status.allowsWrites else {
+            throw CLIError("this team vault is read-only: its Team license has lapsed. Nothing is lost; the owner renews it in EnVault", code: .denied)
+        }
     }
 
     /// Asks EnVault again with the team's rules applied, or, without the app,

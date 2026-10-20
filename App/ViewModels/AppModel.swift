@@ -1,6 +1,7 @@
 import SwiftUI
 import CloudKit
 import LocalAuthentication
+import LicenseKit
 import VaultCore
 import VaultSync
 import ToolKit
@@ -584,6 +585,7 @@ final class AppModel {
             if let iid = selectedItemId, !items.contains(where: { $0.id == iid }) { selectedItemId = nil }
         }
         if phase == .unlocked, s === personal { fileLinks.syncAll(vaultId: s.vaultId) }
+        if s.isTeam { teamDidReload(s) }
     }
 
     #if DEBUG
@@ -614,10 +616,11 @@ final class AppModel {
     // MARK: - Mutations
 
     /// Runs a change on `target` (default: the vault shown), then refreshes and pushes it.
-    private func perform(on target: VaultSession? = nil, _ op: @escaping (any VaultContent) async throws -> Void) async {
+    private func perform(on target: VaultSession? = nil, content: Bool = true, _ op: @escaping (any VaultContent) async throws -> Void) async {
         guard let s = target ?? session else { return }
         autoLock.touch()
         do {
+            if content { try checkWritable(s) }
             try await op(s.store)
             await s.reload()
             errorMessage = nil
@@ -804,6 +807,7 @@ final class AppModel {
         unlocatedTeams.removeAll { $0.vaultId == record.vaultId }
         await s.reload()
         s.startWatching()
+        await syncLicense(s)
         if isCloud {
             // Upkeep runs after its first sync, so it never acts on a stale copy.
             s.startCloud(transport: transport(for: record), stateURL: Self.stateURL(for: record.vaultId))
@@ -848,7 +852,7 @@ final class AppModel {
     /// link to send them. They join as a pending member until an admin
     /// approves. Everyone joins able to write, so their join request can
     /// upload; the owner's Mac makes a viewer read-only once approved.
-    func invite(email: String, to s: VaultSession) async -> URL? {
+    func invite(email: String, role: TeamRole = .member, to s: VaultSession) async -> URL? {
         guard let sharing, s.isTeam else { errorMessage = "Invites need iCloud (CloudKit)."; return nil }
         guard s.hostsShare else {
             errorMessage = "Only the Mac of the person who created this vault can invite people for now."
@@ -856,7 +860,16 @@ final class AppModel {
         }
         do {
             try await sharing.shareVault(s.vaultId, title: s.name)
+            // FR-6: the same signed invitation folder teams use, with the role and its 7 days.
+            // The participant is matched to it by email, on this Mac only (names stay out of the log).
+            if let t = s.teamStore {
+                let invite = try await t.createInvite(role: role)
+                var map = Self.cloudInvites(s.vaultId)
+                map[email.lowercased()] = invite.invite.string
+                UserDefaults.standard.set(map, forKey: Self.cloudInvitesKey(s.vaultId))
+            }
             let url = try await sharing.addParticipant(email: email, canWrite: true, to: s.vaultId).url
+            await s.reload()
             errorMessage = nil
             return url
         } catch {
@@ -987,8 +1000,88 @@ final class AppModel {
 
     /// Approves a join request after the safety code was compared (FR-8, FR-9).
     func approve(_ pending: PendingMember, name: String, role: TeamRole, in s: VaultSession) async {
+        // FR-10: the Team license's seats cover every active member, viewers included.
+        let license = teamLicense(of: s)
+        guard let seats = license.seats else {
+            errorMessage = license == .missing
+                ? "This vault has no Team license yet. It arrives when the owner's Mac, with a Team license, syncs."
+                : "The Team license doesn't allow new members: \(Self.describe(license))"
+            return
+        }
+        let members = s.team?.members.count ?? 0
+        guard members < seats else {
+            errorMessage = "The Team license covers \(seats) seats and all are taken. The owner can add seats in their subscription."
+            return
+        }
         await performOnTeam(s) { try await $0.add(pending.identity, name: name, role: role) }
         await reconcileShare(s)
+    }
+
+    // MARK: Team license (FR-10, FR-25, FR-27, FR-28)
+
+    @ObservationIgnored private let licenseVerifier = try? LicenseVerifier(publicKeyBase64: LicensePublicKey.base64, revoked: RevokedLicenses.ids)
+
+    /// This Mac's own license key (from Settings › License). The owner's Mac
+    /// puts a Team key into each vault it owns, so renewals reach the team.
+    var ownLicenseKey: String? {
+        didSet { if ownLicenseKey != oldValue { Task { for s in sessions where s.isTeam { await syncLicense(s) } } } }
+    }
+
+    func teamLicense(of s: VaultSession) -> TeamLicenseStatus {
+        guard let licenseVerifier else { return .invalid("License checks aren't set up in this build.") }
+        // A license event this Mac has seen can't disappear or roll back: someone
+        // with access to the files removed it, perhaps to lift read-only.
+        if let seen = Self.seenLicenseEvent(s.vaultId), (s.team?.licenseEvent).map({ $0 < seen }) ?? true {
+            return .invalid("The vault's license was removed or rolled back. The owner's Mac puts it back when it next opens the vault.")
+        }
+        return TeamLicenseStatus.evaluate(s.team?.licenseKey, verifier: licenseVerifier)
+    }
+
+    private static func seenLicenseKey(_ vaultId: UUID) -> String { "dk.dinhkhanh.envault.teamLicenseEvent.\(vaultId.uuidString)" }
+    private static func seenLicenseEvent(_ vaultId: UUID) -> ULID? {
+        UserDefaults.standard.string(forKey: seenLicenseKey(vaultId)).flatMap(ULID.init(string:))
+    }
+
+    /// Remembers the newest license event, and keeps the owner's key in the vault.
+    private func teamDidReload(_ s: VaultSession) {
+        if let event = s.team?.licenseEvent, Self.seenLicenseEvent(s.vaultId).map({ event > $0 }) ?? true {
+            UserDefaults.standard.set(event.string, forKey: Self.seenLicenseKey(s.vaultId))
+        }
+        if s.team?.role == .owner { Task { await syncLicense(s) } }
+    }
+
+    static func describe(_ status: TeamLicenseStatus) -> String {
+        let f = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        switch status {
+        case .missing: return "no Team license yet"
+        case .invalid(let why): return why
+        case .active(let seats, let expires): return "\(seats) seats" + (expires.map { ", renews by \($0.formatted(f))" } ?? "")
+        case .grace(let seats, let from): return "\(seats) seats; expired, read-only from \(from.formatted(f)) unless renewed"
+        case .readOnly(let since): return "expired; read-only since \(since.formatted(f))"
+        }
+    }
+
+    /// FR-27: no new secrets in a team vault whose license lapsed past the grace period.
+    private func checkWritable(_ s: VaultSession) throws {
+        guard s.isTeam else { return }
+        let license = teamLicense(of: s)
+        guard license.allowsWrites else {
+            throw VaultError.notPermitted("This team vault is read-only: its Team license \(Self.describe(license)). Nothing is lost; saving works again once the owner renews.")
+        }
+    }
+
+    /// On the owner's Mac: puts this Mac's Team key into the vault when it is
+    /// newer than the one there (a first key, a renewal, more seats).
+    private func syncLicense(_ s: VaultSession) async {
+        guard s.team?.role == .owner, let own = ownLicenseKey, let licenseVerifier,
+              let mine = try? licenseVerifier.verify(own), mine.plan == .team else { return }
+        if let current = s.team?.licenseKey {
+            if LicenseCodec.normalize(current) == LicenseCodec.normalize(own) { return }
+            // The newest key wins (a renewal or a seat change replaces the one before),
+            // so two of the owner's Macs holding different keys never take turns.
+            if let theirs = try? licenseVerifier.verify(current, allowExpired: true), theirs.plan == .team, theirs.issuedAt >= mine.issuedAt { return }
+        }
+        await performOnTeam(s) { try await $0.setLicense(LicenseCodec.normalize(own)) }
     }
 
     func setRole(of member: UUID, to role: TeamRole, in s: VaultSession) async {
@@ -1092,6 +1185,7 @@ final class AppModel {
     func copyProject(_ projectId: UUID, to target: VaultSession, move: Bool) async {
         guard let source = session, source !== target, let team = target.teamStore else { return }
         do {
+            try checkWritable(target)
             let exported = try await source.store.export(projectId)
             try await team.importProject(exported.history, items: exported.items)
             await target.reload()
@@ -1128,7 +1222,8 @@ final class AppModel {
     }
 
     private func performOnTeam(_ s: VaultSession, _ op: @escaping (TeamVaultStore) async throws -> Void) async {
-        await perform(on: s) { content in
+        // Membership changes stay possible in a read-only vault (removing, leaving, renewing).
+        await perform(on: s, content: false) { content in
             guard let t = content as? TeamVaultStore else { return }
             try await op(t)
         }
@@ -1147,7 +1242,9 @@ final class AppModel {
         var byUser: [String: UUID] = [:]
         var claims: [String: Int] = [:]
         var requested: [UUID: ULID] = [:]
-        for id in state.everyone.keys {
+        // Members, former members and people asking to join, by who uploaded their request.
+        let people = Set(state.everyone.keys).union(await t.pendingMembers().map(\.id))
+        for id in people {
             guard let r = await t.joinRequest(of: id), let user = await mirror.creator(of: r.path) else { continue }
             byUser[user] = id
             claims[user, default: 0] += 1
@@ -1179,6 +1276,45 @@ final class AppModel {
         }
         UserDefaults.standard.set(Array(handled), forKey: handledKey)
         offShare[s.vaultId] = Set(byUser.values.filter { state.role(of: $0) != nil && !onShare.contains($0) })
+
+        // FR-6: invitations nobody accepted within 7 days lapse; the role offered guides approval.
+        var invites = Self.cloudInvites(s.vaultId)
+        var offers: [UUID: ULID] = [:]
+        var stillNeeded = Set<String>()
+        for p in info.participants where !p.isOwner {
+            guard let email = p.email?.lowercased(), let id = invites[email].flatMap(ULID.init(string:)) else { continue }
+            if p.status == .pending, let offer = state.invites[id], offer.expiresAt < Date() {
+                _ = try? await sharing.removeParticipant(p, from: s.vaultId)
+            } else if let user = p.userRecordName, claims[user] == 1, let member = byUser[user] {
+                offers[member] = id
+                // Kept until they are a member: then the email isn't needed on this Mac any more.
+                if state.members[member] == nil { stillNeeded.insert(email) }
+            } else if p.status != .removed {
+                stillNeeded.insert(email)
+            }
+        }
+        cloudInviteOffers[s.vaultId] = offers
+        invites = invites.filter { stillNeeded.contains($0.key) }
+        UserDefaults.standard.set(invites, forKey: Self.cloudInvitesKey(s.vaultId))
+    }
+
+    private static func cloudInvitesKey(_ vaultId: UUID) -> String { "dk.dinhkhanh.envault.cloudInvites.\(vaultId.uuidString)" }
+    /// On the Mac that hosts an iCloud team's share: which invitation went to which email.
+    private static func cloudInvites(_ vaultId: UUID) -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: cloudInvitesKey(vaultId)) as? [String: String] ?? [:]
+    }
+    /// Per iCloud team vault: the invitation each requester answered, matched through the share.
+    private var cloudInviteOffers: [UUID: [UUID: ULID]] = [:]
+
+    /// A join request with the invitation it answers filled in, also for iCloud
+    /// teams, where the request itself can't name one.
+    func withInvitation(_ p: PendingMember, in s: VaultSession) -> PendingMember {
+        guard p.invitedAs == nil, !p.inviteLapsed, let id = cloudInviteOffers[s.vaultId]?[p.id],
+              let offer = s.team?.invites[id] else { return p }
+        var out = p
+        out.invitedAs = offer.role
+        out.inviteLapsed = p.requestedAt > offer.expiresAt
+        return out
     }
 
     // MARK: - Import

@@ -43,7 +43,15 @@ struct TeamVaultBar: View {
         case .notMember: return team.hasRequestedToJoin ? "Waiting for approval" : "Not a member"
         case .awaitingKey: return "Approved, waiting for the key"
         case .removed: return "You were removed"
-        case .member(let role): return team.needsRotation ? "Saving paused: key rotation pending" : role.title
+        case .member(let role):
+            if team.needsRotation { return "Saving paused: key rotation pending" }
+            switch model.teamLicense(of: session) {
+            case .readOnly: return "Read-only: Team license expired"
+            case .grace: return "\(role.title) · Team license expired, renew soon"
+            case .missing: return "\(role.title) · no Team license yet"
+            case .invalid: return "Read-only: the Team license isn't valid"
+            default: return role.title
+            }
         }
     }
 }
@@ -73,9 +81,10 @@ struct TeamMembersView: View {
                     if team.canManage, !team.lateEvents.isEmpty { lateSection(team) }
                     if !team.exposed.isEmpty { rotateSection(team) }
                     if team.canManage, !team.pending.isEmpty {
-                        Section("Asking to Join") { ForEach(team.pending) { pendingRow($0) } }
+                        Section("Asking to Join") { ForEach(team.pending) { pendingRow(model.withInvitation($0, in: session)) } }
                     }
                     Section("Members") { ForEach(team.members) { memberRow($0, team: team) } }
+                    licenseSection(team)
                     agentSection(team)
                     if session.mode == .folder {
                         if team.canManage { folderInviteSection }
@@ -104,7 +113,7 @@ struct TeamMembersView: View {
             .padding(12)
         }
         .frame(width: 540, height: 600)
-        .sheet(item: $approving) { ApproveMemberSheet(session: session, pending: $0) }
+        .sheet(item: $approving) { ApproveMemberSheet(session: session, pending: model.withInvitation($0, in: session)) }
         .sheet(isPresented: $showLog) { MembershipLogView(session: session) }
         .sheet(isPresented: $exporting) { ExportTeamVaultSheet(session: session) }
         .confirmationDialog("Make \(newOwner?.name ?? "this admin") the owner?", isPresented: Binding(get: { newOwner != nil }, set: { if !$0 { newOwner = nil } }), presenting: newOwner) { m in
@@ -156,6 +165,29 @@ struct TeamMembersView: View {
         Section("Review") {
             Text("\(team.lateEvents.count) membership change\(team.lateEvents.count == 1 ? "" : "s") arrived after newer ones. That happens when an admin was offline, but check the member list is what you expect.")
             Button("Looks Right") { Task { await model.dismissLateEvents(in: session) } }
+        }
+    }
+
+    /// FR-10, FR-27, FR-28: the license the owner put in the vault.
+    private func licenseSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        let license = model.teamLicense(of: session)
+        return Section("Team License") {
+            HStack {
+                Text(AppModel.describe(license).prefix(1).uppercased() + AppModel.describe(license).dropFirst())
+                Spacer()
+                if let seats = license.seats { Text("\(team.members.count) of \(seats) seats used").foregroundStyle(.secondary) }
+            }
+            if !license.allowsWrites {
+                Text("Read-only for everyone until the owner renews. Nothing is deleted.").font(.callout).foregroundStyle(.orange)
+            }
+            if let seats = license.seats, team.members.count > seats {
+                // Two admins approving at once can pass the limit; nobody new joins until it's back under.
+                Text("\(team.members.count - seats) more member\(team.members.count - seats == 1 ? "" : "s") than the license covers. Remove someone or add seats.")
+                    .font(.callout).foregroundStyle(.orange)
+            }
+            if team.role == .owner {
+                Text("This vault uses the Team key in your Settings › License, and picks up renewals from there.").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -292,10 +324,12 @@ struct TeamMembersView: View {
         Section {
             HStack {
                 TextField("Apple ID email", text: $inviteEmail).textContentType(.emailAddress)
+                Picker("Role", selection: $inviteRole) { ForEach(TeamRole.assignable, id: \.self) { Text($0.title).tag($0) } }
+                    .labelsHidden().fixedSize()
                 Button("Invite") {
                     inviting = true
                     Task {
-                        inviteLink = await model.invite(email: inviteEmail.trimmingCharacters(in: .whitespaces), to: session)
+                        inviteLink = await model.invite(email: inviteEmail.trimmingCharacters(in: .whitespaces), role: inviteRole, to: session)
                         if inviteLink != nil { inviteEmail = "" }
                         inviting = false
                     }
@@ -315,7 +349,7 @@ struct TeamMembersView: View {
         } header: {
             Text("Invite")
         } footer: {
-            Text("Send them the link. When they open it in EnVault they ask to join, and you approve them here after comparing safety codes and choosing their role.")
+            Text("Send them the link. When they open it in EnVault they ask to join, and you approve them here after comparing safety codes. An invitation nobody accepts lapses after 7 days.")
                 .font(.caption)
         }
     }
@@ -523,6 +557,7 @@ struct MembershipLogView: View {
         case .humansOnly(_, let on): return on ? "\(by) marked something for people only" : "\(by) opened something to AI agents again"
         case .invited(let role): return "\(by) sent an invitation (as \(role.title.lowercased()))"
         case .ownershipTransferred(let to): return "\(by) made \(n(to)) the owner"
+        case .licensed: return "\(by) added the team's license"
         }
     }
 
@@ -537,6 +572,7 @@ struct MembershipLogView: View {
         case .agentRules, .humansOnly: "cpu"
         case .invited: "envelope"
         case .ownershipTransferred: "crown"
+        case .licensed: "checkmark.seal"
         }
     }
 }

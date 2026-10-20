@@ -18,7 +18,7 @@ let package = Package(
         .target(name: "EnvKit"),
         .target(name: "VaultSync", dependencies: ["VaultCore"]),
         .target(name: "ToolKit", dependencies: ["VaultCore", "EnvKit"]),
-        .executableTarget(name: "envault", dependencies: ["VaultCore", "EnvKit"]),
+        .executableTarget(name: "envault", dependencies: ["VaultCore", "EnvKit", "LicenseKit"]),
         .target(name: "LicenseKit"),
         .executableTarget(name: "envault-license", dependencies: ["LicenseKit"]),
         .testTarget(name: "LicenseKitTests", dependencies: ["LicenseKit"]),

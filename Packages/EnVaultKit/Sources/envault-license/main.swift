@@ -29,7 +29,7 @@ case "keygen":
     let k = Curve25519.Signing.PrivateKey()
     print("ENVAULT_LICENSE_PRIVATE_KEY=\(k.rawRepresentation.base64EncodedString())")
     print("ENVAULT_LICENSE_PUBLIC_KEY=\(k.publicKey.rawRepresentation.base64EncodedString())")
-    print("# Keep the private key in a password manager / CI secret. Put the public key in App/LicensePublicKey.swift.")
+    print("# Keep the private key in a password manager / CI secret. Put the public key in Packages/EnVaultKit/Sources/LicenseKit/VendorKey.swift.")
 
 case "issue":
     guard let pk = ProcessInfo.processInfo.environment["ENVAULT_LICENSE_PRIVATE_KEY"], let raw = Data(base64Encoded: pk),
