@@ -54,6 +54,8 @@ final class VaultSession {
     private(set) var team: TeamSnapshot?
     /// Where this Mac keeps the membership events it has applied (team vaults).
     @ObservationIgnored var seenURL: URL?
+    /// What `seenURL` holds, as this session last wrote it.
+    @ObservationIgnored private var savedSeen: TeamSeen?
     /// An iCloud team vault in this person's own iCloud: this Mac edits its
     /// share. That's whoever created it, even after handing ownership on (FR-29),
     /// because a CloudKit zone can't move to another Apple ID.
@@ -115,9 +117,10 @@ final class VaultSession {
                             invites: state.invites, missingEvents: await t.missingEvents.count)
         if let title = await t.title { name = title }
         // Locked meanwhile (auto-lock while this awaited): keep what was saved.
-        if let seenURL, let seen = await t.seenStateIfUnlocked, let data = try? JSONEncoder().encode(seen) {
+        // It lists every file of the vault, so it is written only when it changed.
+        if let seenURL, let seen = await t.seenStateIfUnlocked, seen != savedSeen, let data = try? JSONEncoder().encode(seen) {
             try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: seenURL, options: .atomic)
+            if (try? data.write(to: seenURL, options: .atomic)) != nil { savedSeen = seen }
         }
     }
 
