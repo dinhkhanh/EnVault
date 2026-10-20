@@ -61,6 +61,15 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .top) {
+            ForEach(model.unlocatedTeams, id: \.vaultId) { record in
+                Button("Locate a team vault's shared folder…") {
+                    if let folder = JoinFromInvitation.chooseFolder(for: "a team vault you belong to") {
+                        Task { await model.locate(record, folder: folder) }
+                    }
+                }
+                .buttonStyle(.link).font(.caption).padding(.horizontal, 12).padding(.top, 6)
+                .help("You joined this folder-mode team vault on another Mac; show EnVault where its folder is on this one.")
+            }
             // Only with more than one open vault (team vaults; debug: Vault › Attach Another Vault…).
             if model.sessions.count > 1 {
                 VStack(alignment: .leading, spacing: 4) {

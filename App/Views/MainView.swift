@@ -53,7 +53,7 @@ struct MainView: View {
         .sheet(isPresented: $showNewTeamVault) { NewTeamVaultSheet() }
         .sheet(isPresented: $model.shareNeedsIdentity) { JoinIdentitySheet() }
         .onReceive(NotificationCenter.default.publisher(for: .newTeamVault)) { _ in
-            if model.teamVaultsAvailable, licenses.require(.teamSharing) { showNewTeamVault = true }
+            if TeamFeatures.enabled, licenses.require(.teamSharing) { showNewTeamVault = true }
         }
         .sheet(isPresented: $showNewItem) {
             if let pid = model.selectedProjectId { NewItemSheet(projectId: pid) }

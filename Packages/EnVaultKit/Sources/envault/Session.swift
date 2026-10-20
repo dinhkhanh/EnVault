@@ -186,10 +186,16 @@ struct Session {
             throw CLIError("this vault has no Team identity yet: set one up in EnVault › Settings", code: .notFound)
         }
         var out: [TeamVault] = []
-        for record in await personal.teams() where record.kind == TeamRecord.cloudKit && (id == nil || record.vaultId == id) {
-            let store = try await TeamVaultStore.open(storage: try teamStorage(record.vaultId), device: device, owner: record.ownerKey)
-            let access = try await store.unlock(identity: me)
-            out.append(TeamVault(id: record.vaultId, title: await store.title, access: access, store: store))
+        for record in await personal.teams() where id == nil || record.vaultId == id {
+            guard record.kind == TeamRecord.cloudKit || record.kind == TeamRecord.folder else { continue }
+            do {
+                let store = try await TeamVaultStore.open(storage: try teamStorage(record), device: device, owner: record.ownerKey)
+                let access = try await store.unlock(identity: me)
+                out.append(TeamVault(id: record.vaultId, title: await store.title, access: access, store: store))
+            } catch where id == nil {
+                // One unreachable team vault (a folder team not located on this Mac) doesn't hide the others.
+                Out.stderr("skipping team vault \(record.vaultId.uuidString.prefix(8)): \(CLIError.from(error).description)")
+            }
         }
         return (out, await personal.vaultId)
     }
@@ -211,12 +217,19 @@ struct Session {
         return (match.store, personalId)
     }
 
-    /// A team vault's files. They live in the EnVault app's container, so they
-    /// are read through the app unless ENVAULT_NO_APP is set.
-    private func teamStorage(_ vaultId: UUID) throws -> any VaultStorage {
+    /// A team vault's files, read through the EnVault app: iCloud teams live
+    /// in its container, and only it knows where a folder team is on this Mac.
+    /// With ENVAULT_NO_APP, iCloud teams are read from the container directly.
+    private func teamStorage(_ record: TeamRecord) throws -> any VaultStorage {
+        let vaultId = record.vaultId
         let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
         let local = URL(fileURLWithPath: home + "/Library/Containers/dk.dinhkhanh.envault/Data/Library/Application Support/EnVault/Vaults/\(vaultId.uuidString)")
-        guard useApp else { return LocalFolderStorage(root: local) }
+        guard useApp else {
+            guard record.kind == TeamRecord.cloudKit else {
+                throw CLIError("folder-mode team vaults are found through the EnVault app; unset ENVAULT_NO_APP", code: .needsUser)
+            }
+            return LocalFolderStorage(root: local)
+        }
         guard appAgent(launch: true) != nil else {
             throw CLIError("team vaults are kept inside the EnVault app: open EnVault so envault can read them", code: .needsUser)
         }

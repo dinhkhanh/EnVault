@@ -439,6 +439,7 @@ public actor TeamVaultStore {
             case .title: .titled
             case .agentRules(let r): .agentRules(r)
             case .humansOnly(let target, let on): .humansOnly(target, on)
+            case .invite(_, let role, _): .invited(role)
             }
             return TeamLogEntry(id: e.id, author: e.author, change: change, rejected: state.rejected[e.id], late: lateEvents.contains(e.id))
         }
@@ -574,11 +575,11 @@ public actor TeamVaultStore {
 
     /// Asks to join: writes a signed request with this person's name sealed to
     /// the vault's current owner and admins. Safe to repeat; the newest counts.
-    public func requestToJoin() async throws {
+    public func requestToJoin(invite: ULID? = nil) async throws {
         guard let me else { throw VaultError.locked }
         guard state.role(of: me.id) == nil else { return }
         let managers = state.members.values.filter { $0.role.canManage }.map(\.identity)
-        let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId)
+        let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId, invite: invite)
         let path = Self.requestsDir.appending(me.id.uuidString).appending("\(r.id.string).json")
         try await storage.writeNew(path, data: try r.encoded())
         requests[me.id] = r
@@ -592,7 +593,14 @@ public actor TeamVaultStore {
             let id = r.identity.id
             guard state.members[id] == nil else { return nil }
             if let removed = state.removedAt[id], r.id < removed { return nil }
-            return PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
+            var p = PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
+            if let invite = r.invite {
+                let offer = state.invites[invite]
+                p.invitedAs = offer?.role
+                // Asked after the invitation lapsed, or named one that doesn't exist.
+                p.inviteLapsed = offer.map { r.id.timestamp > $0.expiresAt } ?? true
+            }
+            return p
         }
         .sorted { $0.request > $1.request }
     }
@@ -602,6 +610,15 @@ public actor TeamVaultStore {
     public func joinRequest(of member: UUID) -> (id: ULID, path: String)? {
         guard let r = requests[member] else { return nil }
         return (r.id, Self.requestsDir.appending(member.uuidString).appending("\(r.id.string).json").string)
+    }
+
+    /// Invites someone by file (folder mode, FR-6): signs the offer of `role`
+    /// for `days`, and returns the file to send them.
+    public func createInvite(role: TeamRole, days: Int = 7) async throws -> TeamInvite {
+        let id = ULID()
+        let expires = Int64(Date().addingTimeInterval(TimeInterval(days) * 86_400).timeIntervalSince1970)
+        try await record(.invite(id: id, role: role, expires: expires))
+        return TeamInvite(vaultId: vaultId, ownerKey: header.owner.signingKey, invite: id, title: title)
     }
 
     /// Whether this person has a request waiting.
@@ -792,6 +809,7 @@ public struct TeamLogEntry: Equatable, Sendable, Identifiable {
         case titled
         case agentRules(TeamAgentRules)
         case humansOnly(UUID, Bool)
+        case invited(TeamRole)
     }
     public var id: ULID
     public var date: Date { id.timestamp }

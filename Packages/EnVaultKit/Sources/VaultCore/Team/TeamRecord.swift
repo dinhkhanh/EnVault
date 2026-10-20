@@ -5,12 +5,14 @@ import Foundation
 /// key as first seen, so a header someone swapped in later is refused.
 public struct TeamRecord: Codable, Hashable, Sendable {
     public static let cloudKit = "cloudKit"
+    /// A shared folder (Dropbox, a git checkout…); where it is on each Mac is kept per Mac.
+    public static let folder = "folder"
 
     public var vaultId: UUID
     /// The owner's Ed25519 public key, raw (`TeamHeader.owner.signingKey`).
     public var ownerKey: Data
-    /// Where the files live: `cloudKit` for now; folder teams come later.
-    /// A string, so records from a newer EnVault still decode.
+    /// Where the files live: `cloudKit` or `folder`. A string, so records
+    /// from a newer EnVault still decode.
     public var kind: String
     /// The CloudKit zone owner's record name for a vault shared with this
     /// person; nil for one they own (it is in their private database).

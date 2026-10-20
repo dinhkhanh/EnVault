@@ -125,7 +125,11 @@ final class VaultSession {
     func refreshFromDisk() async {
         guard isUnlocked else { return }
         do {
-            if try await store.refresh() { await reload() }
+            if try await store.refresh() {
+                await reload()
+                // Folder teams have no sync pass of their own: their changes arrive here.
+                if mode == .folder, isTeam { await upkeep() }
+            }
             lastRefresh = Date()
         } catch {
             reportError("Sync read failed: \(error.localizedDescription)")
@@ -187,8 +191,14 @@ final class VaultSession {
             try? await personalStore?.reloadHeader()
             await refreshFromDisk()
         }
+        await upkeep()
+        await didSyncTeam(self)
+    }
+
+    /// An admin's Mac repairs a team vault's keys after each sync or change
+    /// from other Macs: rotation, missing copies, links. Nothing for other roles.
+    func upkeep() async {
         guard let t = teamStore, isUnlocked else { return }
-        // An admin's Mac repairs the team's keys after each sync (rotation, missing copies, links).
         do {
             if try await !t.maintain().isEmpty {
                 await reload()
@@ -197,7 +207,6 @@ final class VaultSession {
         } catch {
             reportError("Team key upkeep failed: \(error.localizedDescription)")
         }
-        await didSyncTeam(self)
     }
 
     /// Local files changed (our own writes): push soon, coalesced.
