@@ -638,6 +638,137 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await onAda.rejectedFiles.values.contains { $0.contains("lost write access") })
     }
 
+    /// Cyd, removed, writes `payload` as revision `id` of `item` under the epoch key she kept.
+    private func forge(_ store: TeamVaultStore, _ storage: MemoryStorage, epoch: TeamEpoch, key: SymmetricKey,
+                       from rev: ItemRevision, id: ULID, itemId: UUID, payload: ItemPayload, replace: Bool = false) async throws {
+        var forged = rev
+        forged.id = id; forged.itemId = itemId; forged.payload = payload
+        let data = try TeamRevisionFile.encode(forged, vaultId: store.vaultId, scope: .item, ownerId: itemId, revisionId: id, epoch: epoch.id, key: key, author: cyd)
+        let path = RevisionLayout.itemPath(projectId: rev.projectId, itemId: itemId, revisionId: id)
+        if replace { try await storage.writeReplace(path, data: data) } else { try await storage.writeNew(path, data: data) }
+    }
+
+    @Test func aRemovedMemberCantReuseAKnownRevisionId() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        let item = try await store.createItem(in: p.id, name: ".env", payload: .envFile(text: "DB=real"))
+        let epoch = try #require(await store.state.current)
+        let cydsKey = try #require(try await keyFor(cyd, storage: storage, epoch: epoch))
+        try await store.remove(cyd.id)
+        let seen = await store.seenState
+        let real = try #require(await store.history(of: item.id).first)
+
+        // A new item carrying the known id, and the known file itself overwritten in place.
+        let twin = UUID()
+        try await forge(store, storage, epoch: epoch, key: cydsKey, from: real, id: real.id, itemId: twin, payload: .envFile(text: "DB=attacker"))
+        try await forge(store, storage, epoch: epoch, key: cydsKey, from: real, id: real.id, itemId: item.id, payload: .envFile(text: "DB=attacker"), replace: true)
+
+        let onAda = try await open(storage, as: ada, seen: seen)
+        #expect(await onAda.item(twin) == nil)
+        #expect(await onAda.item(item.id)?.payload != .envFile(text: "DB=attacker"))
+        #expect(await onAda.rejectedFiles.values.filter { $0.contains("lost write access") }.count == 2)
+    }
+
+    @Test func aRemovedMembersFileIsJudgedBeforeTheKeyArrives() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        let item = try await store.createItem(in: p.id, name: ".env", payload: .envFile(text: "DB=real"))
+        let epoch = try #require(await store.state.current)
+        let cydsKey = try #require(try await keyFor(cyd, storage: storage, epoch: epoch))
+        // Eve asks to join and waits; her Mac has no key yet.
+        let eve = person("Eve")
+        let onEve = try await open(storage, as: eve)
+        try await onEve.requestToJoin()
+        try await store.remove(cyd.id)
+        try await onEve.refresh()
+        // Cyd's backdated file turns up while Eve still can't open anything.
+        let real = try #require(await store.history(of: item.id).first)
+        try await forge(store, storage, epoch: epoch, key: cydsKey, from: real, id: ULID(), itemId: item.id, payload: .envFile(text: "DB=attacker"))
+        try await onEve.refresh()
+        let seen = await onEve.seenState
+        try await store.add(try eve.publicIdentity(), name: "Eve", role: .member)
+        _ = try await store.maintain()
+        let approved = try await open(storage, as: eve, seen: seen)
+        #expect(await approved.item(item.id)?.payload == .envFile(text: "DB=real"))
+    }
+
+    @Test func whatANewcomerFoundWhileWaitingStaysReadable() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        // Cyd writes, then leaves the team.
+        let onCyd = try await open(storage, as: cyd)
+        let item = try await onCyd.createItem(in: p.id, name: ".env", payload: .envFile(text: "DB=cyd"))
+        try await store.refresh()
+        try await store.remove(cyd.id)
+        // Eve waits for approval across a relaunch, then gets in.
+        let eve = person("Eve")
+        let onEve = try await open(storage, as: eve)
+        try await onEve.requestToJoin()
+        let waiting = try await open(storage, as: eve, seen: await onEve.seenState)
+        try await store.add(try eve.publicIdentity(), name: "Eve", role: .member)
+        _ = try await store.maintain()
+        let approved = try await open(storage, as: eve, seen: await waiting.seenState)
+        #expect(await approved.item(item.id)?.payload == .envFile(text: "DB=cyd"))
+        #expect(await approved.rejectedFiles.isEmpty)
+    }
+
+    @Test func revisionsArrivingWithTheirAuthorsDemotionStillCount() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        let onCyd = try await open(storage, as: cyd)
+        let seenByCyd = await onCyd.seenState
+        // Bob saves, then is made a viewer, while Cyd's Mac is away.
+        let onBob = try await open(storage, as: bob)
+        let item = try await onBob.createItem(in: p.id, name: ".env", payload: .envFile(text: "DB=bob"))
+        try await store.refresh()
+        try await store.setRole(of: bob.id, to: .viewer)
+        // Bob's own Mac keeps his revision, and so does Cyd's when both arrive together.
+        try await onBob.refresh()
+        let bobAgain = try await open(storage, as: bob, seen: await onBob.seenState)
+        #expect(await bobAgain.item(item.id)?.payload == .envFile(text: "DB=bob"))
+        let back = try await open(storage, as: cyd, seen: seenByCyd)
+        #expect(await back.item(item.id)?.payload == .envFile(text: "DB=bob"))
+    }
+
+    @Test func aRemovalArrivingLateDoesntPauseTheVault() async throws {
+        let (store, storage) = try await vault()
+        let onAda = storage, elsewhere = MemoryStorage()
+        await elsewhere.merge(await onAda.allFiles())
+        // Ada, offline, removes Bob; meanwhile Bob renames himself and Cyd's Mac takes that in.
+        try await store.remove(bob.id)
+        try await Task.sleep(for: .milliseconds(5))
+        try await (try await open(elsewhere, as: bob)).setName("Robert")
+        let onCyd = try await open(elsewhere, as: cyd)
+        let seen = await onCyd.seenState
+        await elsewhere.merge(await onAda.allFiles())
+        let later = try await open(elsewhere, as: cyd, seen: seen)
+        #expect(await later.state.role(of: bob.id) == nil)
+        #expect(!(await later.isTampered))
+        let removal = try await eventPath(elsewhere) { if case .remove(bob.id) = $0.change { true } else { false } }
+        let removalId = try #require(ULID(string: String(removal.dropFirst("members/".count).dropLast(".json".count))))
+        #expect(await later.lateEvents.contains(removalId))
+        _ = try await later.createProject(name: "still saving")
+    }
+
+    @Test func anEventReplacedInPlaceIsMissing() async throws {
+        let (store, storage) = try await vault()
+        try await store.remove(cyd.id)
+        let seen = await store.seenState
+        let removal = try await eventPath(storage) { if case .remove(cyd.id) = $0.change { true } else { false } }
+        let path = VaultPath(removal.split(separator: "/").map(String.init))
+        var spoiled = try MembershipEvent.decode(try await storage.read(path))
+        spoiled.signature = Data(repeating: 0, count: 64)
+        try await storage.writeReplace(path, data: try spoiled.encoded())
+        #expect(try await open(storage, as: ada, seen: seen).isTampered)
+    }
+
+    @Test func aLockedStoreHasNoSeenStateToSave() async throws {
+        let (store, _) = try await vault()
+        #expect(await store.seenStateIfUnlocked != nil)
+        await store.lock()
+        #expect(await store.seenStateIfUnlocked == nil)
+    }
+
     @Test func aRevisionDatedBeforeItsKeyIsRefused() async throws {
         let (store, storage) = try await vault()
         let p = try await store.createProject(name: "api")

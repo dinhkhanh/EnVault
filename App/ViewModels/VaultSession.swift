@@ -114,7 +114,8 @@ final class VaultSession {
                             agentRules: state.agentRules, humansOnly: state.humansOnly, license: await t.license, licenseEvent: state.licenseEvent,
                             invites: state.invites, missingEvents: await t.missingEvents.count)
         if let title = await t.title { name = title }
-        if let seenURL, let data = try? JSONEncoder().encode(await t.seenState) {
+        // Locked meanwhile (auto-lock while this awaited): keep what was saved.
+        if let seenURL, let seen = await t.seenStateIfUnlocked, let data = try? JSONEncoder().encode(seen) {
             try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: seenURL, options: .atomic)
         }

@@ -57,8 +57,16 @@ public actor TeamVaultStore {
     private var events: [ULID: MembershipEvent] = [:]
     /// What this Mac had accepted before this session (the app keeps it between launches).
     private var seen = TeamSeen()
-    /// Revisions this Mac has accepted, now or in an earlier session.
-    private var knownRevisions: Set<ULID> = []
+    /// A digest of each membership event read, to tell a replaced file from the one accepted.
+    private var eventDigests: [ULID: Data] = [:]
+    /// Revision files this Mac has taken in, now or in an earlier session, by
+    /// path, with a digest of their bytes: read, or waiting for their key.
+    private var knownFiles: [String: Data] = [:]
+    /// False until this Mac has a record of files: the first scan takes what it finds.
+    private var judgesArrivals = false
+    /// The changes accepted before the current refresh, and the state they fold to.
+    private var priorEvents: Set<ULID> = []
+    private var priorState: TeamState?
     /// Key links this Mac opened or wrote itself: only these count when deciding
     /// what the newest key can reach (a junk file at a link's path proves nothing).
     private var verifiedLinks: [ULID: Set<ULID>] = [:]
@@ -134,7 +142,8 @@ public actor TeamVaultStore {
     public func unlock(identity: UserIdentity, seen: TeamSeen = TeamSeen()) async throws -> TeamAccess {
         me = identity
         self.seen = seen
-        knownRevisions = seen.revisions
+        knownFiles = seen.files ?? [:]
+        judgesArrivals = seen.files != nil
         lateEvents = seen.late
         do { try await refresh() } catch { lock(); throw error }
         return access
@@ -143,7 +152,11 @@ public actor TeamVaultStore {
     public func lock() {
         me = nil
         seen = TeamSeen()
-        knownRevisions = []
+        eventDigests = [:]
+        knownFiles = [:]
+        judgesArrivals = false
+        priorEvents = []
+        priorState = nil
         verifiedLinks = [:]
         missingEvents = []
         events = [:]
@@ -176,8 +189,15 @@ public actor TeamVaultStore {
     /// What to pass back as `seen` next time. Only accepted changes: junk that
     /// every Mac ignores can come and go without looking like tampering.
     public var seenState: TeamSeen {
-        TeamSeen(events: seen.events.union(acceptedEvents), revisions: knownRevisions, late: lateEvents)
+        let accepted = acceptedEvents
+        // A replaced event keeps the digest it was accepted with, so it stays missing.
+        let digests = (seen.eventDigests ?? [:]).merging(eventDigests.filter { accepted.contains($0.key) }) { old, _ in old }
+        return TeamSeen(events: seen.events.union(accepted), eventDigests: digests, files: judgesArrivals ? knownFiles : seen.files, late: lateEvents)
     }
+
+    /// `seenState`, or nil once locked: a locked store's empty state must never
+    /// replace what this Mac had seen.
+    public var seenStateIfUnlocked: TeamSeen? { me == nil ? nil : seenState }
 
     private var acceptedEvents: Set<ULID> { Set(events.keys.filter { state.rejected[$0] == nil }) }
 
@@ -191,6 +211,8 @@ public actor TeamVaultStore {
     @discardableResult
     public func refresh() async throws -> Bool {
         guard let me else { throw VaultError.locked }
+        priorEvents = acceptedEvents.union(seen.events)
+        priorState = nil
         let membership = try await loadEvents()
         let gotKeys = try await loadKeys(for: me)
         let revisions = try await loadRevisions()
@@ -247,6 +269,7 @@ public actor TeamVaultStore {
                 continue
             }
             events[id] = e
+            eventDigests[id] = Self.digest(try e.encoded())
             added.append(id)
         }
         guard !added.isEmpty else {
@@ -265,9 +288,17 @@ public actor TeamVaultStore {
         return true
     }
 
+    /// Accepted before, and now gone, unreadable or replaced. One still there but
+    /// no longer applying is not missing: a change that arrived late overturned it
+    /// (an offline admin's removal, say), and the late change is flagged for review.
     private func checkMissing() {
-        missingEvents = seen.events.subtracting(acceptedEvents)
+        missingEvents = seen.events.filter { id in
+            guard let digest = eventDigests[id] else { return true }
+            return seen.eventDigests?[id].map { $0 != digest } ?? false
+        }
     }
+
+    static func digest(_ data: Data) -> Data { Data(SHA256.hash(data: data).prefix(16)) }
 
     /// Lists every epoch's key files, unwraps this person's copies and follows
     /// links back to older epochs.
@@ -317,6 +348,8 @@ public actor TeamVaultStore {
     }
 
     private func loadRevisions() async throws -> Bool {
+        // From the second scan on, new files are judged as they arrive.
+        defer { judgesArrivals = true }
         var changed = false
         // A membership change can change who was allowed to write when, so
         // every revision is checked again.
@@ -342,8 +375,14 @@ public actor TeamVaultStore {
                     rejectedFiles[path] = "not a team revision"
                     continue
                 }
+                let digest = Self.digest(data)
+                do { try checkArrival(path, digest: digest, data: data) } catch {
+                    rejectedFiles[path] = error.localizedDescription
+                    continue
+                }
                 guard keys[epoch] != nil else {
                     waitingForKey[path] = epoch
+                    knownFiles[path] = digest
                     continue
                 }
                 waitingForKey[path] = nil
@@ -353,7 +392,6 @@ public actor TeamVaultStore {
                         let (rev, author) = try TeamRevisionFile.decode(ProjectRevision.self, from: data, vaultId: vaultId, scope: .project, ownerId: f.ownerId,
                                                                         revisionId: f.revisionId, state: state, keys: keys)
                         guard rev.id == f.revisionId, rev.projectId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
-                        try checkArrival(rev.id, author: author)
                         index.insert(rev)
                         authors[rev.id] = author
                         revisionEpochs[rev.id] = epoch
@@ -361,7 +399,6 @@ public actor TeamVaultStore {
                         let (rev, author) = try TeamRevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: f.ownerId,
                                                                         revisionId: f.revisionId, state: state, keys: keys)
                         guard rev.id == f.revisionId, rev.itemId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
-                        try checkArrival(rev.id, author: author)
                         index.insert(rev)
                         authors[rev.id] = author
                         revisionEpochs[rev.id] = epoch
@@ -369,7 +406,7 @@ public actor TeamVaultStore {
                         throw VaultError.corruptRevision("only a personal vault holds this")
                     }
                     index.indexedPaths.insert(path)
-                    knownRevisions.insert(f.revisionId)
+                    knownFiles[path] = digest
                     changed = true
                 } catch {
                     rejectedFiles[path] = error.localizedDescription
@@ -379,14 +416,19 @@ public actor TeamVaultStore {
         return changed
     }
 
-    /// A revision this Mac sees for the first time, from someone who can't
-    /// write any more, was most likely dated back to when they could: refused.
-    /// (A Mac with no history yet accepts what it finds.)
-    private func checkArrival(_ revision: ULID, author: UUID) throws {
-        guard !knownRevisions.contains(revision), !seen.revisions.isEmpty || !seen.events.isEmpty else { return }
-        guard state.role(of: author)?.canWrite == true else {
-            throw VaultError.corruptRevision("\(revision): arrived after its author lost write access")
-        }
+    /// A revision file this Mac sees for the first time (a new path, or new bytes
+    /// at a known one), from someone whose loss of write access this Mac had
+    /// already accepted, was most likely dated back to when they could write:
+    /// refused. Judged on sight, key or not. A writer's revisions that arrive
+    /// together with their removal (a Mac back from being offline) still count,
+    /// and a Mac with no record of files yet takes what it finds.
+    private func checkArrival(_ path: String, digest: Data, data: Data) throws {
+        guard judgesArrivals, knownFiles[path] != digest, let author = TeamRevisionFile.author(of: data),
+              state.role(of: author)?.canWrite != true else { return }
+        let prior = priorState ?? TeamState(header: header, events: events.values.filter { priorEvents.contains($0.id) })
+        priorState = prior
+        guard prior.everyone[author] != nil, prior.role(of: author)?.canWrite != true else { return }
+        throw VaultError.corruptRevision("\(path): arrived after its author lost write access")
     }
 
     // MARK: - Reading
@@ -612,7 +654,7 @@ public actor TeamVaultStore {
         index.indexedPaths.insert(path.string)
         authors[rev.id] = w.me.id
         revisionEpochs[rev.id] = w.epoch
-        knownRevisions.insert(rev.id)
+        knownFiles[path.string] = Self.digest(data)
     }
 
     private func write(_ rev: ItemRevision) async throws {
@@ -624,6 +666,7 @@ public actor TeamVaultStore {
         index.indexedPaths.insert(path.string)
         authors[rev.id] = w.me.id
         revisionEpochs[rev.id] = w.epoch
+        knownFiles[path.string] = Self.digest(data)
     }
 
     // MARK: - Joining (FR-7, FR-8)
@@ -859,8 +902,10 @@ public actor TeamVaultStore {
             next.appendNewest(e)
         }
         if let why = next.rejected[e.id] { throw VaultError.notPermitted("The team vault refused this change: \(why).") }
-        try await storage.writeNew(Self.membersDir.appending("\(e.id.string).json"), data: try e.encoded())
+        let data = try e.encoded()
+        try await storage.writeNew(Self.membersDir.appending("\(e.id.string).json"), data: data)
         events[e.id] = e
+        eventDigests[e.id] = Self.digest(data)
         state = next
         return e
     }
@@ -949,12 +994,18 @@ public struct TeamVaultLicense: Codable, Equatable, Sendable {
 }
 
 /// What one Mac had accepted of a team vault, kept between launches: the
-/// membership changes, the revisions, and late changes not yet reviewed.
+/// membership changes, the revision files, and late changes not yet reviewed.
 public struct TeamSeen: Codable, Equatable, Sendable {
     public var events: Set<ULID>
-    public var revisions: Set<ULID>
+    /// A digest of each accepted event's file, to notice one replaced in place.
+    /// Nil in seen files from before 0.8.2.
+    public var eventDigests: [ULID: Data]?
+    /// Every revision file taken in (path → digest of its bytes). Nil: none
+    /// recorded yet (a new Mac, or a seen file from before 0.8.2), so the next
+    /// scan takes what it finds.
+    public var files: [String: Data]?
     public var late: Set<ULID>
-    public init(events: Set<ULID> = [], revisions: Set<ULID> = [], late: Set<ULID> = []) {
-        self.events = events; self.revisions = revisions; self.late = late
+    public init(events: Set<ULID> = [], eventDigests: [ULID: Data]? = nil, files: [String: Data]? = nil, late: Set<ULID> = []) {
+        self.events = events; self.eventDigests = eventDigests; self.files = files; self.late = late
     }
 }
