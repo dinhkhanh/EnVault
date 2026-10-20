@@ -40,13 +40,12 @@ public struct PublicIdentity: Codable, Hashable, Sendable {
     /// Length-prefixed fields under a versioned label, so no two different
     /// identities serialise to the same bytes.
     var signedBytes: Data {
-        var d = Data("envault-identity:1".utf8)
-        for field in [Data(id.uuidString.utf8), agreementKey, signingKey, Data(name.utf8)] {
-            var n = UInt32(field.count).bigEndian
-            d.append(Data(bytes: &n, count: 4))
-            d.append(field)
-        }
-        return d
+        var c = CanonicalBytes("envault-identity:1")
+        c.add(id)
+        c.add(agreementKey)
+        c.add(signingKey)
+        c.add(name)
+        return c.data
     }
 
     /// The keys are well formed and the signature is the signing key's own.
