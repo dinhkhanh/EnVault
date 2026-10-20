@@ -10,7 +10,9 @@ import Foundation
         #expect(AIAgents.detect(["CURSOR_AGENT": "1"]) == "Cursor")
         #expect(AIAgents.detect(["ENVAULT_AGENT": "Aider"]) == "Aider")
         #expect(AIAgents.detect(["ENVAULT_AGENT": "1"]) == "AI agent")
-        #expect(AIAgents.detect(["ENVAULT_AGENT": "0", "CLAUDECODE": "1"]) == nil)
+        // An agent can't opt itself out: its own marker wins over ENVAULT_AGENT=0.
+        #expect(AIAgents.detect(["ENVAULT_AGENT": "0", "CLAUDECODE": "1"]) == "Claude Code")
+        #expect(AIAgents.detect(["ENVAULT_AGENT": "0"]) == nil)
     }
 
     @Test func requestDecodesWithoutAgentFields() throws {

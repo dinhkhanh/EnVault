@@ -156,3 +156,29 @@ test("team keys carry a vault entitlement that names nobody; pro keys don't", as
   await applyAction(s, "polar", "evt_p", pro.type, polarAction(pro));
   assert.equal((await verifyLicense(s.store.licenses[1].key, s.pub)).vaultEntitlement, undefined);
 });
+
+test("a failed event can be retried; a renewal without a seat count keeps the subscription's", async () => {
+  const s = await testServices();
+  const team = { name: "EnVault Team", metadata: { plan: "team" } };
+  const sub = { id: "sub_r", current_period_end: "2027-10-20T00:00:00Z" };
+  const first = polarOrderPaid({ id: "ord_r1", product: team, seats: 6, subscription_id: "sub_r", subscription: sub });
+  // The mailer fails once: the key isn't lost, and the retry is handled, not dropped.
+  const send = s.mailer.send.bind(s.mailer);
+  let failures = 1;
+  s.mailer.send = async (m) => { if (failures-- > 0) throw new Error("mail down"); return send(m); };
+  await assert.rejects(applyAction(s, "polar", "evt_r1", first.type, polarAction(first)));
+  assert.equal(s.store.licenses.length, 0);  // undelivered, so not kept
+  const retry = await applyAction(s, "polar", "evt_r1", first.type, polarAction(first));
+  assert.equal(retry.status, 201);
+  assert.equal(s.mailer.sent.length, 1);     // the customer got their key
+
+  const renew = polarOrderPaid({ id: "ord_r2", product: team, subscription_id: "sub_r", billing_reason: "subscription_cycle",
+    subscription: { id: "sub_r", current_period_end: "2028-10-20T00:00:00Z" } });
+  delete (renew.data as any).seats;
+  await applyAction(s, "polar", "evt_r2", renew.type, polarAction(renew));
+  assert.equal(s.store.licenses.at(-1)!.seats, 6);
+
+  // A seat-change order for the count already in effect issues nothing.
+  const same = polarOrderPaid({ id: "ord_r3", product: team, seats: 6, subscription_id: "sub_r", subscription: sub, billing_reason: "subscription_update" });
+  assert.equal((await applyAction(s, "polar", "evt_r3", same.type, polarAction(same))).body, "seats unchanged");
+});

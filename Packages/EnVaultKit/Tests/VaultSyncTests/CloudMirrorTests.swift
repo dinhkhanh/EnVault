@@ -241,6 +241,29 @@ private struct Device {
         #expect(await a.mirror.localFiles().contains(request))
     }
 
+    @Test func aTeamVaultNeverDeletesAndPutsDeletedFilesBack() async throws {
+        let cloud = MemoryCloudTransport()
+        let root = Device.tmp()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = UserIdentity(id: UUID(), name: "Ada", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        let store = try await TeamVaultStore.create(storage: LocalFolderStorage(root: root), owner: owner, title: "Acme", device: macA)
+        let mirror = CloudMirror(vaultId: store.vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud)
+        try await mirror.bootstrap()
+        await mirror.sync()
+        let event = try #require(await mirror.localFiles().first { $0.hasPrefix("members/") })
+
+        // A participant deletes a membership event in the zone.
+        try await cloud.delete(paths: [event], vaultId: store.vaultId)
+        await mirror.sync()
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(event).path))   // kept here
+        #expect(try await cloud.fetchFile(path: event, vaultId: store.vaultId) != nil)              // and put back
+
+        // A file missing locally is never deleted from the zone either.
+        try FileManager.default.removeItem(at: root.appendingPathComponent(event))
+        await mirror.sync()
+        #expect(try await cloud.fetchFile(path: event, vaultId: store.vaultId) != nil)
+    }
+
     @Test func syncablePaths() {
         #expect(SyncPaths.isSyncable("vault.json"))
         #expect(SyncPaths.isSyncable("projects/A/items/B/01J.evr"))

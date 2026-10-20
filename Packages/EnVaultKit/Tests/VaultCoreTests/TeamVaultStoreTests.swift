@@ -18,9 +18,9 @@ private func sync(_ macs: MemoryStorage...) async {
 }
 
 /// One person's view of the vault on their own Mac.
-private func open(_ storage: MemoryStorage, as who: UserIdentity, seen: Set<ULID> = []) async throws -> TeamVaultStore {
+private func open(_ storage: MemoryStorage, as who: UserIdentity, seen: TeamSeen = TeamSeen()) async throws -> TeamVaultStore {
     let store = try await TeamVaultStore.open(storage: storage, device: mac)
-    try await store.unlock(identity: who, seenEvents: seen)
+    try await store.unlock(identity: who, seen: seen)
     return store
 }
 
@@ -307,9 +307,10 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(late.count == 2)                         // Bob's add and Eve's name
 
         // A later launch that remembers what it saw flags nothing new.
-        let again = try await open(macs[ada.id]!, as: ada, seen: await onAda.knownEvents)
+        // A later launch remembers the flags until an admin dismisses them, and flags nothing new.
+        await onAda.dismissLate(late)
+        let again = try await open(macs[ada.id]!, as: ada, seen: await onAda.seenState)
         #expect(await again.lateEvents.isEmpty)
-        await again.dismissLate(late)
     }
 
     @Test func aRemovedAdminsBackdatedChangeIsFlagged() async throws {
@@ -545,4 +546,154 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await store.history(of: copied.id).map(\.payload) == [.envFile(text: "A=2"), .envFile(text: "A=1")])
         #expect(await store.author(of: copied.revisionId) == ada.id)
     }
+}
+
+/// Attacks from the Gate C review: storage is writable by every member, former
+/// members and the cloud provider.
+@Suite struct TeamTamperingTests {
+    let ada = person("Ada"), bob = person("Bob"), cyd = person("Cyd")
+
+    private func vault() async throws -> (TeamVaultStore, MemoryStorage) {
+        let storage = MemoryStorage()
+        let store = try await TeamVaultStore.create(storage: storage, owner: ada, title: "Acme", device: mac)
+        try await store.add(try bob.publicIdentity(), name: "Bob", role: .admin)
+        try await store.add(try cyd.publicIdentity(), name: "Cyd", role: .member)
+        return (store, storage)
+    }
+
+    private func eventPath(_ storage: MemoryStorage, _ match: (MembershipEvent) -> Bool) async throws -> String {
+        for (path, data) in await storage.allFiles() where path.hasPrefix("members/") {
+            if let e = try? MembershipEvent.decode(data), match(e) { return path }
+        }
+        throw VaultError.io("no such event")
+    }
+
+    @Test func deletingARemovalIsNoticedAndNeverGivesTheKeyBack() async throws {
+        let (store, storage) = try await vault()
+        try await store.remove(cyd.id)
+        let seen = await store.seenState
+        let removal = try await eventPath(storage) { if case .remove(cyd.id) = $0.change { true } else { false } }
+        try await storage.delete(VaultPath(removal.split(separator: "/").map(String.init)))
+
+        // A Mac that saw the removal notices and stops.
+        let onAda = try await open(storage, as: ada, seen: seen)
+        #expect(await onAda.isTampered)
+        #expect(try await onAda.maintain().isEmpty)
+        await #expect(throws: VaultError.self) { try await onAda.createProject(name: "x") }
+        await #expect(throws: VaultError.self) { try await onAda.add(try person("Eve").publicIdentity(), name: "Eve", role: .member) }
+
+        // A Mac that never saw it thinks Cyd is a member, but the rotation left Cyd
+        // out on purpose, so its upkeep writes no key copy for Cyd.
+        let onBob = try await open(storage, as: bob)
+        #expect(await onBob.state.role(of: cyd.id) == .member)
+        #expect(try await onBob.maintain().wraps.isEmpty)
+        #expect(try await open(storage, as: cyd).access == .awaitingKey(.member))
+    }
+
+    @Test func aNewcomerCantTakeAFormerMembersId() async throws {
+        let (store, _) = try await vault()
+        try await store.remove(cyd.id)
+        // Mal makes an identity under Cyd's (public) id with keys of their own.
+        let mal = UserIdentity(id: cyd.id, name: "Mal", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        await #expect(throws: VaultError.self) { try await store.add(try mal.publicIdentity(), name: "Mal", role: .viewer) }
+        // Cyd themselves can come back.
+        try await store.add(try cyd.publicIdentity(), name: "Cyd", role: .member)
+    }
+
+    @Test func aDifferentlySpelledCopyOfAnEventIsIgnored() async throws {
+        let (store, storage) = try await vault()
+        try await store.setRole(of: bob.id, to: .member)
+        let real = try await eventPath(storage) { if case .setRole(bob.id, .member) = $0.change { true } else { false } }
+        let name = String(real.dropFirst("members/".count))
+        // The same event under a lowercase name, its signature spoiled: read last, it would replace the real one.
+        var copy = try MembershipEvent.decode(try await storage.read(VaultPath("members", name)))
+        copy.signature = Data(repeating: 0, count: 64)
+        try await storage.writeNew(VaultPath("members", name.lowercased()), data: try copy.encoded())
+        let onAda = try await open(storage, as: ada)
+        #expect(await onAda.state.role(of: bob.id) == .member)
+        #expect(await onAda.rejectedFiles["members/\(name.lowercased())"] != nil)
+    }
+
+    @Test func aRemovedMembersBackdatedRevisionIsRefused() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        let item = try await store.createItem(in: p.id, name: ".env", payload: .envFile(text: "DB=real"))
+        let epoch = try #require(await store.state.current)
+        let oldKey = try await open(storage, as: cyd)   // Cyd still has a copy of the files and the old key
+        _ = oldKey
+        let cydsKey = try #require(try await keyFor(cyd, storage: storage, epoch: epoch))
+        let whileAMember = ULID()     // later than the real value, before the removal
+        try await store.remove(cyd.id)
+        let seen = await store.seenState
+
+        // Cyd writes a revision dated before the removal, under the old key.
+        var forged = try #require(await store.history(of: item.id).first)
+        forged.id = whileAMember
+        forged.payload = .envFile(text: "DB=attacker")
+        let data = try TeamRevisionFile.encode(forged, vaultId: store.vaultId, scope: .item, ownerId: item.id, revisionId: forged.id, epoch: epoch.id, key: cydsKey, author: cyd)
+        try await storage.writeNew(RevisionLayout.itemPath(projectId: p.id, itemId: item.id, revisionId: forged.id), data: data)
+
+        let onAda = try await open(storage, as: ada, seen: seen)
+        #expect(await onAda.item(item.id)?.payload == .envFile(text: "DB=real"))
+        #expect(await onAda.rejectedFiles.values.contains { $0.contains("lost write access") })
+    }
+
+    @Test func aRevisionDatedBeforeItsKeyIsRefused() async throws {
+        let (store, storage) = try await vault()
+        let p = try await store.createProject(name: "api")
+        let epoch = try #require(await store.state.current)
+        let key = try #require(try await keyFor(ada, storage: storage, epoch: epoch))
+        let id = ULID(date: epoch.id.timestamp.addingTimeInterval(-7200))
+        let rev = ProjectRevision(id: id, projectId: p.id, name: "old", tags: [], createdAt: Date(), device: mac)
+        let data = try TeamRevisionFile.encode(rev, vaultId: store.vaultId, scope: .project, ownerId: p.id, revisionId: id, epoch: epoch.id, key: key, author: ada)
+        #expect(throws: VaultError.self) {
+            try TeamRevisionFile.decode(ProjectRevision.self, from: data, vaultId: store.vaultId, scope: .project, ownerId: p.id, revisionId: id, state: TeamState(header: store.header, events: []), keys: [epoch.id: key])
+        }
+    }
+
+    @Test func junkFromTheFutureDoesntMakeEverythingLate() async throws {
+        let (store, storage) = try await vault()
+        let seen = await store.seenState
+        let future = ULID(string: "7ZZZZZZZZZZZZZZZZZZZZZZZZZ")!
+        try await storage.writeNew(VaultPath("members", "\(future.string).json"),
+                                   data: try MembershipEvent.signed(.setRole(member: cyd.id, role: .admin), by: cyd, vaultId: store.vaultId, id: future).encoded())
+        let onAda = try await open(storage, as: ada, seen: seen)
+        try await onAda.setRole(of: cyd.id, to: .viewer)
+        let onBob = try await open(storage, as: bob, seen: await onAda.seenState)
+        #expect(await onBob.lateEvents.isEmpty)
+    }
+
+    @Test func aKeyHPKERefusesIsNotAnIdentity() throws {
+        // All zeros is a low-order X25519 point.
+        var bad = try person("Eve").publicIdentity()
+        bad.agreementKey = Data(count: 32)
+        #expect(!bad.isValid)
+    }
+
+    @Test func aJunkLinkDoesntStopHistoryReachingNewcomers() async throws {
+        let (store, storage) = try await vault()
+        let e1 = try #require(await store.state.current).id
+        let p = try await store.createProject(name: "api")
+        let first = try await store.createItem(in: p.id, name: "first", payload: .envFile(text: "A=1"))
+        // Squat the link the next rotation would write.
+        try await store.remove(cyd.id)                        // rotates to E2 and links E2 → E1
+        let e2 = try #require(await store.state.current).id
+        _ = e2
+        // Someone squats E3's future link path: rotate again, then check a newcomer still reads `first`.
+        try await store.rotate()
+        let e3 = try #require(await store.state.current).id
+        let squat = VaultPath("keys", e3.string, "prev-\(e1.string).json")
+        if try await !storage.exists(squat) { try await storage.writeNew(squat, data: Data("junk".utf8)) }
+        let eve = person("Eve")
+        try await store.add(try eve.publicIdentity(), name: "Eve", role: .member)
+        _ = try await store.maintain()
+        #expect(try await open(storage, as: eve).item(first.id) != nil)
+    }
+}
+
+/// The epoch key `who` can unwrap from storage (what a member's Mac holds).
+private func keyFor(_ who: UserIdentity, storage: MemoryStorage, epoch: TeamEpoch) async throws -> SymmetricKey? {
+    let path = VaultPath("keys", epoch.id.string, "\(who.id.uuidString).json")
+    guard try await storage.exists(path) else { return nil }
+    return try TeamKeys.unwrap(try KeyWrap.decode(try await storage.read(path)), identity: who, vaultId: try await TeamVaultStore.open(storage: storage).vaultId, epoch: epoch)
 }

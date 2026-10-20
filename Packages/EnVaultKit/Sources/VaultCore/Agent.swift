@@ -30,8 +30,10 @@ public enum Agent {
         public var paths: [String]?
         public var data: Data?
         /// `requestKey` for a team vault: its rules for AI agents, which the
-        /// app applies on top of its own setting (FR-23).
+        /// app applies on top of its own setting (FR-23), and the vault, whose
+        /// rules the app reads itself when it has the vault open.
         public var teamRules: TeamAgentRules?
+        public var teamVault: UUID?
 
         public init(op: Op, vaultId: UUID? = nil, requestId: UUID? = nil, client: String? = nil,
                     agent: String? = nil, purpose: String? = nil, detail: String? = nil) {
@@ -47,8 +49,9 @@ public enum Agent {
         public var agent: String?
         public var purpose: AIAgents.Purpose
         public var detail: String?
-        /// The team vault's rules, when the key is for working in one.
+        /// The team vault's rules, when the key is for working in one, and which vault.
         public var teamRules: TeamAgentRules?
+        public var teamVault: UUID?
     }
 
     public struct Info: Codable, Sendable {
@@ -130,9 +133,10 @@ public struct AgentClient {
     /// Asks the app for the key of `vaultId`. Blocks while the user answers the
     /// Touch ID prompt, up to `timeout`.
     public func requestKey(vaultId: UUID, client: String, agent: String? = nil, purpose: AIAgents.Purpose = .use,
-                           detail: String? = nil, teamRules: TeamAgentRules? = nil, timeout: TimeInterval = 120) throws -> VaultKey {
+                           detail: String? = nil, teamRules: TeamAgentRules? = nil, teamVault: UUID? = nil, timeout: TimeInterval = 120) throws -> VaultKey {
         var req = Agent.Request(op: .requestKey, vaultId: vaultId, client: client, agent: agent, purpose: purpose.rawValue, detail: detail)
         req.teamRules = teamRules
+        req.teamVault = teamVault
         let start = try send(req)
         guard start.ok, let id = start.requestId else { throw Agent.Failure(start.error ?? "refused", denied: start.denied == true) }
         let deadline = Date().addingTimeInterval(timeout)
@@ -229,7 +233,7 @@ public final class AgentServer {
                 agent: req.agent.map { Self.sanitize($0, fallback: "AI agent") },
                 purpose: req.purpose.flatMap(AIAgents.Purpose.init(rawValue:)) ?? .use,
                 detail: req.detail.map { Self.sanitize($0, fallback: "") }.flatMap { $0.isEmpty ? nil : $0 },
-                teamRules: req.teamRules)
+                teamRules: req.teamRules, teamVault: req.teamVault)
             Task { @MainActor in
                 do {
                     let key = try await authorize(request)

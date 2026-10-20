@@ -38,6 +38,7 @@ struct TeamVaultBar: View {
 
     private var status: String {
         guard let team = session.team else { return "Team vault" }
+        if team.missingEvents > 0 { return "Paused: membership changes missing" }
         switch team.access {
         case .locked: return "Locked"
         case .notMember: return team.hasRequestedToJoin ? "Waiting for approval" : "Not a member"
@@ -136,6 +137,12 @@ struct TeamMembersView: View {
     }
 
     @ViewBuilder private func statusSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        if team.missingEvents > 0 {
+            Section("Saving Paused") {
+                Text("\(team.missingEvents) membership change\(team.missingEvents == 1 ? " this Mac had accepted is" : "s this Mac had accepted are") gone from the vault's files. Someone with access to them may have deleted \(team.missingEvents == 1 ? "it" : "them"), perhaps to undo a removal. Saving, membership changes and key upkeep are paused until \(team.missingEvents == 1 ? "it's" : "they're") back: in iCloud, an admin's Mac puts files back on its next sync; for a shared folder, restore them from its history.")
+                    .foregroundStyle(.orange)
+            }
+        }
         switch team.access {
         case .notMember, .removed:
             Section("Your Access") {

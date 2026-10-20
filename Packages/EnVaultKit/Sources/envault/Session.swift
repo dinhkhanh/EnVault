@@ -150,7 +150,8 @@ struct Session {
         let (store, personalId) = try await teamVault(team, .use, detail)
         let rules = await store.state.agentRules
         if purpose != .use || rules != nil {
-            try approveUnderTeamRules(rules, agent: agent, purpose: purpose, vaultId: personalId, detail: "team \(team)" + (detail.map { ": \($0)" } ?? ""))
+            try approveUnderTeamRules(rules, agent: agent, purpose: purpose, vaultId: personalId, teamVault: store.vaultId,
+                                      detail: "team \(team)" + (detail.map { ": \($0)" } ?? ""))
         }
         await store.hideHumansOnly()   // FR-24
         if purpose == .write { try await Self.checkWritable(store) }
@@ -169,16 +170,19 @@ struct Session {
 
     /// Asks EnVault again with the team's rules applied, or, without the app,
     /// applies them here. Throws when they refuse.
-    private func approveUnderTeamRules(_ rules: TeamAgentRules?, agent: String, purpose: AIAgents.Purpose, vaultId: UUID, detail: String) throws {
+    private func approveUnderTeamRules(_ rules: TeamAgentRules?, agent: String, purpose: AIAgents.Purpose, vaultId: UUID, teamVault: UUID, detail: String) throws {
         if let app = appAgent(launch: true) {
             do {
-                _ = try app.requestKey(vaultId: vaultId, client: client, agent: agent, purpose: purpose, detail: detail, teamRules: rules)
+                _ = try app.requestKey(vaultId: vaultId, client: client, agent: agent, purpose: purpose, detail: detail, teamRules: rules, teamVault: teamVault)
                 return
             } catch let f as Agent.Failure {
                 throw CLIError("EnVault: \(f.message)", code: f.denied ? .denied : .needsUser)
             }
         }
-        // No app: reading values already needed it, so only these remain.
+        // No app: an agent never reads values without the user's approval in it.
+        if purpose == .reveal {
+            throw CLIError("reading secret values needs the user's approval in the EnVault app (EnVault is not available). Ask the user.", code: .needsUser)
+        }
         if rules?.enabled == false { throw CLIError("this team vault doesn't allow AI agents", code: .denied) }
         if purpose == .write, rules?.writes == false { throw CLIError("this team vault doesn't let AI agents change env files", code: .denied) }
     }
@@ -206,6 +210,7 @@ struct Session {
             guard record.kind == TeamRecord.cloudKit || record.kind == TeamRecord.folder else { continue }
             do {
                 let store = try await TeamVaultStore.open(storage: try teamStorage(record), device: device, owner: record.ownerKey)
+                guard store.vaultId == record.vaultId else { throw CLIError("the folder for team vault \(record.vaultId.uuidString.prefix(8)) holds a different vault") }
                 let access = try await store.unlock(identity: me)
                 out.append(TeamVault(id: record.vaultId, title: await store.title, access: access, store: store))
             } catch where id == nil {

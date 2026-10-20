@@ -95,8 +95,15 @@ public actor CloudMirror {
         }
     }
 
-    /// The CloudKit user who uploaded a join request, as the server recorded
-    /// it when this Mac downloaded it. Nil for files this Mac wrote itself.
+    /// Whether the local copy is a team vault (format 2): its files are never deleted.
+    private func isTeamVault() async -> Bool {
+        guard let data = try? await storage.read(VaultPath(VaultHeader.fileName)) else { return false }
+        return (try? JSONDecoder().decode(HeaderIdentity.self, from: data))?.kind == "team"
+    }
+
+    /// The CloudKit user who uploaded a join request or the vault's header, as
+    /// the server recorded it when this Mac downloaded it. Nil for files this
+    /// Mac wrote itself, and for files someone else changed after uploading.
     public func creator(of path: String) -> String? { state.creators?[path] }
 
     /// Whether a local file has reached the cloud (uploaded here, or downloaded from it).
@@ -129,6 +136,10 @@ public actor CloudMirror {
                 if f.path == VaultHeader.fileName {
                     // Someone else's header (another vault's, or garbage) never replaces ours.
                     guard (try? JSONDecoder().decode(HeaderIdentity.self, from: f.data))?.vaultId == vaultId else { continue }
+                    // Who wrote the header we keep: a first-time joiner checks it is the zone's owner.
+                    var creators = state.creators ?? [:]
+                    creators[f.path] = f.creator
+                    state.creators = creators
                     // Only act on a header we have not seen (uploaded or downloaded) before.
                     // Our own upload echoing back has the same hash and is skipped.
                     let h = Self.hash(f.data)
@@ -160,9 +171,13 @@ public actor CloudMirror {
                 }
                 state.uploaded.insert(f.path)
             }
+            let team = await isTeamVault()
             for p in changes.deletedPaths where SyncPaths.isSyncable(p) {
                 let path = VaultPath(p.split(separator: "/").map(String.init))
-                if try await storage.exists(path) { try await storage.delete(path) }
+                // Team vaults never delete anything (no compaction), so a deletion
+                // there is someone erasing history or undoing a removal: keep the
+                // local file, and the next push puts it back.
+                if !team, try await storage.exists(path) { try await storage.delete(path) }
                 state.uploaded.remove(p)
             }
             state.changeToken = changes.token
@@ -198,7 +213,9 @@ public actor CloudMirror {
             pushed += 1
             saveState()
         }
-        // Local deletions (compaction) → remote deletions.
+        // Local deletions (compaction) → remote deletions. Never for a team vault:
+        // a file missing here was deleted by someone, not compacted.
+        if await isTeamVault() { return pushed }
         let local = Set(localFiles())
         let gone = state.uploaded.filter { !local.contains($0) && $0 != VaultHeader.fileName && SyncPaths.isSyncable($0) }
         if !gone.isEmpty {

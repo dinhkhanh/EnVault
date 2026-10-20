@@ -55,8 +55,13 @@ public actor TeamVaultStore {
     private var me: UserIdentity?
     public private(set) var state: TeamState
     private var events: [ULID: MembershipEvent] = [:]
-    /// Events known before this session (the app keeps them between launches).
-    private var seen: Set<ULID> = []
+    /// What this Mac had accepted before this session (the app keeps it between launches).
+    private var seen = TeamSeen()
+    /// Revisions this Mac has accepted, now or in an earlier session.
+    private var knownRevisions: Set<ULID> = []
+    /// Key links this Mac opened or wrote itself: only these count when deciding
+    /// what the newest key can reach (a junk file at a link's path proves nothing).
+    private var verifiedLinks: [ULID: Set<ULID>] = [:]
     private var keys: [ULID: SymmetricKey] = [:]
     private var wrapsPresent: [ULID: Set<UUID>] = [:]
     private var linksPresent: [ULID: Set<ULID>] = [:]   // newer epoch → older epochs
@@ -77,6 +82,11 @@ public actor TeamVaultStore {
     /// Honest offline admins cause these too, but so would a removed admin
     /// backdating a change, so an admin reviews them.
     public private(set) var lateEvents: Set<ULID> = []
+    /// Membership changes this Mac accepted before that are gone or no longer
+    /// apply: someone with access to the files deleted one (which could undo a
+    /// removal). Saving, membership changes and key upkeep stop until they're back.
+    public private(set) var missingEvents: Set<ULID> = []
+    public var isTampered: Bool { !missingEvents.isEmpty }
 
     static let membersDir = VaultPath("members")
     static let keysDir = VaultPath("keys")
@@ -117,20 +127,25 @@ public actor TeamVaultStore {
         return TeamVaultStore(storage: storage, header: header, device: device)
     }
 
-    /// Unlocks with the person's identity. `seenEvents` are the membership
-    /// events this Mac had already applied (`knownEvents` from last time);
-    /// anything older that turns up now is flagged in `lateEvents`.
+    /// Unlocks with the person's identity. `seen` is what this Mac had accepted
+    /// last time (`seenState`): changes older than those that turn up now are
+    /// flagged in `lateEvents`, ones that went missing in `missingEvents`.
     @discardableResult
-    public func unlock(identity: UserIdentity, seenEvents: Set<ULID> = []) async throws -> TeamAccess {
+    public func unlock(identity: UserIdentity, seen: TeamSeen = TeamSeen()) async throws -> TeamAccess {
         me = identity
-        seen = seenEvents
+        self.seen = seen
+        knownRevisions = seen.revisions
+        lateEvents = seen.late
         do { try await refresh() } catch { lock(); throw error }
         return access
     }
 
     public func lock() {
         me = nil
-        seen = []
+        seen = TeamSeen()
+        knownRevisions = []
+        verifiedLinks = [:]
+        missingEvents = []
         events = [:]
         state = TeamState(header: header, events: [])
         keys = [:]
@@ -158,8 +173,13 @@ public actor TeamVaultStore {
         return state.everyone[me.id] != nil ? .removed : .notMember
     }
 
-    /// Every membership event applied, to pass back as `seenEvents` next time.
-    public var knownEvents: Set<ULID> { Set(events.keys) }
+    /// What to pass back as `seen` next time. Only accepted changes: junk that
+    /// every Mac ignores can come and go without looking like tampering.
+    public var seenState: TeamSeen {
+        TeamSeen(events: seen.events.union(acceptedEvents), revisions: knownRevisions, late: lateEvents)
+    }
+
+    private var acceptedEvents: Set<ULID> { Set(events.keys.filter { state.rejected[$0] == nil }) }
 
     /// The admin has looked at these late events.
     public func dismissLate(_ ids: Set<ULID>) { lateEvents.subtract(ids) }
@@ -212,9 +232,14 @@ public actor TeamVaultStore {
             let path = dir.appending(name)
             guard rejectedFiles[path.string] == nil, name.hasSuffix(".json"),
                   let id = ULID(string: String(name.dropLast(5))), !known.contains(id) else { continue }
+            // Exactly the name the id prints as: a differently spelled copy could hide the real file.
+            guard name == "\(id.string).json" else { rejectedFiles[path.string] = "not a membership event's file name"; continue }
             fresh.append((path, id))
         }
-        guard !fresh.isEmpty else { return false }
+        guard !fresh.isEmpty else {
+            if known.isEmpty { checkMissing() }
+            return false
+        }
         var added: [ULID] = []
         for ((path, id), data) in zip(fresh, try await storage.readMany(fresh.map(\.0))) {
             guard let e = try? MembershipEvent.decode(data), e.id == id else {
@@ -224,13 +249,24 @@ public actor TeamVaultStore {
             events[id] = e
             added.append(id)
         }
-        guard !added.isEmpty else { return false }
-        state = TeamState(header: header, events: Array(events.values))
-        let before = known.union(seen)
-        if let newest = before.max() {
-            for id in added where id < newest && !before.contains(id) && state.rejected[id] == nil { lateEvents.insert(id) }
+        guard !added.isEmpty else {
+            checkMissing()
+            return false
         }
+        let acceptedBefore = Set(known.filter { state.rejected[$0] == nil }).union(seen.events)
+        state = TeamState(header: header, events: Array(events.values))
+        // "Newer" means newer than accepted changes, and never more than a day
+        // ahead: one junk event dated far ahead mustn't make every change look late.
+        let horizon = ULID(date: Date().addingTimeInterval(86_400))
+        if let newest = acceptedBefore.filter({ $0 < horizon }).max() {
+            for id in added where id < newest && !acceptedBefore.contains(id) && state.rejected[id] == nil { lateEvents.insert(id) }
+        }
+        checkMissing()
         return true
+    }
+
+    private func checkMissing() {
+        missingEvents = seen.events.subtracting(acceptedEvents)
     }
 
     /// Lists every epoch's key files, unwraps this person's copies and follows
@@ -239,12 +275,13 @@ public actor TeamVaultStore {
         let before = keys.count
         let mine = "\(me.id.uuidString).json"
         for name in try await storage.list(Self.keysDir) {
-            guard let epochId = ULID(string: name) else { continue }
+            guard let epochId = ULID(string: name), name == epochId.string else { continue }
             let dir = Self.keysDir.appending(name)
             for file in try await storage.list(dir) {
-                if file.hasPrefix("prev-"), file.hasSuffix(".json"), let older = ULID(string: String(file.dropFirst(5).dropLast(5))) {
+                if file.hasPrefix("prev-"), file.hasSuffix(".json"), let older = ULID(string: String(file.dropFirst(5).dropLast(5))),
+                   file == "prev-\(older.string).json" {
                     linksPresent[epochId, default: []].insert(older)
-                } else if file.hasSuffix(".json"), let member = UUID(uuidString: String(file.dropLast(5))) {
+                } else if file.hasSuffix(".json"), let member = UUID(uuidString: String(file.dropLast(5))), file == "\(member.uuidString).json" {
                     wrapsPresent[epochId, default: []].insert(member)
                 }
             }
@@ -267,7 +304,8 @@ public actor TeamVaultStore {
                     let path = Self.keysDir.appending(newer.string).appending("prev-\(older.string).json")
                     guard rejectedFiles[path.string] == nil, let epoch = state.epoch(older) else { continue }
                     do {
-                        keys[older] = try TeamKeys.open(try KeyLink.decode(try await storage.read(path)), with: newerKey, older: epoch, vaultId: vaultId)
+                        keys[older] = try TeamKeys.open(try KeyLink.decode(try await storage.read(path)), with: newerKey, newer: newer, older: epoch, vaultId: vaultId)
+                        verifiedLinks[newer, default: []].insert(older)
                         progress = true
                     } catch {
                         rejectedFiles[path.string] = error.localizedDescription
@@ -315,6 +353,7 @@ public actor TeamVaultStore {
                         let (rev, author) = try TeamRevisionFile.decode(ProjectRevision.self, from: data, vaultId: vaultId, scope: .project, ownerId: f.ownerId,
                                                                         revisionId: f.revisionId, state: state, keys: keys)
                         guard rev.id == f.revisionId, rev.projectId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
+                        try checkArrival(rev.id, author: author)
                         index.insert(rev)
                         authors[rev.id] = author
                         revisionEpochs[rev.id] = epoch
@@ -322,6 +361,7 @@ public actor TeamVaultStore {
                         let (rev, author) = try TeamRevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: f.ownerId,
                                                                         revisionId: f.revisionId, state: state, keys: keys)
                         guard rev.id == f.revisionId, rev.itemId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
+                        try checkArrival(rev.id, author: author)
                         index.insert(rev)
                         authors[rev.id] = author
                         revisionEpochs[rev.id] = epoch
@@ -329,6 +369,7 @@ public actor TeamVaultStore {
                         throw VaultError.corruptRevision("only a personal vault holds this")
                     }
                     index.indexedPaths.insert(path)
+                    knownRevisions.insert(f.revisionId)
                     changed = true
                 } catch {
                     rejectedFiles[path] = error.localizedDescription
@@ -336,6 +377,16 @@ public actor TeamVaultStore {
             }
         }
         return changed
+    }
+
+    /// A revision this Mac sees for the first time, from someone who can't
+    /// write any more, was most likely dated back to when they could: refused.
+    /// (A Mac with no history yet accepts what it finds.)
+    private func checkArrival(_ revision: ULID, author: UUID) throws {
+        guard !knownRevisions.contains(revision), !seen.revisions.isEmpty || !seen.events.isEmpty else { return }
+        guard state.role(of: author)?.canWrite == true else {
+            throw VaultError.corruptRevision("\(revision): arrived after its author lost write access")
+        }
     }
 
     // MARK: - Reading
@@ -539,6 +590,7 @@ public actor TeamVaultStore {
     /// The identity, epoch and key new revisions are written with.
     private func writer() throws -> (me: UserIdentity, epoch: ULID, key: SymmetricKey) {
         guard let me else { throw VaultError.locked }
+        try checkNotTampered()
         guard let role = state.role(of: me.id), role.canWrite else {
             throw VaultError.notPermitted("Your role in this team vault cannot change secrets.")
         }
@@ -560,6 +612,7 @@ public actor TeamVaultStore {
         index.indexedPaths.insert(path.string)
         authors[rev.id] = w.me.id
         revisionEpochs[rev.id] = w.epoch
+        knownRevisions.insert(rev.id)
     }
 
     private func write(_ rev: ItemRevision) async throws {
@@ -594,6 +647,8 @@ public actor TeamVaultStore {
         requests.values.compactMap { r -> PendingMember? in
             let id = r.identity.id
             guard state.members[id] == nil else { return nil }
+            // An id that belonged to someone else can't be asked for again with other keys.
+            if let prior = state.everyone[id], prior.signingKey != r.identity.signingKey || prior.agreementKey != r.identity.agreementKey { return nil }
             if let removed = state.removedAt[id], r.id < removed { return nil }
             var p = PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
             if let invite = r.invite {
@@ -748,13 +803,17 @@ public actor TeamVaultStore {
     public func rotate() async throws -> ULID {
         guard let me else { throw VaultError.locked }
         guard state.role(of: me.id)?.canManage == true else { throw VaultError.notPermitted("Only an owner or admin rotates the team key.") }
+        try checkNotTampered()
+        let basis = acceptedEvents.max()
         let id = ULID()
         let key = TeamKeys.newKey()
         let recipients = state.members.values.map(\.identity)
         try await writeWrap(key, epoch: id, for: try me.publicIdentity())
-        try await record(.rotate(recipients: recipients.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: vaultId, epoch: id)), id: id)
+        try await record(.rotate(recipients: recipients.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: vaultId, epoch: id), basis: basis), id: id)
         keys[id] = key
-        for r in recipients where r.id != me.id { try await writeWrap(key, epoch: id, for: r) }
+        verifiedLinks[id] = []
+        // One member's copy failing (a key HPKE refuses) mustn't stop the rest.
+        for r in recipients where r.id != me.id { try? await writeWrap(key, epoch: id, for: r) }
         _ = try await linkMissing()
         return id
     }
@@ -766,13 +825,14 @@ public actor TeamVaultStore {
     @discardableResult
     public func maintain() async throws -> TeamRepair {
         var repair = TeamRepair()
-        guard let me, state.role(of: me.id)?.canManage == true else { return repair }
+        guard let me, state.role(of: me.id)?.canManage == true, !isTampered else { return repair }
         if state.needsRotation {
             repair.rotated = try await rotate()
         }
         guard let e = state.current, let key = keys[e.id] else { return repair }
-        for m in state.members.values where wrapsPresent[e.id]?.contains(m.identity.id) != true {
-            try await writeWrap(key, epoch: e.id, for: m.identity)
+        for m in state.members.values where wrapsPresent[e.id]?.contains(m.identity.id) != true
+            && e.covers(m.identity.id, addedAt: state.addedAt[m.identity.id]) {
+            guard (try? await writeWrap(key, epoch: e.id, for: m.identity)) != nil else { continue }
             repair.wraps.append(m.identity.id)
         }
         repair.links += try await linkMissing()
@@ -790,6 +850,7 @@ public actor TeamVaultStore {
     @discardableResult
     private func record(_ change: MembershipEvent.Change, id: ULID = ULID()) async throws -> MembershipEvent {
         guard let me else { throw VaultError.locked }
+        try checkNotTampered()
         let e = try MembershipEvent.signed(change, by: me, vaultId: vaultId, id: id)
         var next = state
         if let newest = events.keys.max(), e.id <= newest {
@@ -802,6 +863,12 @@ public actor TeamVaultStore {
         events[e.id] = e
         state = next
         return e
+    }
+
+    private func checkNotTampered() throws {
+        guard !isTampered else {
+            throw VaultError.notPermitted("\(missingEvents.count) membership change\(missingEvents.count == 1 ? " is" : "s are") missing from this team vault's files. Saving and membership changes are paused until they're restored (from another Mac, or the folder's history).")
+        }
     }
 
     private func writeWrap(_ key: SymmetricKey, epoch: ULID, for member: PublicIdentity) async throws {
@@ -818,11 +885,19 @@ public actor TeamVaultStore {
         var written: [ULID] = []
         for older in keys.keys.sorted(by: >) where older != e.id && !reachable(from: e.id).contains(older) {
             let path = Self.keysDir.appending(e.id.string).appending("prev-\(older.string).json")
-            if try await !storage.exists(path) {
+            if try await storage.exists(path) {
+                // Someone else's link: count it only if it opens to the right key.
+                guard let olderEpoch = state.epoch(older),
+                      (try? TeamKeys.open(try KeyLink.decode(try await storage.read(path)), with: key, newer: e.id, older: olderEpoch, vaultId: vaultId)) != nil else {
+                    rejectedFiles[path.string] = "key link does not open to its epoch's key"
+                    continue
+                }
+            } else {
                 try await storage.writeNew(path, data: try TeamKeys.link(keys[older]!, older: older, under: key, newer: e.id, vaultId: vaultId).encoded())
                 written.append(older)
             }
             linksPresent[e.id, default: []].insert(older)
+            verifiedLinks[e.id, default: []].insert(older)
         }
         return written
     }
@@ -831,7 +906,7 @@ public actor TeamVaultStore {
         var seen: Set<ULID> = [epoch]
         var queue = [epoch]
         while let next = queue.popLast() {
-            for older in linksPresent[next] ?? [] where seen.insert(older).inserted { queue.append(older) }
+            for older in verifiedLinks[next] ?? [] where seen.insert(older).inserted { queue.append(older) }
         }
         return seen
     }
@@ -871,4 +946,15 @@ public struct TeamVaultLicense: Codable, Equatable, Sendable {
     /// People using seats in the owner's other team vaults, as their Mac last counted.
     public var elsewhere: Int
     public init(entitlement: String, elsewhere: Int) { self.entitlement = entitlement; self.elsewhere = elsewhere }
+}
+
+/// What one Mac had accepted of a team vault, kept between launches: the
+/// membership changes, the revisions, and late changes not yet reviewed.
+public struct TeamSeen: Codable, Equatable, Sendable {
+    public var events: Set<ULID>
+    public var revisions: Set<ULID>
+    public var late: Set<ULID>
+    public init(events: Set<ULID> = [], revisions: Set<ULID> = [], late: Set<ULID> = []) {
+        self.events = events; self.revisions = revisions; self.late = late
+    }
 }

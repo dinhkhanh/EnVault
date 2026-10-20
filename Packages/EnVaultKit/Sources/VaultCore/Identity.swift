@@ -58,7 +58,10 @@ public struct PublicIdentity: Codable, Hashable, Sendable {
 
     /// The keys are well formed and the signature is the signing key's own.
     public var isValid: Bool {
-        guard (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: agreementKey)) != nil,
+        // A low-order agreement key parses but HPKE refuses it (RFC 9180), which
+        // would break every later key rotation: test it can be encrypted to.
+        guard let agreement = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: agreementKey),
+              (try? HPKE.Sender(recipientKey: agreement, ciphersuite: TeamKeys.suite, info: Data())) != nil,
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: signingKey) else { return false }
         return key.isValidSignature(signature, for: signedBytes)
     }

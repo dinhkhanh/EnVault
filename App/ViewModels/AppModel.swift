@@ -777,7 +777,7 @@ final class AppModel {
                 }
                 let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: record.ownerKey)
                 guard team.vaultId == record.vaultId else { throw VaultError.corruptHeader("the folder holds a different team vault") }
-                try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: record.vaultId)))
+                try await team.unlock(identity: me, seen: VaultSession.seen(at: Self.seenURL(for: record.vaultId)))
                 await attach(team, record: record, generation: generation)
             } catch {
                 errorMessage = "A team vault didn't open: \(error.localizedDescription)"
@@ -908,13 +908,20 @@ final class AppModel {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             downloadStatus = .syncing
             defer { downloadStatus = nil }
-            try await CloudMirror(vaultId: ref.vaultId, localRoot: root, stateURL: Self.stateURL(for: ref.vaultId), transport: transport(for: record)).pull()
+            let download = CloudMirror(vaultId: ref.vaultId, localRoot: root, stateURL: Self.stateURL(for: ref.vaultId), transport: transport(for: record))
+            try await download.pull()
             // This person may have seen the vault before, on any Mac (also before leaving it): same owner only.
-            let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: await store.pinnedOwnerKey(for: ref.vaultId))
+            let pinned = await store.pinnedOwnerKey(for: ref.vaultId)
+            // First sight: the header must be the one the zone's owner uploaded and nobody
+            // changed since, or a participant could have swapped in their own just before.
+            if pinned == nil, await download.creator(of: VaultHeader.fileName) != ref.ownerName {
+                throw VaultError.corruptHeader("the vault's header wasn't written by the person who shared it")
+            }
+            let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: pinned)
             record.ownerKey = team.header.owner.signingKey
             try await store.saveTeam(record)
             personal?.schedulePush()
-            let access = try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: ref.vaultId)))
+            let access = try await team.unlock(identity: me, seen: VaultSession.seen(at: Self.seenURL(for: ref.vaultId)))
             if access == .notMember || access == .removed, await !team.hasRequestedToJoin {
                 try await team.requestToJoin()
             }
@@ -988,7 +995,7 @@ final class AppModel {
         do {
             let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: folder), owner: record.ownerKey)
             guard team.vaultId == record.vaultId else { throw VaultError.io("That folder holds a different team vault.") }
-            try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: record.vaultId)))
+            try await team.unlock(identity: me, seen: VaultSession.seen(at: Self.seenURL(for: record.vaultId)))
             try TeamFolders.save(folder, for: record.vaultId)
             guard await attach(team, record: record, generation: generation) != nil else { return }
             selectedVaultId = record.vaultId
@@ -1263,6 +1270,7 @@ final class AppModel {
         let state = await t.state
         var byUser: [String: UUID] = [:]
         var claims: [String: Int] = [:]
+        var identities: [String: [UUID]] = [:]
         var requested: [UUID: ULID] = [:]
         // Members, former members and people asking to join, by who uploaded their request.
         let people = Set(state.everyone.keys).union(await t.pendingMembers().map(\.id))
@@ -1270,6 +1278,7 @@ final class AppModel {
             guard let r = await t.joinRequest(of: id), let user = await mirror.creator(of: r.path) else { continue }
             byUser[user] = id
             claims[user, default: 0] += 1
+            identities[user, default: []].append(id)
             requested[id] = r.id
         }
         // Each removal is acted on once per Mac, so a later re-invite of the same person survives.
@@ -1277,17 +1286,22 @@ final class AppModel {
         var handled = Set(UserDefaults.standard.stringArray(forKey: handledKey) ?? [])
         var onShare = Set<UUID>()
         for p in info.participants where !p.isOwner {
-            // One Apple ID behind two identities: leave it to a person to sort out.
-            guard let user = p.userRecordName, claims[user] == 1, let member = byUser[user] else { continue }
-            if p.status == .accepted { onShare.insert(member) }
+            // One Apple ID can stand behind several identities (a second join
+            // request, a new identity after a reinstall): the strictest outcome
+            // applies, so a second request can't opt anyone out of this upkeep.
+            guard let user = p.userRecordName, let ids = identities[user] else { continue }
+            let current = ids.filter { state.role(of: $0) != nil }
+            if p.status == .accepted { onShare.formUnion(current) }
             do {
-                if let role = state.role(of: member) {
-                    if p.status == .accepted, p.canWrite != role.canWrite {
-                        _ = try await sharing.setPermission(of: p, canWrite: role.canWrite, on: s.vaultId)
+                if !current.isEmpty {
+                    let canWrite = current.allSatisfy { state.role(of: $0)?.canWrite == true }
+                    if p.status == .accepted, p.canWrite != canWrite {
+                        _ = try await sharing.setPermission(of: p, canWrite: canWrite, on: s.vaultId)
                     }
-                } else if let removed = state.removedAt[member], !handled.contains(removed.string) {
+                } else if let removed = ids.compactMap({ state.removedAt[$0] }).max(), !handled.contains(removed.string) {
                     // Not if they asked to join again since (invited back).
-                    if p.status == .accepted, requested[member].map({ $0 < removed }) ?? true {
+                    let askedAgain = ids.contains { id in requested[id].map { $0 > removed } ?? false }
+                    if p.status == .accepted, !askedAgain {
                         _ = try await sharing.removeParticipant(p, from: s.vaultId)
                     }
                     handled.insert(removed.string)
@@ -1482,7 +1496,9 @@ final class AppModel {
 
         // A team vault's rules can only make this Mac's setting stricter (FR-23).
         let own = Prefs.agentPolicy
-        var policy = own.restricted(by: r.teamRules)
+        // The app's own copy of the vault's rules wins over what the caller reports.
+        let teamRules = r.teamVault.flatMap { id in sessions.first { $0.vaultId == id }?.team?.agentRules } ?? r.teamRules
+        var policy = own.restricted(by: teamRules)
         if let agent = r.agent {
             func whose(_ ownAllows: Bool) -> String { ownAllows ? "this team vault's rules" : "Settings › AI Agents" }
             guard policy.enabled else { throw refuse("AI agents are turned off (\(whose(own.enabled)))") }
