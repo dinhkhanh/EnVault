@@ -40,15 +40,9 @@ export async function issue(s: Services, r: IssueRequest, notify = true, mail: M
     customer_id: r.customerId, subscription_id: r.subscriptionId, status: "active", revoked_at: null, revoke_reason: null,
   };
   await s.store.insertLicense(row);
-  if (notify) {
-    try {
-      await s.mailer.send(licenseMail([row], s.mail, mail));
-    } catch (e) {
-      // Undelivered: take it back so the provider's retry issues and mails it again.
-      await s.store.deleteLicense(row.id);
-      throw e;
-    }
-  }
+  // A failed send throws with the row kept: the key stays revocable and findable by /resend,
+  // and the provider's retry finds the order and mails it again.
+  if (notify) await s.mailer.send(licenseMail([row], s.mail, mail));
   return row;
 }
 
@@ -65,8 +59,10 @@ async function reissueForSeats(s: Services, provider: string, subscriptionId: st
   const row = await issue(s, {
     provider, orderId, customerId: latest.customer_id, subscriptionId, email: latest.email, name: latest.name,
     plan: latest.plan, seats, periodEnd: periodEnd ?? null, expiresAt: periodEnd ? undefined : latest.expires_at,
-  }, true, "seats");
+  }, false);
+  // Revoked before mailing, so a failed send can't leave the replaced keys active.
   for (const r of active) await s.store.revoke(r.id, `replaced by ${row.id} (${seats} seats)`);
+  await s.mailer.send(licenseMail([row], s.mail, "seats"));
   return { status: 201, body: `issued ${row.id}` };
 }
 
@@ -91,7 +87,13 @@ async function handle(s: Services, provider: string, action: Action): Promise<Ou
       return { status: 200, body: `ignored: ${action.why}` };
     case "issue": {
       const o: Order = { ...action.order };
-      if (await s.store.byOrder(o.provider, o.orderId)) return { status: 200, body: "order already licensed" };
+      const kind: MailKind = o.reason === "renewal" ? "renewal" : o.reason === "seats" && o.subscriptionId ? "seats" : "new";
+      const licensed = await s.store.byOrder(o.provider, o.orderId);
+      if (licensed) {
+        // Also the retry after a failed send: mail the key that order already has.
+        if (licensed.status === "active") await s.mailer.send(licenseMail([licensed], s.mail, kind));
+        return { status: 200, body: "order already licensed" };
+      }
       // A renewal whose payload doesn't say how many seats keeps the subscription's count.
       if (o.seats < 1) {
         const prior = o.subscriptionId ? (await s.store.bySubscription(o.provider, o.subscriptionId)).filter((r) => r.status === "active")
@@ -99,7 +101,7 @@ async function handle(s: Services, provider: string, action: Action): Promise<Ou
         o.seats = prior?.seats ?? 1;
       }
       if (o.reason === "seats" && o.subscriptionId) return reissueForSeats(s, o.provider, o.subscriptionId, o.seats, o.periodEnd, o.orderId);
-      const row = await issue(s, { ...o }, true, o.reason === "renewal" ? "renewal" : "new");
+      const row = await issue(s, { ...o }, true, kind);
       return { status: 201, body: `issued ${row.id}` };
     }
     case "reseat":
