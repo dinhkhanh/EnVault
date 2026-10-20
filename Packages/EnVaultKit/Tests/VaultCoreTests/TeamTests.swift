@@ -130,6 +130,25 @@ private struct Log {
         #expect(s.role(of: cyd.id) == .member && s.role(of: dee.id) == .viewer)
     }
 
+    @Test func rotationsSignedBeforeBasisStillVerify() throws {
+        var log = try Log(owner: ada)
+        // A rotation as 0.8.0 signed it: no basis field at all.
+        let id = ULID(), commitment = TeamKeys.commitment(to: TeamKeys.newKey(), vaultId: log.vaultId, epoch: id)
+        var old = MembershipEvent(id: id, author: ada.id, change: .rotate(recipients: [ada.id], keyCommitment: commitment), signature: Data())
+        var c = CanonicalBytes("envault-member-event:1")
+        c.add(log.vaultId); c.add(id); c.add(ada.id)
+        c.add("rotate"); c.add(ada.id.uuidString); c.add(commitment)
+        old.signature = try ada.signingKey.signature(for: c.data)
+        log.events.append(old)
+        #expect(log.state.rejected.isEmpty && log.state.current?.id == id)
+        // A basis can't be stripped from a rotation signed with one.
+        try log.add(bob, as: .admin, by: ada)
+        var stripped = try MembershipEvent.signed(.rotate(recipients: [ada.id, bob.id], keyCommitment: Data(count: 32), basis: log.events.last!.id), by: ada, vaultId: log.vaultId)
+        stripped.change = .rotate(recipients: [ada.id, bob.id], keyCommitment: Data(count: 32), basis: nil)
+        log.events.append(stripped)
+        #expect(log.state.rejected[stripped.id] == "bad signature")
+    }
+
     @Test func removalAndRotationLockTheMemberOut() throws {
         var log = try team()
         let before = try log.currentKey(for: cyd)
