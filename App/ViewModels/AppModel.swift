@@ -1,4 +1,5 @@
 import SwiftUI
+import CloudKit
 import LocalAuthentication
 import VaultCore
 import VaultSync
@@ -7,10 +8,9 @@ import EnvKit
 
 /// Single source of truth for the UI. Each open vault is a `VaultSession`
 /// (store, files, sync, snapshots). The first is the personal vault, which
-/// owns unlocking, Touch ID, recovery, the identity, the CLI agent and linked
-/// files. Others are attached only while it is unlocked (team vaults from
-/// phase 2) and dropped on lock. The sidebar's switcher picks which vault's
-/// projects and items the window shows and edits.
+/// files. Team vaults it remembers are attached while it is unlocked and
+/// dropped on lock. The sidebar's switcher picks which vault's projects and
+/// items the window shows and edits.
 @MainActor
 @Observable
 final class AppModel {
@@ -55,6 +55,8 @@ final class AppModel {
     var lastRefresh: Date? { personal?.lastRefresh }
     // The selected vault's content.
     var projects: [Project] { session?.projects ?? [] }
+    /// What the Free plan's project limit counts: team vaults are free to use (FR-26).
+    var projectsTowardLimit: Int { session?.isTeam == true ? 0 : projects.count }
     var items: [Item] { session?.items ?? [] }
     var biometricsAvailable: Bool { KeychainVaultKeyStore.biometricsAvailable }
     private(set) var hasBiometricKey = false
@@ -89,7 +91,7 @@ final class AppModel {
     var searchText = ""
 
     /// The personal vault's store: unlocking, recovery, passphrase, identity, CLI.
-    private var store: VaultStore? { personal?.store }
+    private var store: VaultStore? { personal?.personalStore }
     private var mirror: CloudMirror? { personal?.mirror }
     @ObservationIgnored private var autoLock: AutoLock!
     @ObservationIgnored private let keychain = KeychainVaultKeyStore()
@@ -98,6 +100,13 @@ final class AppModel {
         if UserDefaults.standard.bool(forKey: "fakeCloud") { return MemoryCloudTransport() }
         #endif
         return CloudKitTransport()
+    }()
+    /// Zone-wide sharing of team vaults; nil without CloudKit (and with the debug fake cloud).
+    @ObservationIgnored private lazy var sharing: CloudKitSharing? = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "fakeCloud") { return nil }
+        #endif
+        return cloudAvailable ? CloudKitSharing() : nil
     }()
 
     let tools = ToolRegistry.all
@@ -138,6 +147,7 @@ final class AppModel {
 
     init() {
         Prefs.registerDefaults()
+        ShareInbox.shared.handler = { [weak self] m in Task { await self?.acceptShare(m) } }
         autoLock = AutoLock { [weak self] in self?.lock() }
         fileLinks.hooks = .init(
             // Linked files belong to the personal vault, whichever vault the window shows.
@@ -525,6 +535,7 @@ final class AppModel {
         }
         sessions = [personal]
         selectedVaultId = nil
+        unlockGeneration += 1
         Task { await personal.store.lock() }
         personal.isUnlocked = false
         personal.clear()
@@ -546,6 +557,9 @@ final class AppModel {
         await reload()
         if let vaultId { fileLinks.vaultUnlocked(vaultId: vaultId) }
         autoLock.touch()
+        await loadIdentity()
+        await openTeams()
+        if let share = ShareInbox.shared.take() { await acceptShare(share) }
     }
 
     func userActivity() { autoLock.touch() }
@@ -581,7 +595,7 @@ final class AppModel {
             let id = await s.vaultId
             if sessions.contains(where: { $0.vaultId == id }) { selectedVaultId = id; return }
             try await s.unlock(passphrase: passphrase)
-            let new = VaultSession(store: s, url: url, vaultId: id, mode: .folder, name: url.lastPathComponent)
+            let new = VaultSession(store: s as any VaultContent, url: url, vaultId: id, mode: .folder, name: url.lastPathComponent)
             wire(new)
             new.isUnlocked = true
             sessions.append(new)
@@ -597,7 +611,7 @@ final class AppModel {
     // MARK: - Mutations
 
     /// Runs a change on `target` (default: the vault shown), then refreshes and pushes it.
-    private func perform(on target: VaultSession? = nil, _ op: @escaping (VaultStore) async throws -> Void) async {
+    private func perform(on target: VaultSession? = nil, _ op: @escaping (any VaultContent) async throws -> Void) async {
         guard let s = target ?? session else { return }
         autoLock.touch()
         do {
@@ -625,13 +639,21 @@ final class AppModel {
     }
 
     func createIdentity(name: String) async {
-        await perform(on: personal) { try await $0.createIdentity(name: name) }
+        await performOnPersonal { try await $0.createIdentity(name: name) }
         await loadIdentity()
     }
 
     func renameIdentity(_ name: String) async {
-        await perform(on: personal) { try await $0.renameIdentity(name) }
+        await performOnPersonal { try await $0.renameIdentity(name) }
         await loadIdentity()
+    }
+
+    /// A change only the personal vault supports (identity, passphrase, team records).
+    private func performOnPersonal(_ op: @escaping (VaultStore) async throws -> Void) async {
+        await perform(on: personal) { content in
+            guard let s = content as? VaultStore else { return }
+            try await op(s)
+        }
     }
 
     func createProject(name: String, tags: [String] = []) async {
@@ -640,8 +662,8 @@ final class AppModel {
         if let created { selectedProjectId = created.id; selectedItemId = nil }
     }
 
-    func renameProject(_ id: UUID, name: String) async { await perform { try await $0.updateProject(id, name: name) } }
-    func setProjectTags(_ id: UUID, tags: [String]) async { await perform { try await $0.updateProject(id, tags: tags) } }
+    func renameProject(_ id: UUID, name: String) async { await perform { try await $0.updateProject(id, name: name, tags: nil) } }
+    func setProjectTags(_ id: UUID, tags: [String]) async { await perform { try await $0.updateProject(id, name: nil, tags: tags) } }
     func deleteProject(_ id: UUID) async {
         await perform { try await $0.deleteProject(id) }
         if selectedProjectId == id { selectedProjectId = projects.first?.id }
@@ -662,7 +684,7 @@ final class AppModel {
     /// An edit made in a linked file (see `FileLinkStore`), saved as a new revision.
     func saveFromLinkedFile(_ id: UUID, payload: ItemPayload) async -> Bool {
         var ok = false
-        await perform(on: personal) { try await $0.updateItem(id, payload: payload); ok = true }
+        await perform(on: personal) { try await $0.updateItem(id, name: nil, tags: nil, payload: payload, projectId: nil); ok = true }
         return ok
     }
 
@@ -676,12 +698,327 @@ final class AppModel {
     }
 
     func restore(_ rev: ItemRevision) async { await perform { try await $0.restore(rev) } }
-    func compact(itemId: UUID) async { await perform { try await $0.compact(itemId: itemId) } }
+    /// Personal vaults only: in a team vault, compaction needs every member's Mac to have synced (NFR-11).
+    func compact(itemId: UUID) async {
+        await perform {
+            guard let s = $0 as? VaultStore else { throw VaultError.notPermitted("Team vaults keep every revision for now.") }
+            try await s.compact(itemId: itemId)
+        }
+    }
 
     func changePassphrase(current: String, new: String) async -> Bool {
         var ok = false
-        await perform(on: personal) { try await $0.changePassphrase(current: current, new: new); ok = true }
+        await performOnPersonal { try await $0.changePassphrase(current: current, new: new); ok = true }
         return ok
+    }
+
+    // MARK: - Team vaults (FR-3 to FR-12)
+
+    /// Whether this build can host and join team vaults (CloudKit).
+    var teamVaultsAvailable: Bool { TeamFeatures.enabled && sharing != nil }
+    /// Set when a share link needs a Team identity first; the UI asks for a name.
+    var shareNeedsIdentity = false
+
+    private static func seenURL(for vaultId: UUID) -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("EnVault/TeamState/\(vaultId.uuidString)-seen.json")
+    }
+
+    private func transport(for record: TeamRecord) -> CloudVaultTransport {
+        if let owner = record.zoneOwner, let sharing { return sharing.transport(for: SharedVaultRef(vaultId: record.vaultId, ownerName: owner)) }
+        return cloud
+    }
+
+    /// Bumped on every lock, so a team vault still opening when the app locks
+    /// is dropped instead of attached.
+    @ObservationIgnored private var unlockGeneration = 0
+    /// Team vaults being opened right now (a share link can arrive during `openTeams`).
+    @ObservationIgnored private var opening: Set<UUID> = []
+    /// Per team vault (owner's Mac): members who are no longer on the iCloud share.
+    private(set) var offShare: [UUID: Set<UUID>] = [:]
+
+    /// Opens every team vault the personal vault remembers.
+    private func openTeams() async {
+        guard TeamFeatures.enabled, cloudAvailable, let store, let me = try? await store.identity() else { return }
+        let generation = unlockGeneration
+        for record in await store.teams() where record.kind == TeamRecord.cloudKit {
+            guard !sessions.contains(where: { $0.vaultId == record.vaultId }), opening.insert(record.vaultId).inserted else { continue }
+            defer { opening.remove(record.vaultId) }
+            let root = Self.localRoot(for: record.vaultId)
+            do {
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                if await !VaultStore.vaultExists(in: LocalFolderStorage(root: root)) {
+                    try await CloudMirror(vaultId: record.vaultId, localRoot: root, stateURL: Self.stateURL(for: record.vaultId),
+                                          transport: transport(for: record)).pull()
+                }
+                let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: record.ownerKey)
+                try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: record.vaultId)))
+                await attach(team, record: record, generation: generation)
+            } catch {
+                errorMessage = "A team vault didn't open: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Adds an unlocked team vault as a session, watching and syncing it.
+    /// Nil (and the store locked again) when the app locked meanwhile or the
+    /// vault is already open.
+    @discardableResult
+    private func attach(_ team: TeamVaultStore, record: TeamRecord, generation: Int) async -> VaultSession? {
+        let title = await team.title
+        guard phase == .unlocked, generation == unlockGeneration, !sessions.contains(where: { $0.vaultId == record.vaultId }) else {
+            await team.lock()
+            return nil
+        }
+        let root = Self.localRoot(for: record.vaultId)
+        let s = VaultSession(store: team, url: root, vaultId: record.vaultId, mode: .iCloud, name: title ?? "Team vault")
+        s.seenURL = Self.seenURL(for: record.vaultId)
+        s.didSyncTeam = { [weak self] in await self?.reconcileShare($0) }
+        wire(s)
+        s.isUnlocked = true
+        sessions.append(s)
+        await s.reload()
+        s.startWatching()
+        s.startCloud(transport: transport(for: record), stateURL: Self.stateURL(for: record.vaultId))
+        return s
+    }
+
+    /// Creates a team vault owned by this person in their iCloud (FR-3). The
+    /// caller has checked the Team license and made sure an identity exists.
+    func createTeamVault(title: String) async -> Bool {
+        guard phase == .unlocked, let store, cloudAvailable else {
+            errorMessage = "Team vaults need iCloud (CloudKit) in this version."
+            return false
+        }
+        let generation = unlockGeneration
+        do {
+            guard let me = try await store.identity() else { throw VaultError.notPermitted("Set up your Team identity first.") }
+            let id = UUID()
+            let root = Self.localRoot(for: id)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let team = try await TeamVaultStore.create(storage: LocalFolderStorage(root: root), owner: me, title: title, vaultId: id)
+            let record = TeamRecord(vaultId: id, ownerKey: team.header.owner.signingKey)
+            try await store.saveTeam(record)
+            personal?.schedulePush()
+            errorMessage = nil
+            // The vault exists from here on; iCloud catches up on the next sync if it is unreachable now.
+            guard let s = await attach(team, record: record, generation: generation) else { return true }
+            try? await s.mirror?.bootstrap()
+            selectedVaultId = id
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Invites someone by their Apple ID's email (FR-6) and returns the share
+    /// link to send them. They join as a pending member until an admin
+    /// approves. Everyone joins able to write, so their join request can
+    /// upload; the owner's Mac makes a viewer read-only once approved.
+    func invite(email: String, to s: VaultSession) async -> URL? {
+        guard let sharing, s.isTeam else { errorMessage = "Invites need iCloud (CloudKit)."; return nil }
+        guard s.team?.role == .owner else {
+            errorMessage = "Only the owner's Mac can invite people for now."
+            return nil
+        }
+        do {
+            try await sharing.shareVault(s.vaultId, title: s.name)
+            let url = try await sharing.addParticipant(email: email, canWrite: true, to: s.vaultId).url
+            errorMessage = nil
+            return url
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// A share link was opened (FR-7): accept it, download the vault, remember
+    /// it with its owner's key, and ask to join. Waits for the unlock, and for a
+    /// Team identity, when either is missing.
+    func acceptShare(_ metadata: CKShare.Metadata) async {
+        guard TeamFeatures.enabled else { return }
+        guard phase == .unlocked, let store else {
+            ShareInbox.shared.hold(metadata)
+            errorMessage = "Unlock EnVault to open the vault shared with you."
+            return
+        }
+        guard let sharing else { errorMessage = "Shared vaults need iCloud (CloudKit)."; return }
+        let generation = unlockGeneration
+        var openingId: UUID?
+        defer { if let openingId { opening.remove(openingId) } }
+        do {
+            guard let me = try await store.identity() else {
+                ShareInbox.shared.hold(metadata)
+                shareNeedsIdentity = true
+                return
+            }
+            shareNeedsIdentity = false
+            let ref = try await sharing.accept(metadata)
+            if sessions.contains(where: { $0.vaultId == ref.vaultId }) { selectedVaultId = ref.vaultId; return }
+            guard opening.insert(ref.vaultId).inserted else { return }
+            openingId = ref.vaultId
+            var record = TeamRecord(vaultId: ref.vaultId, ownerKey: Data(), zoneOwner: ref.ownerName)
+            let root = Self.localRoot(for: ref.vaultId)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            downloadStatus = .syncing
+            defer { downloadStatus = nil }
+            try await CloudMirror(vaultId: ref.vaultId, localRoot: root, stateURL: Self.stateURL(for: ref.vaultId), transport: transport(for: record)).pull()
+            // This person may have seen the vault before, on any Mac (also before leaving it): same owner only.
+            let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: await store.pinnedOwnerKey(for: ref.vaultId))
+            record.ownerKey = team.header.owner.signingKey
+            try await store.saveTeam(record)
+            personal?.schedulePush()
+            let access = try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: ref.vaultId)))
+            if access == .notMember || access == .removed, await !team.hasRequestedToJoin {
+                try await team.requestToJoin()
+            }
+            guard let s = await attach(team, record: record, generation: generation) else { return }
+            // Subscribes to the shared database's pushes (one subscription covers every shared vault).
+            try? await s.mirror?.bootstrap()
+            s.schedulePush()
+            selectedVaultId = ref.vaultId
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn't open the shared vault: \(error.localizedDescription)"
+        }
+    }
+
+    /// Approves a join request after the safety code was compared (FR-8, FR-9).
+    func approve(_ pending: PendingMember, name: String, role: TeamRole, in s: VaultSession) async {
+        await performOnTeam(s) { try await $0.add(pending.identity, name: name, role: role) }
+        await reconcileShare(s)
+    }
+
+    func setRole(of member: UUID, to role: TeamRole, in s: VaultSession) async {
+        await performOnTeam(s) { try await $0.setRole(of: member, to: role) }
+        await reconcileShare(s)
+    }
+
+    /// Removes a member and rotates the key (FR-13); the owner's Mac also takes them off the share.
+    func remove(_ member: UUID, from s: VaultSession) async {
+        await performOnTeam(s) { try await $0.remove(member) }
+        await reconcileShare(s)
+    }
+
+    func renameTeamVault(_ s: VaultSession, to title: String) async {
+        await performOnTeam(s) { try await $0.setTitle(title) }
+    }
+
+    func dismissLateEvents(in s: VaultSession) async {
+        guard let t = s.teamStore, let late = s.team?.lateEvents else { return }
+        await t.dismissLate(late)
+        await s.reload()
+    }
+
+    /// Leaves a team vault (FR-15): signs the removal, leaves the share, and
+    /// deletes this Mac's copy and sync state. A signed removal must reach
+    /// iCloud first, or the team would still list this person. Viewers can't
+    /// upload, so they only leave the share; the owner's Mac then shows them
+    /// as off the share, to remove.
+    func leave(_ s: VaultSession) async {
+        guard let t = s.teamStore, let store else { return }
+        do {
+            if s.team?.role?.canWrite == true { try await t.leave() }
+            if let event = await t.leaveEvent {
+                await s.syncNow()
+                guard await s.mirror?.isUploaded("members/\(event.string).json") == true else {
+                    errorMessage = "You haven't left yet: your Mac couldn't reach iCloud. Try again when it's online."
+                    return
+                }
+            }
+            if let record = await store.teams().first(where: { $0.vaultId == s.vaultId }) {
+                if let owner = record.zoneOwner, let sharing { try? await sharing.leave(SharedVaultRef(vaultId: s.vaultId, ownerName: owner)) }
+                var left = record
+                left.left = true
+                try await store.saveTeam(left)
+                personal?.schedulePush()
+            }
+            closeTeam(s)
+            try? FileManager.default.removeItem(at: s.url)
+            try? FileManager.default.removeItem(at: Self.stateURL(for: s.vaultId))
+            try? FileManager.default.removeItem(at: Self.seenURL(for: s.vaultId))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func closeTeam(_ s: VaultSession) {
+        s.close()
+        Task { await s.store.lock() }
+        sessions.removeAll { $0 === s }
+        if selectedVaultId == s.vaultId { selectedVaultId = nil }
+    }
+
+    /// Copies (or moves) a project with its history into a team vault (FR-5).
+    func copyProject(_ projectId: UUID, to target: VaultSession, move: Bool) async {
+        guard let source = session, source !== target, let team = target.teamStore else { return }
+        do {
+            let exported = try await source.store.export(projectId)
+            try await team.importProject(exported.history, items: exported.items)
+            await target.reload()
+            target.schedulePush()
+            if move {
+                await perform(on: source) { try await $0.deleteProject(projectId) }
+                if selectedProjectId == projectId { selectedProjectId = nil }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func performOnTeam(_ s: VaultSession, _ op: @escaping (TeamVaultStore) async throws -> Void) async {
+        await perform(on: s) { content in
+            guard let t = content as? TeamVaultStore else { return }
+            try await op(t)
+        }
+    }
+
+    /// On the owner's Mac, keeps the CloudKit share in step with the team
+    /// (FR-12): every member's participant can write exactly when their role
+    /// can, and people removed from the team are taken off the share, which is
+    /// what stops them uploading anything more. A participant is matched to a
+    /// member by who uploaded the member's join request, as CloudKit recorded
+    /// it; nobody can claim that for someone else.
+    private func reconcileShare(_ s: VaultSession) async {
+        guard let sharing, let t = s.teamStore, let mirror = s.mirror, s.team?.role == .owner,
+              let info = try? await sharing.info(of: s.vaultId) else { return }
+        let state = await t.state
+        var byUser: [String: UUID] = [:]
+        var claims: [String: Int] = [:]
+        var requested: [UUID: ULID] = [:]
+        for id in state.everyone.keys {
+            guard let r = await t.joinRequest(of: id), let user = await mirror.creator(of: r.path) else { continue }
+            byUser[user] = id
+            claims[user, default: 0] += 1
+            requested[id] = r.id
+        }
+        // Each removal is acted on once per Mac, so a later re-invite of the same person survives.
+        let handledKey = "dk.dinhkhanh.envault.handledRemovals.\(s.vaultId.uuidString)"
+        var handled = Set(UserDefaults.standard.stringArray(forKey: handledKey) ?? [])
+        var onShare = Set<UUID>()
+        for p in info.participants where !p.isOwner {
+            // One Apple ID behind two identities: leave it to a person to sort out.
+            guard let user = p.userRecordName, claims[user] == 1, let member = byUser[user] else { continue }
+            if p.status == .accepted { onShare.insert(member) }
+            do {
+                if let role = state.role(of: member) {
+                    if p.status == .accepted, p.canWrite != role.canWrite {
+                        _ = try await sharing.setPermission(of: p, canWrite: role.canWrite, on: s.vaultId)
+                    }
+                } else if let removed = state.removedAt[member], !handled.contains(removed.string) {
+                    // Not if they asked to join again since (invited back).
+                    if p.status == .accepted, requested[member].map({ $0 < removed }) ?? true {
+                        _ = try await sharing.removeParticipant(p, from: s.vaultId)
+                    }
+                    handled.insert(removed.string)
+                }
+            } catch {
+                errorMessage = "Couldn't update the iCloud share: \(error.localizedDescription)"
+            }
+        }
+        UserDefaults.standard.set(Array(handled), forKey: handledKey)
+        offShare[s.vaultId] = Set(byUser.values.filter { state.role(of: $0) != nil && !onShare.contains($0) })
     }
 
     // MARK: - Import

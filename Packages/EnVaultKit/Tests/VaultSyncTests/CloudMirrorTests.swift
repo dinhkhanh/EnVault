@@ -208,6 +208,39 @@ private struct Device {
         try await reopened.unlock(passphrase: "pw")
     }
 
+    @Test func aTeamHeaderIsNeverReplaced() async throws {
+        let cloud = MemoryCloudTransport()
+        let root = Device.tmp()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = UserIdentity(id: UUID(), name: "Ada", createdAt: Date(),
+                                 agreementKey: .init(), signingKey: .init())
+        let store = try await TeamVaultStore.create(storage: LocalFolderStorage(root: root), owner: owner, title: "Acme", device: macA)
+        let mirror = CloudMirror(vaultId: store.vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud)
+        try await mirror.bootstrap()
+        let ours = try Data(contentsOf: root.appendingPathComponent(VaultHeader.fileName))
+
+        // A participant uploads a header they signed for the same vault id.
+        let mallory = UserIdentity(id: UUID(), name: "Mallory", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        let swapped = try TeamHeader.create(owner: mallory, vaultId: store.vaultId).encoded()
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: swapped)], vaultId: store.vaultId, overwrite: true)
+        await mirror.sync()
+        #expect(try Data(contentsOf: root.appendingPathComponent(VaultHeader.fileName)) == ours)
+        #expect(try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: store.vaultId) == ours)   // put back
+    }
+
+    @Test func joinRequestsRememberWhoUploadedThem() async throws {
+        let cloud = MemoryCloudTransport()
+        let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
+        defer { a.cleanup() }
+        await cloud.signIn(as: "_bob")
+        let request = "identities/\(UUID().uuidString)/\(ULID().string).json"
+        try await cloud.upload([CloudFile(path: request, data: Data("{}".utf8), creator: "_mallory"),
+                                CloudFile(path: "members/\(ULID().string).json", data: Data("{}".utf8))], vaultId: vaultId, overwrite: false)
+        await a.mirror.sync()
+        #expect(await a.mirror.creator(of: request) == "_bob")     // the server's record, not the uploader's claim
+        #expect(await a.mirror.localFiles().contains(request))
+    }
+
     @Test func syncablePaths() {
         #expect(SyncPaths.isSyncable("vault.json"))
         #expect(SyncPaths.isSyncable("projects/A/items/B/01J.evr"))

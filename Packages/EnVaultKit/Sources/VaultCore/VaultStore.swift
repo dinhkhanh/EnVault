@@ -10,6 +10,7 @@ import CryptoKit
 /// projects/<projectId>/meta/<ulid>.evr
 /// projects/<projectId>/items/<itemId>/<ulid>.evr
 /// projects/<IdentityLayout.namespace>/identity/<identityId>/<ulid>.evr
+/// projects/<IdentityLayout.namespace>/teams/<vaultId>/<ulid>.evr
 /// ```
 public actor VaultStore {
     public let storage: VaultStorage
@@ -19,6 +20,7 @@ public actor VaultStore {
     private var vaultKey: VaultKey?
     private var index = RevisionIndex()
     private var identityRevisions: [UUID: [IdentityRevision]] = [:] // sorted ascending by id
+    private var teamRevisions: [UUID: [TeamRecordRevision]] = [:]   // sorted ascending by id
 
     public var isUnlocked: Bool { vaultKey != nil }
     public var vaultId: UUID { header.vaultId }
@@ -93,6 +95,7 @@ public actor VaultStore {
     private func clearIndex() {
         index = RevisionIndex()
         identityRevisions = [:]
+        teamRevisions = [:]
     }
 
     // MARK: - Indexing
@@ -124,6 +127,11 @@ public actor VaultStore {
                 case .identity:
                     let rev = try RevisionFile.decode(IdentityRevision.self, from: data, vaultId: vaultId, scope: .identity, ownerId: f.ownerId, revisionId: f.revisionId, key: vk)
                     RevisionIndex.insert(rev, into: &identityRevisions[rev.identityId, default: []])
+                case .team:
+                    // A record a newer EnVault wrote in a shape this one can't read is skipped, not fatal.
+                    if let rev = try? RevisionFile.decode(TeamRecordRevision.self, from: data, vaultId: vaultId, scope: .team, ownerId: f.ownerId, revisionId: f.revisionId, key: vk) {
+                        RevisionIndex.insert(rev, into: &teamRevisions[rev.record.vaultId, default: []])
+                    }
                 }
                 index.indexedPaths.insert(f.path.string)
             }
@@ -142,6 +150,8 @@ public actor VaultStore {
     public func item(_ id: UUID) -> Item? { index.item(id) }
     /// All revisions of an item, newest first.
     public func history(of itemId: UUID) -> [ItemRevision] { index.history(of: itemId) }
+    /// A project's revisions and its live items', oldest first (`TeamVaultStore.importProject`).
+    public func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) { try index.export(projectId) }
 
     // MARK: - Identity (Team, FR-1)
 
@@ -172,6 +182,31 @@ public actor VaultStore {
         rev.name = name
         try await write(rev)
         return try rev.identity()
+    }
+
+    // MARK: - Team vaults (FR-4)
+
+    /// The team vaults this person belongs to, as remembered on any of their Macs.
+    public func teams() -> [TeamRecord] {
+        teamRevisions.values.compactMap { $0.last?.record }.filter { !$0.left }.sorted { $0.joinedAt < $1.joinedAt }
+    }
+
+    /// The owner key this person first saw for a team vault, also after leaving it.
+    public func pinnedOwnerKey(for vaultId: UUID) -> Data? { teamRevisions[vaultId]?.first?.record.ownerKey }
+
+    /// Remembers a team vault (or an update to it, such as leaving). A record
+    /// already saved keeps its owner key: the pin never changes once set.
+    public func saveTeam(_ record: TeamRecord) async throws {
+        var record = record
+        if let pinned = teamRevisions[record.vaultId]?.first?.record.ownerKey { record.ownerKey = pinned }
+        guard teamRevisions[record.vaultId]?.last?.record != record else { return }
+        let rev = TeamRecordRevision(id: ULID(), record: record)
+        guard let vk = vaultKey else { throw VaultError.locked }
+        let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .team, ownerId: record.vaultId, revisionId: rev.id, key: vk)
+        let path = RevisionLayout.teamPath(vaultId: record.vaultId, revisionId: rev.id)
+        try await storage.writeNew(path, data: data)
+        RevisionIndex.insert(rev, into: &teamRevisions[record.vaultId, default: []])
+        index.indexedPaths.insert(path.string)
     }
 
     // MARK: - Writing

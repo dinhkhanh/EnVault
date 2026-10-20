@@ -99,9 +99,7 @@ struct VaultSettings: View {
                 }
                 Button("Close Vault…") { model.closeVault() }
             }
-            #if DEBUG
-            if model.phase == .unlocked { TeamIdentitySection() }
-            #endif
+            if TeamFeatures.enabled, model.phase == .unlocked { TeamIdentitySection() }
             Section("Recovery Key") {
                 Text(model.hasRecoveryKey ? "A recovery key exists. Generating a new one invalidates the old one." : "No recovery key. Without one, a forgotten passphrase means the vault is lost.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -316,8 +314,7 @@ struct CopyableCommand: View {
     }
 }
 
-#if DEBUG
-/// Team phase 1 (FR-1, FR-2). Debug builds only until Team ships.
+/// Team phase 1 (FR-1, FR-2). Shown while `TeamFeatures.enabled`.
 struct TeamIdentitySection: View {
     @Environment(AppModel.self) private var model
     @State private var name = NSFullUserName()
@@ -348,4 +345,3 @@ struct TeamIdentitySection: View {
         }
     }
 }
-#endif

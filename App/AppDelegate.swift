@@ -18,18 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .cloudKitPush, object: nil, userInfo: note.subscriptionID.map { ["subscriptionID": $0] })
     }
 
-    /// A vault share link opened from Mail, Messages or Safari (`CKSharingSupported`).
-    /// Only debug builds can join shared vaults so far (Team phase 0 spike).
+    /// A team vault share link opened from Mail, Messages or Safari (`CKSharingSupported`).
     func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
-        #if DEBUG
-        NotificationCenter.default.post(name: .showTeamSpike, object: nil)
-        TeamSpikeModel.shared.accept(metadata)
-        #else
-        let alert = NSAlert()
-        alert.messageText = "Shared vaults aren't available yet"
-        alert.informativeText = "This link opens a vault someone shared with you. Team sharing comes in a later version of EnVault."
-        alert.runModal()
-        #endif
+        guard TeamFeatures.enabled else {
+            let alert = NSAlert()
+            alert.messageText = "Shared vaults aren't available yet"
+            alert.informativeText = "This link opens a vault someone shared with you. Team sharing comes in a later version of EnVault."
+            alert.runModal()
+            return
+        }
+        MainActor.assumeIsolated { ShareInbox.shared.receive(metadata) }
     }
 
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
@@ -39,6 +37,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension Notification.Name {
     static let cloudKitPush = Notification.Name("envault.cloudKitPush")
-    /// Debug only: a share link was opened, so bring up the Team Spike window to show the result.
-    static let showTeamSpike = Notification.Name("envault.showTeamSpike")
 }

@@ -5,7 +5,11 @@ import Foundation
 public struct CloudFile: Hashable, Sendable {
     public var path: String
     public var data: Data
-    public init(path: String, data: Data) { self.path = path; self.data = data }
+    /// Who uploaded the file, as the server recorded it (CloudKit's creator
+    /// user record name), when that is also who last changed it. Set on
+    /// downloads only; nobody can claim it for someone else.
+    public var creator: String?
+    public init(path: String, data: Data, creator: String? = nil) { self.path = path; self.data = data; self.creator = creator }
 }
 
 public struct CloudChanges: Sendable {
@@ -50,7 +54,7 @@ public protocol CloudVaultTransport: Sendable {
 /// In-memory transport: an append-only event log per vault, so change tokens
 /// are just positions in the log. Mirrors exactly how the mirror sees CloudKit.
 public actor MemoryCloudTransport: CloudVaultTransport {
-    private struct Event { let seq: Int; let path: String; let data: Data? }
+    private struct Event { let seq: Int; let path: String; let data: Data?; var creator: String? = nil }
     private var logs: [UUID: [Event]] = [:]
     private var seq = 0
     public var subscribed: Set<UUID> = []
@@ -75,9 +79,13 @@ public actor MemoryCloudTransport: CloudVaultTransport {
         for f in files {
             if existing[f.path] != nil, !overwrite { continue }
             seq += 1
-            logs[vaultId]!.append(Event(seq: seq, path: f.path, data: f.data))
+            logs[vaultId]!.append(Event(seq: seq, path: f.path, data: f.data, creator: user))
         }
     }
+
+    /// Tests: the account uploads are recorded as coming from.
+    public var user: String?
+    public func signIn(as user: String?) { self.user = user }
 
     public func delete(paths: [String], vaultId: UUID) async throws {
         for p in paths {
@@ -93,7 +101,7 @@ public actor MemoryCloudTransport: CloudVaultTransport {
         // Collapse to the latest state per path within the batch, like CloudKit does.
         var latest: [String: Event] = [:]
         for e in events { latest[e.path] = e }
-        let files = latest.values.filter { $0.data != nil }.sorted { $0.seq < $1.seq }.map { CloudFile(path: $0.path, data: $0.data!) }
+        let files = latest.values.filter { $0.data != nil }.sorted { $0.seq < $1.seq }.map { CloudFile(path: $0.path, data: $0.data!, creator: $0.creator) }
         let deleted = latest.values.filter { $0.data == nil }.map(\.path)
         let newSeq = log.last?.seq ?? since
         return CloudChanges(files: files, deletedPaths: deleted, token: Data(String(newSeq).utf8), moreComing: false)

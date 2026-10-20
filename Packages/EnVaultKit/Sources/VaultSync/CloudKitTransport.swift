@@ -146,10 +146,13 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
                 guard case .success(let mod) = res else { continue }
                 let rec = mod.record
                 guard let path = rec["path"] as? String else { continue }
+                // The server's record of who uploaded it, trusted only if nobody else changed it since.
+                let creator = rec.creatorUserRecordID?.recordName
+                let author = creator != nil && creator == rec.lastModifiedUserRecordID?.recordName ? creator : nil
                 if let d = rec["data"] as? Data {
-                    files.append(CloudFile(path: path, data: d))
+                    files.append(CloudFile(path: path, data: d, creator: author))
                 } else if let a = rec["asset"] as? CKAsset, let u = a.fileURL, let d = try? Data(contentsOf: u) {
-                    files.append(CloudFile(path: path, data: d))
+                    files.append(CloudFile(path: path, data: d, creator: author))
                 }
             }
             let deleted = r.deletions.map { $0.recordID.recordName.replacingOccurrences(of: "|", with: "/") }

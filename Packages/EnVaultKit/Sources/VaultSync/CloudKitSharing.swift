@@ -21,6 +21,11 @@ public struct VaultShareParticipant: Hashable, Sendable {
 
     public var displayName: String { name ?? email ?? userRecordName ?? "unknown participant" }
 
+    public init(name: String? = nil, email: String? = nil, userRecordName: String? = nil, isOwner: Bool = false, canWrite: Bool = false, status: Status = .unknown) {
+        self.name = name; self.email = email; self.userRecordName = userRecordName
+        self.isOwner = isOwner; self.canWrite = canWrite; self.status = status
+    }
+
     /// The same person on a freshly fetched share. The user record id is stable;
     /// the lookup email can be missing after acceptance or differ in case.
     func matches(_ p: CKShare.Participant) -> Bool {

@@ -1,0 +1,316 @@
+import SwiftUI
+import VaultCore
+
+extension TeamRole {
+    var title: String {
+        switch self { case .owner: "Owner"; case .admin: "Admin"; case .member: "Member"; case .viewer: "Viewer" }
+    }
+    /// Roles an owner or admin can give.
+    static let assignable: [TeamRole] = [.admin, .member, .viewer]
+}
+
+/// Shown under the vault switcher when a team vault is selected: where this
+/// person stands, and the way to its people.
+struct TeamVaultBar: View {
+    @Environment(AppModel.self) private var model
+    let session: VaultSession
+    @State private var showMembers = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.2").foregroundStyle(.secondary)
+            Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            Button {
+                showMembers = true
+            } label: {
+                if let n = session.team?.pending.count, n > 0, session.team?.canManage == true {
+                    Text("Members (\(n) waiting)")
+                } else {
+                    Text("Members")
+                }
+            }
+            .buttonStyle(.link).font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .sheet(isPresented: $showMembers) { TeamMembersView(session: session) }
+    }
+
+    private var status: String {
+        guard let team = session.team else { return "Team vault" }
+        switch team.access {
+        case .locked: return "Locked"
+        case .notMember: return team.hasRequestedToJoin ? "Waiting for approval" : "Not a member"
+        case .awaitingKey: return "Approved, waiting for the key"
+        case .removed: return "You were removed"
+        case .member(let role): return team.needsRotation ? "Saving paused: key rotation pending" : role.title
+        }
+    }
+}
+
+/// A team vault's people (FR-6 to FR-12): this person's access, the members
+/// and their roles, join requests to approve, and invites.
+struct TeamMembersView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let session: VaultSession
+    @State private var approving: PendingMember?
+    @State private var removing: TeamMember?
+    @State private var leaving = false
+    @State private var inviteEmail = ""
+    @State private var inviteLink: URL?
+    @State private var inviting = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                if let team = session.team {
+                    statusSection(team)
+                    if team.canManage, !team.lateEvents.isEmpty { lateSection(team) }
+                    if team.canManage, !team.pending.isEmpty {
+                        Section("Asking to Join") { ForEach(team.pending) { pendingRow($0) } }
+                    }
+                    Section("Members") { ForEach(team.members) { memberRow($0, team: team) } }
+                    if team.role == .owner, model.teamVaultsAvailable { inviteSection }
+                    Section {
+                        Button("Leave This Team Vault…", role: .destructive) { leaving = true }
+                            .disabled(team.role == .owner)
+                    } footer: {
+                        if team.role == .owner { Text("The owner can't leave. Ownership transfer comes later.").font(.caption) }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                if let e = model.errorMessage { Text(e).font(.callout).foregroundStyle(.red).lineLimit(2) }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 540, height: 600)
+        .sheet(item: $approving) { ApproveMemberSheet(session: session, pending: $0) }
+        .confirmationDialog("Remove \(removing?.name ?? "this member")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { m in
+            Button("Remove", role: .destructive) { Task { await model.remove(m.id, from: session) } }
+        } message: { _ in
+            Text("They lose access to anything saved from now on; the team key is rotated. What they already synced stays on their Macs, so rotate the secrets they could read.")
+        }
+        .confirmationDialog("Leave “\(session.name)”?", isPresented: $leaving) {
+            Button("Leave", role: .destructive) { Task { await model.leave(session); dismiss() } }
+        } message: {
+            Text("This Mac's copy is deleted. An admin has to approve you again to come back.")
+        }
+    }
+
+    @ViewBuilder private func statusSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        switch team.access {
+        case .notMember, .removed:
+            Section("Your Access") {
+                Text(team.access == .removed ? "You were removed from this vault." : team.hasRequestedToJoin
+                     ? "You asked to join. An owner or admin approves you after comparing this safety code with you:"
+                     : "You are not a member of this vault.")
+                if team.hasRequestedToJoin, let code = model.identity?.safetyCode {
+                    Text(code).font(.title3.monospaced()).textSelection(.enabled)
+                }
+            }
+        case .awaitingKey:
+            Section("Your Access") { Text("You're approved. The team key arrives when an admin's Mac syncs.") }
+        case .member(let role):
+            if team.needsRotation {
+                Section("Your Access") {
+                    Text("Someone left or was removed, and the team key hasn't been rotated yet. Saving is paused until an admin's Mac syncs.")
+                }
+            } else if role == .viewer {
+                Section("Your Access") { Text("You can read this vault but not change it.") }
+            }
+        case .locked:
+            EmptyView()
+        }
+    }
+
+    private func lateSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        Section("Review") {
+            Text("\(team.lateEvents.count) membership change\(team.lateEvents.count == 1 ? "" : "s") arrived after newer ones. That happens when an admin was offline, but check the member list is what you expect.")
+            Button("Looks Right") { Task { await model.dismissLateEvents(in: session) } }
+        }
+    }
+
+    private func pendingRow(_ p: PendingMember) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(p.name ?? "Name not shared with you")
+                Text("Asked \(p.requestedAt, style: .relative) ago").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Approve…") { approving = p }
+        }
+    }
+
+    private func memberRow(_ m: TeamMember, team: VaultSession.TeamSnapshot) -> some View {
+        let isMe = m.safetyCode == model.identity?.safetyCode
+        return HStack {
+            VStack(alignment: .leading) {
+                Text((m.name ?? "Unnamed") + (isMe ? " (you)" : ""))
+                Text(m.safetyCode).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                if team.canManage, model.offShare[session.vaultId]?.contains(m.id) == true {
+                    Text("Left the iCloud share; remove them to finish").font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+            if team.canManage, m.role != .owner, !isMe {
+                Picker("Role", selection: Binding(get: { m.role }, set: { r in Task { await model.setRole(of: m.id, to: r, in: session) } })) {
+                    ForEach(TeamRole.assignable, id: \.self) { Text($0.title).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+                Button(role: .destructive) { removing = m } label: { Image(systemName: "person.badge.minus") }
+                    .buttonStyle(.borderless).help("Remove from the vault")
+            } else {
+                Text(m.role.title).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var inviteSection: some View {
+        Section {
+            HStack {
+                TextField("Apple ID email", text: $inviteEmail).textContentType(.emailAddress)
+                Button("Invite") {
+                    inviting = true
+                    Task {
+                        inviteLink = await model.invite(email: inviteEmail.trimmingCharacters(in: .whitespaces), to: session)
+                        if inviteLink != nil { inviteEmail = "" }
+                        inviting = false
+                    }
+                }
+                .disabled(inviting || !inviteEmail.contains("@"))
+            }
+            if let inviteLink {
+                HStack {
+                    Text(inviteLink.absoluteString).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    Spacer()
+                    Button("Copy Link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(inviteLink.absoluteString, forType: .string)
+                    }
+                }
+            }
+        } header: {
+            Text("Invite")
+        } footer: {
+            Text("Send them the link. When they open it in EnVault they ask to join, and you approve them here after comparing safety codes and choosing their role.")
+                .font(.caption)
+        }
+    }
+}
+
+/// Approving a join request (FR-8): the safety codes are compared first.
+struct ApproveMemberSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let session: VaultSession
+    let pending: PendingMember
+    @State private var name = ""
+    @State private var role: TeamRole = .member
+    @State private var codesMatch = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Approve \(pending.name ?? "this person")").font(.headline)
+            Text("Ask them to read the safety code shown in their EnVault, on a call or in person. Approve only if it matches:")
+                .font(.callout).foregroundStyle(.secondary)
+            Text(pending.safetyCode).font(.title2.monospaced()).textSelection(.enabled)
+            Toggle("They read me the same code", isOn: $codesMatch)
+            Form {
+                TextField("Name in this vault", text: $name)
+                Picker("Role", selection: $role) { ForEach(TeamRole.assignable, id: \.self) { Text($0.title).tag($0) } }
+            }
+            .formStyle(.columns)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Approve") {
+                    Task { await model.approve(pending, name: name.trimmingCharacters(in: .whitespaces), role: role, in: session) }
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!codesMatch || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20).frame(width: 440)
+        .onAppear { name = pending.name ?? "" }
+    }
+}
+
+/// New team vault (FR-3). Also creates the Team identity on first use.
+struct NewTeamVaultSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var myName = NSFullUserName()
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New Team Vault").font(.headline)
+            Text("A vault you share with your team through iCloud. Everything in it is encrypted on your Macs; Apple sees only ciphertext.")
+                .font(.callout).foregroundStyle(.secondary)
+            TextField("Vault name (e.g. Acme)", text: $title).textFieldStyle(.roundedBorder)
+            if model.identity == nil {
+                TextField("Your name, as teammates see it", text: $myName).textFieldStyle(.roundedBorder)
+            }
+            if let e = model.errorMessage, working == false { Text(e).font(.callout).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Create") {
+                    working = true
+                    Task {
+                        if model.identity == nil { await model.createIdentity(name: myName.trimmingCharacters(in: .whitespaces)) }
+                        let ok = await model.createTeamVault(title: title.trimmingCharacters(in: .whitespaces))
+                        working = false
+                        if ok { dismiss() }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(working || title.trimmingCharacters(in: .whitespaces).isEmpty
+                          || (model.identity == nil && myName.trimmingCharacters(in: .whitespaces).isEmpty))
+            }
+        }
+        .padding(20).frame(width: 400)
+        .task {
+            model.errorMessage = nil
+            await model.loadIdentity()
+        }
+    }
+}
+
+/// A share link arrived before this person had a Team identity.
+struct JoinIdentitySheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var myName = NSFullUserName()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Join a Team Vault").font(.headline)
+            Text("Choose the name your teammates see. EnVault also creates the keys they share the vault with; they're kept, encrypted, in your own vault.")
+                .font(.callout).foregroundStyle(.secondary)
+            TextField("Your name", text: $myName).textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Not Now") { model.shareNeedsIdentity = false; dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Continue") {
+                    Task {
+                        await model.createIdentity(name: myName.trimmingCharacters(in: .whitespaces))
+                        model.shareNeedsIdentity = false
+                        if let share = ShareInbox.shared.take() { await model.acceptShare(share) }
+                    }
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(myName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20).frame(width: 400)
+    }
+}

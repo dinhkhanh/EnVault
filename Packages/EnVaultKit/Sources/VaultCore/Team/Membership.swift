@@ -111,6 +111,8 @@ public struct TeamState: Sendable {
     public private(set) var names: [UUID: SealedName] = [:]
     /// The vault's latest sealed display name.
     public private(set) var title: SealedName?
+    /// When each former member was last removed.
+    public private(set) var removedAt: [UUID: ULID] = [:]
     /// Events ignored, with the reason (shown in the membership log, FR-18/FR-19).
     public private(set) var rejected: [ULID: String] = [:]
     /// Per member, their role after each event that changed it (nil = removed), in order.
@@ -181,6 +183,7 @@ public struct TeamState: Sendable {
             guard target.role != .owner else { return "the owner cannot be removed" }
             guard by.canManage || member == e.author else { return "only an owner or admin removes others" }
             set(member, nil, at: e.id)
+            removedAt[member] = e.id
         case .rotate(let recipients, let commitment):
             guard by.canManage else { return "only an owner or admin rotates keys" }
             guard commitment.count == 32 else { return "bad key commitment" }

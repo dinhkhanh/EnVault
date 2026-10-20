@@ -99,3 +99,25 @@ private let mac2 = DeviceIdentity(id: UUID(), name: "Mac 2")
         #expect(code != SafetyCode.code(agreementKey: Data(repeating: 1, count: 32), signingKey: Data(repeating: 3, count: 32)))
     }
 }
+
+@Suite struct TeamRecordTests {
+    @Test func teamsFollowThePersonAndKeepTheirPin() async throws {
+        let storage = MemoryStorage()
+        let store = try await VaultStore.create(storage: storage, passphrase: "pw", device: mac1, kdf: fastKDF)
+        let vault = UUID()
+        let pin = Data(repeating: 1, count: 32)
+        try await store.saveTeam(TeamRecord(vaultId: vault, ownerKey: pin, zoneOwner: "_abc"))
+        try await store.saveTeam(TeamRecord(vaultId: vault, ownerKey: Data(repeating: 2, count: 32), zoneOwner: "_abc"))
+
+        let other = try await VaultStore.open(storage: storage, device: mac2)
+        try await other.unlock(passphrase: "pw")
+        let record = try #require(await other.teams().first)
+        #expect(record.vaultId == vault && record.ownerKey == pin && record.zoneOwner == "_abc")
+        #expect(await other.projects().isEmpty)
+
+        var left = record; left.left = true
+        try await other.saveTeam(left)
+        #expect(await other.teams().isEmpty)
+        #expect(await other.pinnedOwnerKey(for: vault) == pin)       // rejoining checks the same owner
+    }
+}

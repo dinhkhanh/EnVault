@@ -276,3 +276,112 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(took < .seconds(2), "unlock took \(took)")
     }
 }
+
+@Suite struct TeamJoiningTests {
+    let ada = person("Ada"), bob = person("Bob"), cyd = person("Cyd")
+
+    /// Ada owns the vault, Bob is an admin, Cyd a member; `eve` has a copy of the files and asks to join.
+    private func vault() async throws -> (TeamVaultStore, MemoryStorage) {
+        let storage = MemoryStorage()
+        let store = try await TeamVaultStore.create(storage: storage, owner: ada, title: "Acme", device: mac)
+        try await store.add(try bob.publicIdentity(), name: "Bob", role: .admin)
+        try await store.add(try cyd.publicIdentity(), name: "Cyd", role: .member)
+        return (store, storage)
+    }
+
+    @Test func aRequestReachesTheAdminsWithItsName() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve Example"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        let onEve = try await open(eveMac, as: eve)
+        #expect(await onEve.access == .notMember)
+        try await onEve.requestToJoin()
+        #expect(await onEve.hasRequestedToJoin)
+        await sync(storage, eveMac)
+
+        try await store.refresh()
+        let pending = try #require(await store.pendingMembers().first)
+        #expect(pending.identity.id == eve.id && pending.name == "Eve Example")
+        #expect(pending.safetyCode == eve.safetyCode)
+        #expect(try await open(storage, as: bob).pendingMembers().first?.name == "Eve Example")
+        #expect(try await open(storage, as: cyd).pendingMembers().first?.name == nil)    // not sealed to members
+        for (path, data) in await storage.allFiles() {
+            #expect(!String(decoding: data, as: UTF8.self).contains("Eve Example"), "name in \(path)")
+        }
+
+        try await store.add(pending.identity, name: pending.name!, role: .member)
+        #expect(await store.pendingMembers().isEmpty)
+        await sync(storage, eveMac)
+        try await onEve.refresh()
+        #expect(await onEve.access == .member(.member))
+        #expect(await onEve.hasRequestedToJoin == false)
+    }
+
+    @Test func aRequestBeforeARemovalNoLongerCounts() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        let onEve = try await open(eveMac, as: eve)
+        try await onEve.requestToJoin()
+        await sync(storage, eveMac)
+        try await store.refresh()
+        try await store.add(try #require(await store.pendingMembers().first).identity, name: "Eve", role: .member)
+        try await store.remove(eve.id)
+        #expect(await store.pendingMembers().isEmpty)
+
+        await sync(storage, eveMac)
+        try await onEve.refresh()
+        #expect(await onEve.access == .removed)
+        try await onEve.requestToJoin()
+        await sync(storage, eveMac)
+        try await store.refresh()
+        #expect(await store.pendingMembers().map(\.id) == [eve.id])
+    }
+
+    @Test func nobodyAsksOnSomeoneElsesBehalf() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve")
+        // Cyd signs a request carrying Eve's identity.
+        var forged = try JoinRequest.signed(by: cyd, managers: [], vaultId: store.vaultId)
+        forged.identity = try eve.publicIdentity().unnamed
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString, "\(forged.id.string).json"), data: try forged.encoded())
+        // A real request for another vault, replayed here.
+        let elsewhere = try JoinRequest.signed(by: eve, managers: [], vaultId: UUID())
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString, "\(elsewhere.id.string).json"), data: try elsewhere.encoded())
+        try await store.refresh()
+        #expect(await store.pendingMembers().isEmpty)
+        #expect(await store.rejectedFiles.keys.filter { $0.hasPrefix("identities/") }.count == 2)
+    }
+
+    @Test func onlyLeavingYourselfCountsAsALeave() async throws {
+        let (store, storage) = try await vault()
+        let onCyd = try await open(storage, as: cyd)
+        #expect(await onCyd.leaveEvent == nil)
+        try await onCyd.leave()
+        #expect(await onCyd.leaveEvent != nil)
+        #expect(await onCyd.access == .removed)
+        // Removed by an admin: not this person's own leave.
+        try await store.refresh()
+        try await store.remove(bob.id)
+        #expect(try await open(storage, as: bob).leaveEvent == nil)
+    }
+
+    @Test func aProjectMovesInWithItsHistory() async throws {
+        let personal = try await VaultStore.create(storage: MemoryStorage(), passphrase: "pw", device: mac,
+                                                   kdf: KDFParams(iterations: 1_000, salt: SecureRandom.bytes(32)))
+        let p = try await personal.createProject(name: "api")
+        let item = try await personal.createItem(in: p.id, name: ".env", payload: .envFile(text: "A=1"))
+        try await personal.updateItem(item.id, payload: .envFile(text: "A=2"))
+        try await personal.createItem(in: p.id, name: "gone", payload: .envFile(text: "B=1"))
+        try await personal.deleteItem(try #require(await personal.items(in: p.id).first { $0.name == "gone" }).id)
+
+        let (store, _) = try await vault()
+        let exported = try await personal.export(p.id)
+        let id = try await store.importProject(exported.history, items: exported.items)
+        let copied = try #require(await store.items(in: id).first)
+        #expect(await store.items(in: id).count == 1)
+        #expect(copied.payload == .envFile(text: "A=2") && copied.createdAt == item.createdAt)
+        #expect(await store.history(of: copied.id).map(\.payload) == [.envFile(text: "A=2"), .envFile(text: "A=1")])
+        #expect(await store.author(of: copied.revisionId) == ada.id)
+    }
+}
