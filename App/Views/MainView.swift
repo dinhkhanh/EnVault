@@ -7,6 +7,7 @@ struct MainView: View {
     @State private var showNewProject = false
     @State private var showNewItem = false
     @State private var showImportProjects = false
+    @State private var showNewTeamVault = false
 
     var body: some View {
         @Bindable var model = model
@@ -49,10 +50,15 @@ struct MainView: View {
         .sheet(isPresented: $showImportProjects) { ImportProjectsSheet() }
         .sheet(item: Binding(get: { model.pendingVaultImport }, set: { if $0 == nil { model.pendingVaultImport = nil } })) { VaultImportSheet(pending: $0) }
         .onReceive(NotificationCenter.default.publisher(for: .importProjects)) { _ in showImportProjects = true }
+        .sheet(isPresented: $showNewTeamVault) { NewTeamVaultSheet() }
+        .sheet(isPresented: $model.shareNeedsIdentity) { JoinIdentitySheet() }
+        .onReceive(NotificationCenter.default.publisher(for: .newTeamVault)) { _ in
+            if model.teamVaultsAvailable, licenses.require(.teamSharing) { showNewTeamVault = true }
+        }
         .sheet(isPresented: $showNewItem) {
             if let pid = model.selectedProjectId { NewItemSheet(projectId: pid) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .newProject)) { _ in if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+        .onReceive(NotificationCenter.default.publisher(for: .newProject)) { _ in if licenses.canAddProject(existing: model.projectsTowardLimit) { showNewProject = true } }
         .onReceive(NotificationCenter.default.publisher(for: .newItem)) { _ in if model.selectedProjectId != nil { showNewItem = true } }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -76,7 +82,7 @@ struct MainView: View {
                 Text("Point EnVault at the folder that holds your projects. It finds the .env files in each one and imports them, one project per folder.")
             } actions: {
                 Button("Import Projects from Folder…") { showImportProjects = true }.buttonStyle(.borderedProminent)
-                Button("New Empty Project") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+                Button("New Empty Project") { if licenses.canAddProject(existing: model.projectsTowardLimit) { showNewProject = true } }
             }
         } else {
             ContentUnavailableView("No Project", systemImage: "folder", description: Text("Select a project in the sidebar, or create one to start storing env files."))

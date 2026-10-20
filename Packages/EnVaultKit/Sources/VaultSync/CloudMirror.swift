@@ -14,6 +14,8 @@ struct CloudMirrorState: Codable {
     var uploaded: Set<String> = []
     var headerHash: String?
     var lastSync: Date?
+    /// Who uploaded each join request (`identities/…`), as the server recorded it.
+    var creators: [String: String]? = nil
 }
 
 /// Which relative paths a vault syncs. Shared zones let other Apple IDs write
@@ -93,6 +95,13 @@ public actor CloudMirror {
         }
     }
 
+    /// The CloudKit user who uploaded a join request, as the server recorded
+    /// it when this Mac downloaded it. Nil for files this Mac wrote itself.
+    public func creator(of path: String) -> String? { state.creators?[path] }
+
+    /// Whether a local file has reached the cloud (uploaded here, or downloaded from it).
+    public func isUploaded(_ path: String) -> Bool { state.uploaded.contains(path) }
+
     @discardableResult
     public func pull() async throws -> Int {
         var written = 0
@@ -124,13 +133,24 @@ public actor CloudMirror {
                     // Our own upload echoing back has the same hash and is skipped.
                     let h = Self.hash(f.data)
                     var known = state.headerHash
-                    if known == nil, let local = try? await storage.read(path) { known = Self.hash(local) }
+                    let local = try? await storage.read(path)
+                    if known == nil, let local { known = Self.hash(local) }
+                    // A team vault's header is written once and never replaced: a
+                    // different one in the zone is someone's swap. Keep ours; the
+                    // next push puts it back.
+                    if h != known, let local, (try? JSONDecoder().decode(HeaderIdentity.self, from: local))?.kind == "team" {
+                        state.headerHash = h
+                        continue
+                    }
                     if h != known {
                         try await storage.writeReplace(path, data: f.data)
                         written += 1
                     }
                     state.headerHash = h
                     continue
+                }
+                if f.path.hasPrefix("identities/"), let c = f.creator, state.creators?[f.path] == nil {
+                    state.creators = (state.creators ?? [:]).merging([f.path: c]) { a, _ in a }
                 }
                 // Echo of our own upload (possibly compacted away since): ignore.
                 if state.uploaded.contains(f.path) { continue }
@@ -225,7 +245,10 @@ public actor CloudMirror {
 }
 
 /// Just enough of a header to see which vault it belongs to.
-private struct HeaderIdentity: Decodable { var vaultId: UUID }
+private struct HeaderIdentity: Decodable {
+    var vaultId: UUID
+    var kind: String?
+}
 
 extension Array {
     func chunked(_ size: Int) -> [[Element]] {

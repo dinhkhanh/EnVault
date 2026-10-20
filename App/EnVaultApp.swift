@@ -30,12 +30,10 @@ struct EnVaultApp: App {
                     QuickCopyPanelController.shared.openMain = { openWindow(id: "main"); NSApp.activate() }
                 }
                 // Pushes for vaults shared with this account don't concern the vault open here.
+                // Pushes for the private database (own vaults) and, with team vaults on, the shared one.
                 .onReceive(NotificationCenter.default.publisher(for: .cloudKitPush)) { note in
-                    if note.userInfo?["subscriptionID"] as? String != "envault-shared" { model.remotePushReceived() }
+                    if TeamFeatures.enabled || note.userInfo?["subscriptionID"] as? String != "envault-shared" { model.remotePushReceived() }
                 }
-                #if DEBUG
-                .onReceive(NotificationCenter.default.publisher(for: .showTeamSpike)) { _ in openWindow(id: "team-spike") }
-                #endif
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.appActivated() }
         }
         .defaultSize(width: 1100, height: 700)
@@ -71,6 +69,11 @@ struct EnVaultApp: App {
                     if let u = model.vaultURL { NSWorkspace.shared.activateFileViewerSelecting([u]) }
                 }
                 .disabled(model.vaultURL == nil)
+                if TeamFeatures.enabled {
+                    Divider()
+                    Button("New Team Vault…") { NotificationCenter.default.post(name: .newTeamVault, object: nil) }
+                        .disabled(model.phase != .unlocked || !model.teamVaultsAvailable)
+                }
                 #if DEBUG
                 Divider()
                 Button("Team Spike…") { openWindow(id: "team-spike") }
@@ -108,4 +111,5 @@ extension Notification.Name {
     static let newProject = Notification.Name("envault.newProject")
     static let newItem = Notification.Name("envault.newItem")
     static let importProjects = Notification.Name("envault.importProjects")
+    static let newTeamVault = Notification.Name("envault.newTeamVault")
 }

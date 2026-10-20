@@ -41,6 +41,7 @@ public struct TeamRepair: Equatable, Sendable {
 /// members/<ulid>.json                MembershipEvent
 /// keys/<epoch>/<memberId>.json       KeyWrap
 /// keys/<epoch>/prev-<epoch>.json     KeyLink
+/// identities/<memberId>/<ulid>.json  JoinRequest
 /// projects/<projectId>/…/<ulid>.evr  TeamRevisionFile, laid out as in a personal vault
 /// ```
 /// Unlocking takes the person's identity from their personal vault. Files
@@ -65,6 +66,9 @@ public actor TeamVaultStore {
     private var indexedEvents: Set<ULID>?
     /// Revisions sealed under an epoch whose key this Mac does not hold yet.
     private var waitingForKey: [String: ULID] = [:]
+    /// Each requester's newest valid join request.
+    private var requests: [UUID: JoinRequest] = [:]
+    private var requestPaths: Set<String> = []
     /// Paths ignored, with the reason.
     public private(set) var rejectedFiles: [String: String] = [:]
     /// Membership changes that arrived after newer ones were already applied.
@@ -74,6 +78,7 @@ public actor TeamVaultStore {
 
     static let membersDir = VaultPath("members")
     static let keysDir = VaultPath("keys")
+    static let requestsDir = VaultPath("identities")
 
     private init(storage: VaultStorage, header: TeamHeader, device: DeviceIdentity) {
         self.storage = storage
@@ -86,10 +91,10 @@ public actor TeamVaultStore {
 
     /// Creates a team vault at an empty location, owned by `owner`, and
     /// returns it unlocked with its first key epoch (FR-3).
-    public static func create(storage: VaultStorage, owner: UserIdentity, title: String, device: DeviceIdentity = .current()) async throws -> TeamVaultStore {
+    public static func create(storage: VaultStorage, owner: UserIdentity, title: String, vaultId: UUID = UUID(), device: DeviceIdentity = .current()) async throws -> TeamVaultStore {
         let path = VaultPath(VaultHeader.fileName)
         if try await storage.exists(path) { throw VaultError.vaultAlreadyExists }
-        let header = try TeamHeader.create(owner: owner)
+        let header = try TeamHeader.create(owner: owner, vaultId: vaultId)
         try await storage.writeNew(path, data: try header.encoded())
         let store = TeamVaultStore(storage: storage, header: header, device: device)
         try await store.unlock(identity: owner)
@@ -133,6 +138,8 @@ public actor TeamVaultStore {
         authors = [:]
         indexedEvents = nil
         waitingForKey = [:]
+        requests = [:]
+        requestPaths = []
         rejectedFiles = [:]
         lateEvents = []
     }
@@ -164,7 +171,34 @@ public actor TeamVaultStore {
         let membership = try await loadEvents()
         let gotKeys = try await loadKeys(for: me)
         let revisions = try await loadRevisions()
-        return membership || gotKeys || revisions
+        let asked = try await loadRequests()
+        return membership || gotKeys || revisions || asked
+    }
+
+    private func loadRequests() async throws -> Bool {
+        var fresh: [(VaultPath, UUID)] = []
+        for dir in try await storage.list(Self.requestsDir) {
+            guard let member = UUID(uuidString: dir) else { continue }
+            for file in try await storage.list(Self.requestsDir.appending(dir)) where file.hasSuffix(".json") {
+                let path = Self.requestsDir.appending(dir).appending(file)
+                guard !requestPaths.contains(path.string), rejectedFiles[path.string] == nil else { continue }
+                fresh.append((path, member))
+            }
+        }
+        guard !fresh.isEmpty else { return false }
+        var changed = false
+        for ((path, member), data) in zip(fresh, try await storage.readMany(fresh.map(\.0))) {
+            guard let r = try? JoinRequest.decode(data), r.identity.id == member, path.lastComponent == "\(r.id.string).json",
+                  r.isValid(vaultId: vaultId) else {
+                rejectedFiles[path.string] = "invalid join request"
+                continue
+            }
+            requestPaths.insert(path.string)
+            if let old = requests[member], old.id > r.id { continue }
+            requests[member] = r
+            changed = true
+        }
+        return changed
     }
 
     private func loadEvents() async throws -> Bool {
@@ -285,8 +319,8 @@ public actor TeamVaultStore {
                         guard rev.id == f.revisionId, rev.itemId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
                         index.insert(rev)
                         authors[rev.id] = author
-                    case .identity:
-                        throw VaultError.corruptRevision("identities do not live in a team vault")
+                    case .identity, .team:
+                        throw VaultError.corruptRevision("only a personal vault holds this")
                     }
                     index.indexedPaths.insert(path)
                     changed = true
@@ -307,6 +341,7 @@ public actor TeamVaultStore {
     public func item(_ id: UUID) -> Item? { index.item(id) }
     /// All revisions of an item, newest first.
     public func history(of itemId: UUID) -> [ItemRevision] { index.history(of: itemId) }
+    public func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) { try index.export(projectId) }
     /// Who wrote a revision (FR-19).
     public func author(of revision: ULID) -> UUID? { authors[revision] }
 
@@ -419,6 +454,71 @@ public actor TeamVaultStore {
         authors[rev.id] = w.me.id
     }
 
+    // MARK: - Joining (FR-7, FR-8)
+
+    /// Asks to join: writes a signed request with this person's name sealed to
+    /// the vault's current owner and admins. Safe to repeat; the newest counts.
+    public func requestToJoin() async throws {
+        guard let me else { throw VaultError.locked }
+        guard state.role(of: me.id) == nil else { return }
+        let managers = state.members.values.filter { $0.role.canManage }.map(\.identity)
+        let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId)
+        let path = Self.requestsDir.appending(me.id.uuidString).appending("\(r.id.string).json")
+        try await storage.writeNew(path, data: try r.encoded())
+        requests[me.id] = r
+        requestPaths.insert(path.string)
+    }
+
+    /// Join requests from people who are not members, newest first. A request
+    /// made before the person was last removed no longer counts.
+    public func pendingMembers() -> [PendingMember] {
+        requests.values.compactMap { r -> PendingMember? in
+            let id = r.identity.id
+            guard state.members[id] == nil else { return nil }
+            if let removed = state.removedAt[id], r.id < removed { return nil }
+            return PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
+        }
+        .sorted { $0.request > $1.request }
+    }
+
+    /// A person's newest join request and where it is stored, so the owner's
+    /// Mac can look up who uploaded it and match them to their share participant (FR-12).
+    public func joinRequest(of member: UUID) -> (id: ULID, path: String)? {
+        guard let r = requests[member] else { return nil }
+        return (r.id, Self.requestsDir.appending(member.uuidString).appending("\(r.id.string).json").string)
+    }
+
+    /// Whether this person has a request waiting.
+    public var hasRequestedToJoin: Bool {
+        guard let me, let r = requests[me.id] else { return false }
+        if let removed = state.removedAt[me.id], r.id < removed { return false }
+        return state.members[me.id] == nil
+    }
+
+    // MARK: - Copying projects in (FR-5)
+
+    /// Copies a project and its items, every revision in order, into this
+    /// vault. Revisions get new ids (they are signed by the person copying, who
+    /// could not have written here back then); their dates and contents stay.
+    /// Returns the new project's id.
+    @discardableResult
+    public func importProject(_ history: [ProjectRevision], items: [[ItemRevision]]) async throws -> UUID {
+        _ = try writer()
+        let projectId = UUID()
+        for var rev in history {
+            rev.id = ULID(); rev.projectId = projectId; rev.device = device
+            try await write(rev)
+        }
+        for revs in items {
+            let itemId = UUID()
+            for var rev in revs {
+                rev.id = ULID(); rev.itemId = itemId; rev.projectId = projectId; rev.device = device
+                try await write(rev)
+            }
+        }
+        return projectId
+    }
+
     // MARK: - Membership
 
     /// Approves someone who asked to join (FR-8): the add event, a copy of the
@@ -447,6 +547,12 @@ public actor TeamVaultStore {
     public func leave() async throws {
         guard let me else { throw VaultError.locked }
         try await record(.remove(member: me.id))
+    }
+
+    /// This person's own removal of themselves, if they left (on any Mac).
+    public var leaveEvent: ULID? {
+        guard let me, let id = state.removedAt[me.id], events[id]?.author == me.id else { return nil }
+        return id
     }
 
     /// Sets this person's own name in the vault.

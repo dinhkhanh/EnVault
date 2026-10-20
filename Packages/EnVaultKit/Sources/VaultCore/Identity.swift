@@ -102,7 +102,8 @@ struct IdentityRevision: Codable, Sendable, Identifiable {
 }
 
 public enum IdentityLayout {
-    /// The identity lives under `projects/<namespace>/identity/<identityId>/<ulid>.evr`.
+    /// The identity lives under `projects/<namespace>/identity/<identityId>/<ulid>.evr`,
+    /// the team vaults this person belongs to under `projects/<namespace>/teams/<vaultId>/`.
     /// Inside `projects/` on purpose: releases up to 0.7.1 sync only `projects/**/*.evr`
     /// and delete anything else they pulled, while their `VaultStore` reads only
     /// `meta/` and `items/` and so never shows this folder as a project.

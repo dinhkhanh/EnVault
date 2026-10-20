@@ -8,7 +8,7 @@ public enum RevisionFile {
     public static let fileExtension = "evr"
     static let magic = Data("EVR1".utf8)
 
-    public enum Scope: String, Sendable { case project, item, identity }
+    public enum Scope: String, Sendable { case project, item, identity, team }
 
     // "evault-rev" is the format label from before the rename; changing it breaks every vault.
     static func aad(vaultId: UUID, scope: Scope, ownerId: UUID, revisionId: ULID) -> Data {

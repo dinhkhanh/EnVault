@@ -61,23 +61,26 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .top) {
-            // Only with more than one open vault (team vaults from phase 2; debug: Vault › Attach Another Vault…).
+            // Only with more than one open vault (team vaults; debug: Vault › Attach Another Vault…).
             if model.sessions.count > 1 {
-                Picker("Vault", selection: vaultSelection) {
-                    ForEach(model.sessions, id: \.vaultId) { s in Text(s.name).tag(Optional(s.vaultId)) }
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker("Vault", selection: vaultSelection) {
+                        ForEach(model.sessions, id: \.vaultId) { s in Text(s.name).tag(Optional(s.vaultId)) }
+                    }
+                    .labelsHidden()
+                    .padding(.horizontal, 10)
+                    if let s = model.session, s.isTeam { TeamVaultBar(session: s) }
                 }
-                .labelsHidden()
-                .padding(.horizontal, 10)
                 .padding(.top, 6)
             }
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Menu {
-                    Button("New Project…") { if licenses.canAddProject(existing: model.projects.count) { showNewProject = true } }
+                    Button("New Project…") { if licenses.canAddProject(existing: model.projectsTowardLimit) { showNewProject = true } }
                     Button("Import Projects from Folder…") { NotificationCenter.default.post(name: .importProjects, object: nil) }
                 } label: { Label("New Project", systemImage: "plus") } primaryAction: {
-                    if licenses.canAddProject(existing: model.projects.count) { showNewProject = true }
+                    if licenses.canAddProject(existing: model.projectsTowardLimit) { showNewProject = true }
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 Spacer()
@@ -105,6 +108,11 @@ struct ProjectRow: View {
     let onRename: () -> Void
     let onDelete: () -> Void
 
+    /// Team vaults this person can write to, other than the one shown (FR-5).
+    private var targets: [VaultSession] {
+        model.sessions.filter { $0.isTeam && $0 !== model.session && $0.team?.canWrite == true }
+    }
+
     var body: some View {
         HStack {
             Label(project.name, systemImage: "folder")
@@ -113,6 +121,14 @@ struct ProjectRow: View {
         }
         .contextMenu {
             Button("Rename…", action: onRename)
+            if !targets.isEmpty {
+                Menu("Copy to Team Vault") {
+                    ForEach(targets, id: \.vaultId) { t in Button(t.name) { Task { await model.copyProject(project.id, to: t, move: false) } } }
+                }
+                Menu("Move to Team Vault") {
+                    ForEach(targets, id: \.vaultId) { t in Button(t.name) { Task { await model.copyProject(project.id, to: t, move: true) } } }
+                }
+            }
             Button("Delete Project…", role: .destructive, action: onDelete)
         }
         .dropDestination(for: URL.self) { urls, _ in

@@ -8,12 +8,37 @@ import VaultSync
 @MainActor
 @Observable
 final class VaultSession {
-    let store: VaultStore
+    let store: any VaultContent
     let url: URL
     let vaultId: UUID
     let mode: AppModel.SyncMode
-    /// Shown in the sidebar's vault switcher.
-    let name: String
+    /// Shown in the sidebar's vault switcher; a team vault's title once read.
+    private(set) var name: String
+
+    /// The personal vault's store (nil for a team vault).
+    var personalStore: VaultStore? { store as? VaultStore }
+    var teamStore: TeamVaultStore? { store as? TeamVaultStore }
+    var isTeam: Bool { teamStore != nil }
+
+    /// What a team vault's views show about its people (nil for the personal vault).
+    struct TeamSnapshot: Equatable {
+        var access: TeamAccess
+        var members: [TeamMember]
+        var pending: [PendingMember]
+        var hasRequestedToJoin: Bool
+        var lateEvents: Set<ULID>
+        var needsRotation: Bool
+        var role: TeamRole? {
+            switch access { case .member(let r), .awaitingKey(let r): r; default: nil }
+        }
+        var canManage: Bool { role?.canManage == true }
+        var canWrite: Bool { if case .member(let r) = access { r.canWrite && !needsRotation } else { false } }
+    }
+    private(set) var team: TeamSnapshot?
+    /// Where this Mac keeps the membership events it has applied (team vaults).
+    @ObservationIgnored var seenURL: URL?
+    /// After a team vault synced: the owner's Mac keeps the CloudKit share in step.
+    @ObservationIgnored var didSyncTeam: (VaultSession) async -> Void = { _ in }
 
     private(set) var projects: [Project] = []
     private(set) var items: [Item] = []
@@ -33,7 +58,7 @@ final class VaultSession {
     @ObservationIgnored private var cloudTimer: Task<Void, Never>?
     @ObservationIgnored private var pushDebounce: Task<Void, Never>?
 
-    init(store: VaultStore, url: URL, vaultId: UUID, mode: AppModel.SyncMode, name: String) {
+    init(store: any VaultContent, url: URL, vaultId: UUID, mode: AppModel.SyncMode, name: String) {
         self.store = store
         self.url = url
         self.vaultId = vaultId
@@ -50,15 +75,35 @@ final class VaultSession {
     // MARK: - Index
 
     func reload() async {
-        projects = await store.projects()
+        projects = await store.projects(includeDeleted: false)
         items = await store.allItems()
+        if let t = teamStore { await reloadTeam(t) }
         didReload()
+    }
+
+    private func reloadTeam(_ t: TeamVaultStore) async {
+        let state = await t.state
+        team = TeamSnapshot(access: await t.access, members: await t.members(), pending: await t.pendingMembers(),
+                            hasRequestedToJoin: await t.hasRequestedToJoin, lateEvents: await t.lateEvents,
+                            needsRotation: state.needsRotation)
+        if let title = await t.title { name = title }
+        if let seenURL, let data = try? JSONEncoder().encode(await t.knownEvents.map(\.string).sorted()) {
+            try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: seenURL, options: .atomic)
+        }
+    }
+
+    /// The membership events a team vault had applied on this Mac last time.
+    static func seenEvents(at url: URL) -> Set<ULID> {
+        guard let data = try? Data(contentsOf: url), let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(ids.compactMap(ULID.init(string:)))
     }
 
     /// Drops the decrypted snapshots (the store clears its own index on lock).
     func clear() {
         projects = []
         items = []
+        team = nil
     }
 
     /// Picks up revisions written by other devices or the CLI.
@@ -124,9 +169,20 @@ final class VaultSession {
         syncStatus = await mirror.status
         lastCloudSync = await mirror.lastSync
         if r.pulled > 0 {
-            try? await store.reloadHeader()
+            try? await personalStore?.reloadHeader()
             await refreshFromDisk()
         }
+        guard let t = teamStore, isUnlocked else { return }
+        // An admin's Mac repairs the team's keys after each sync (rotation, missing copies, links).
+        do {
+            if try await !t.maintain().isEmpty {
+                await reload()
+                schedulePush()
+            }
+        } catch {
+            reportError("Team key upkeep failed: \(error.localizedDescription)")
+        }
+        await didSyncTeam(self)
     }
 
     /// Local files changed (our own writes): push soon, coalesced.

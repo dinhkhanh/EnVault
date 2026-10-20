@@ -5,6 +5,7 @@ import Foundation
 /// projects/<projectId>/meta/<ulid>.evr
 /// projects/<projectId>/items/<itemId>/<ulid>.evr
 /// projects/<IdentityLayout.namespace>/identity/<identityId>/<ulid>.evr   (personal vaults only)
+/// projects/<IdentityLayout.namespace>/teams/<vaultId>/<ulid>.evr          (personal vaults only)
 /// ```
 enum RevisionLayout {
     struct Found: Sendable {
@@ -22,6 +23,9 @@ enum RevisionLayout {
     }
     static func identityPath(identityId: UUID, revisionId: ULID) -> VaultPath {
         VaultPath("projects", IdentityLayout.namespace.uuidString, "identity", identityId.uuidString, fileName(revisionId))
+    }
+    static func teamPath(vaultId: UUID, revisionId: ULID) -> VaultPath {
+        VaultPath("projects", IdentityLayout.namespace.uuidString, "teams", vaultId.uuidString, fileName(revisionId))
     }
     static func fileName(_ id: ULID) -> String { "\(id.string).\(RevisionFile.fileExtension)" }
 
@@ -45,10 +49,12 @@ enum RevisionLayout {
             guard let projectId = UUID(uuidString: pid) else { continue }
             let pdir = projectsDir.appending(pid)
             if projectId == IdentityLayout.namespace {
-                let idDir = pdir.appending("identity")
-                for iid in try await storage.list(idDir) {
-                    guard let identityId = UUID(uuidString: iid) else { continue }
-                    try await add(idDir.appending(iid), .identity, identityId)
+                for (folder, scope) in [("identity", RevisionFile.Scope.identity), ("teams", .team)] {
+                    let dir = pdir.appending(folder)
+                    for sub in try await storage.list(dir) {
+                        guard let owner = UUID(uuidString: sub) else { continue }
+                        try await add(dir.appending(sub), scope, owner)
+                    }
                 }
                 continue
             }
@@ -132,6 +138,14 @@ struct RevisionIndex: Sendable {
     }
 
     func revisionCount(of itemId: UUID) -> Int { itemRevisions[itemId]?.count ?? 0 }
+
+    /// A live project's revisions and those of its live items, oldest first,
+    /// for copying it into another vault.
+    func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) {
+        guard project(projectId) != nil, let history = projectRevisions[projectId] else { throw VaultError.io("Unknown project") }
+        let items = liveItems(in: projectId).sorted { $0.createdAt < $1.createdAt }.compactMap { itemRevisions[$0.id] }
+        return (history, items)
+    }
 
     func liveItems(in projectId: UUID) -> [Item] {
         itemRevisions.values.compactMap { revs in
