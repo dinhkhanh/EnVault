@@ -106,8 +106,8 @@ public enum TeamKeys {
     }
 
     /// Opens a link with the newer epoch's key and checks the result against the older epoch.
-    public static func open(_ link: KeyLink, with newerKey: SymmetricKey, older: TeamEpoch, vaultId: UUID) throws -> SymmetricKey {
-        guard link.older == older.id else { throw VaultError.corruptRevision("key link is for another epoch") }
+    public static func open(_ link: KeyLink, with newerKey: SymmetricKey, newer: ULID, older: TeamEpoch, vaultId: UUID) throws -> SymmetricKey {
+        guard link.older == older.id, link.newer == newer else { throw VaultError.corruptRevision("key link is for another epoch") }
         let raw: Data
         do {
             raw = try AES.GCM.open(try AES.GCM.SealedBox(combined: link.box), using: newerKey,
@@ -192,6 +192,11 @@ public enum TeamRevisionFile {
         }
         guard state.role(of: env.author, at: revisionId)?.canWrite == true else {
             throw VaultError.corruptRevision("\(revisionId): author could not write then")
+        }
+        // Nobody writes under a key before it exists: a revision dated well before
+        // its epoch was backdated (an hour allows for clocks that disagree).
+        guard revisionId.timestamp >= env.epoch.timestamp.addingTimeInterval(-3600) else {
+            throw VaultError.corruptRevision("\(revisionId): dated before its key existed")
         }
         guard let key = keys[env.epoch] else { throw VaultError.corruptRevision("\(revisionId): no key for epoch \(env.epoch)") }
         let plain: Data

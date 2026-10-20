@@ -11,7 +11,11 @@ export interface LicenseRow {
 export interface Store {
   /** Returns false if (provider, eventId) was already recorded. */
   recordEvent(provider: string, eventId: string, type: string): Promise<boolean>;
+  /** Undoes recordEvent when handling the event failed, so the provider's retry is handled. */
+  forgetEvent(provider: string, eventId: string): Promise<void>;
   insertLicense(row: LicenseRow): Promise<void>;
+  /** Removes a license that was never delivered (its email failed), so a retry issues it again. */
+  deleteLicense(id: string): Promise<void>;
   byOrder(provider: string, orderId: string): Promise<LicenseRow | null>;
   bySubscription(provider: string, subscriptionId: string): Promise<LicenseRow[]>;
   byEmail(email: string): Promise<LicenseRow[]>;
@@ -28,10 +32,12 @@ export class MemoryStore implements Store {
   events = new Set<string>();
   resends: { email: string; at: string }[] = [];
   async recordEvent(p: string, id: string, _t: string) { const k = `${p}:${id}`; if (this.events.has(k)) return false; this.events.add(k); return true; }
+  async forgetEvent(p: string, id: string) { this.events.delete(`${p}:${id}`); }
   async insertLicense(r: LicenseRow) {
     if (r.order_id && this.licenses.some((l) => l.provider === r.provider && l.order_id === r.order_id)) throw new Error("UNIQUE constraint failed: licenses_order");
     this.licenses.push({ ...r });
   }
+  async deleteLicense(id: string) { this.licenses = this.licenses.filter((l) => l.id !== id); }
   async byOrder(p: string, o: string) { return this.licenses.find((l) => l.provider === p && l.order_id === o) ?? null; }
   async bySubscription(p: string, s: string) { return this.licenses.filter((l) => l.provider === p && l.subscription_id === s); }
   async byEmail(e: string) { return this.licenses.filter((l) => l.email.toLowerCase() === e.toLowerCase()); }
@@ -46,6 +52,12 @@ export class MemoryStore implements Store {
 export class D1Store implements Store {
   private db: D1Database;
   constructor(db: D1Database) { this.db = db; }
+  async deleteLicense(id: string) {
+    await this.db.prepare("DELETE FROM licenses WHERE id = ?1").bind(id).run();
+  }
+  async forgetEvent(provider: string, eventId: string) {
+    await this.db.prepare("DELETE FROM events WHERE provider = ?1 AND event_id = ?2").bind(provider, eventId).run();
+  }
   async recordEvent(provider: string, eventId: string, type: string) {
     try {
       await this.db.prepare("INSERT INTO events (provider, event_id, type, received_at) VALUES (?1, ?2, ?3, ?4)")

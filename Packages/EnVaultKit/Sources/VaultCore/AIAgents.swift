@@ -44,15 +44,22 @@ public enum AIAgents {
     }
 
     /// The agent running this process, from the environment it sets, or nil
-    /// for a person. `ENVAULT_AGENT=<name>` names one; `ENVAULT_AGENT=0` opts out.
+    /// for a person. `ENVAULT_AGENT=<name>` names one; `ENVAULT_AGENT=0` opts out, but only
+    /// where no agent's own marker is set: an agent could set it itself.
     public static func detect(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String? {
         if let v = env["ENVAULT_AGENT"] {
             switch v.lowercased() {
-            case "", "0", "false", "no": return nil
+            // An agent could set this itself: it only counts where no agent's own marker is set.
+            case "", "0", "false", "no": return marker(env)
             case "1", "true", "yes": return "AI agent"
             default: return v
             }
         }
+        return marker(env)
+    }
+
+    /// The variables AI agents set in their own shells.
+    static func marker(_ env: [String: String]) -> String? {
         if env["CLAUDECODE"] == "1" { return "Claude Code" }
         if env["CURSOR_AGENT"] != nil { return "Cursor" }
         if env["GEMINI_CLI"] != nil { return "Gemini CLI" }

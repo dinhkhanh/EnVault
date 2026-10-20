@@ -19,7 +19,8 @@ export function polarAction(event: any): Action {
           email,
           name: nameFrom(d.customer?.name, d.billing_name, d.customer?.billing_name, email.split("@")[0]),
           plan: planFrom(d.product?.metadata?.plan, d.product?.name),
-          seats: Math.max(1, Number(d.seats ?? d.subscription?.seats ?? 1) || 1),
+          // 0 = not in the payload: the store keeps the subscription's current count.
+          seats: Math.max(0, Math.floor(Number(d.seats ?? d.subscription?.seats ?? 0) || 0)),
           periodEnd: d.subscription?.current_period_end ?? null,
           reason: d.billing_reason === "subscription_cycle" ? "renewal" : d.billing_reason === "subscription_update" ? "seats" : "purchase",
         },

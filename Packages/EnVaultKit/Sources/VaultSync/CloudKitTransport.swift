@@ -145,7 +145,9 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
             for (_, res) in r.modificationResultsByID {
                 guard case .success(let mod) = res else { continue }
                 let rec = mod.record
-                guard let path = rec["path"] as? String else { continue }
+                // The path must be the record's own name: a record named one thing that
+                // claims another's path could pass as that file and its uploader.
+                guard let path = rec["path"] as? String, path == rec.recordID.recordName.replacingOccurrences(of: "|", with: "/") else { continue }
                 // The server's record of who uploaded it, trusted only if nobody else changed it since.
                 let creator = rec.creatorUserRecordID?.recordName
                 let author = creator != nil && creator == rec.lastModifiedUserRecordID?.recordName ? creator : nil

@@ -40,7 +40,15 @@ export async function issue(s: Services, r: IssueRequest, notify = true, mail: M
     customer_id: r.customerId, subscription_id: r.subscriptionId, status: "active", revoked_at: null, revoke_reason: null,
   };
   await s.store.insertLicense(row);
-  if (notify) await s.mailer.send(licenseMail([row], s.mail, mail));
+  if (notify) {
+    try {
+      await s.mailer.send(licenseMail([row], s.mail, mail));
+    } catch (e) {
+      // Undelivered: take it back so the provider's retry issues and mails it again.
+      await s.store.deleteLicense(row.id);
+      throw e;
+    }
+  }
   return row;
 }
 
@@ -52,7 +60,8 @@ async function reissueForSeats(s: Services, provider: string, subscriptionId: st
     .sort((a, b) => b.issued_at.localeCompare(a.issued_at));
   const latest = active[0];
   if (!latest) return { status: 200, body: "no license for that subscription" };
-  if (latest.seats === seats && !orderId) return { status: 200, body: "seats unchanged" };
+  // The same count again (the order for a change already applied, or any other edit): nothing to issue.
+  if (latest.seats === seats) return { status: 200, body: "seats unchanged" };
   const row = await issue(s, {
     provider, orderId, customerId: latest.customer_id, subscriptionId, email: latest.email, name: latest.name,
     plan: latest.plan, seats, periodEnd: periodEnd ?? null, expiresAt: periodEnd ? undefined : latest.expires_at,
@@ -67,12 +76,28 @@ export interface Outcome { status: number; body: string; }
 export async function applyAction(s: Services, provider: string, eventId: string, type: string, action: Action): Promise<Outcome> {
   const fresh = await s.store.recordEvent(provider, eventId, type);
   if (!fresh) return { status: 200, body: "duplicate event" };
+  try {
+    return await handle(s, provider, action);
+  } catch (e) {
+    // Not handled: let the provider's retry through instead of dropping it as a duplicate.
+    await s.store.forgetEvent(provider, eventId);
+    throw e;
+  }
+}
+
+async function handle(s: Services, provider: string, action: Action): Promise<Outcome> {
   switch (action.kind) {
     case "ignore":
       return { status: 200, body: `ignored: ${action.why}` };
     case "issue": {
-      const o: Order = action.order;
+      const o: Order = { ...action.order };
       if (await s.store.byOrder(o.provider, o.orderId)) return { status: 200, body: "order already licensed" };
+      // A renewal whose payload doesn't say how many seats keeps the subscription's count.
+      if (o.seats < 1) {
+        const prior = o.subscriptionId ? (await s.store.bySubscription(o.provider, o.subscriptionId)).filter((r) => r.status === "active")
+          .sort((a, b) => b.issued_at.localeCompare(a.issued_at))[0] : undefined;
+        o.seats = prior?.seats ?? 1;
+      }
       if (o.reason === "seats" && o.subscriptionId) return reissueForSeats(s, o.provider, o.subscriptionId, o.seats, o.periodEnd, o.orderId);
       const row = await issue(s, { ...o }, true, o.reason === "renewal" ? "renewal" : "new");
       return { status: 201, body: `issued ${row.id}` };

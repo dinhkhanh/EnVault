@@ -42,6 +42,8 @@ final class VaultSession {
         var licenseEvent: ULID?
         /// Invitations sent, with the role offered and when they lapse (FR-6).
         var invites: [ULID: TeamState.Invite]
+        /// Accepted membership changes that went missing from the files: saving is paused.
+        var missingEvents: Int
         func name(_ id: UUID) -> String { names[id] ?? "Someone" }
         var role: TeamRole? {
             switch access { case .member(let r), .awaitingKey(let r): r; default: nil }
@@ -110,18 +112,21 @@ final class VaultSession {
                             hasRequestedToJoin: await t.hasRequestedToJoin, lateEvents: await t.lateEvents,
                             needsRotation: state.needsRotation, names: names, exposed: exposed, log: await t.log(),
                             agentRules: state.agentRules, humansOnly: state.humansOnly, license: await t.license, licenseEvent: state.licenseEvent,
-                            invites: state.invites)
+                            invites: state.invites, missingEvents: await t.missingEvents.count)
         if let title = await t.title { name = title }
-        if let seenURL, let data = try? JSONEncoder().encode(await t.knownEvents.map(\.string).sorted()) {
+        if let seenURL, let data = try? JSONEncoder().encode(await t.seenState) {
             try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: seenURL, options: .atomic)
         }
     }
 
-    /// The membership events a team vault had applied on this Mac last time.
-    static func seenEvents(at url: URL) -> Set<ULID> {
-        guard let data = try? Data(contentsOf: url), let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
-        return Set(ids.compactMap(ULID.init(string:)))
+    /// What this Mac had accepted of a team vault last time (an older plain
+    /// list of event ids still reads).
+    static func seen(at url: URL) -> TeamSeen {
+        guard let data = try? Data(contentsOf: url) else { return TeamSeen() }
+        if let seen = try? JSONDecoder().decode(TeamSeen.self, from: data) { return seen }
+        let ids = (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        return TeamSeen(events: Set(ids.compactMap(ULID.init(string:))))
     }
 
     /// Drops the decrypted snapshots (the store clears its own index on lock).

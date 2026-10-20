@@ -59,7 +59,7 @@ Key:          `envault unlock`'s cache, the running EnVault app (Touch ID), $ENV
 --json:       machine-readable output (ls, keys, status, history, links, scan, version, set, unset, push,
               import); errors become {"error", "code"} on stderr.
 AI agents:    detected from CLAUDECODE, CURSOR_AGENT, GEMINI_CLI, CODEX_SANDBOX, or ENVAULT_AGENT=<name>
-              (ENVAULT_AGENT=0: treat as a person). Agents never get a passphrase prompt, `run` redacts by
+              (ENVAULT_AGENT=0: treat as a person, unless an agent's own marker is set). Agents never get a passphrase prompt, `run` redacts by
               default, and reading values (get, pull, env, run --no-redact, deploy) needs approval in EnVault.
 Exit codes:   1 error, 2 scan found secrets, 3 not found, 4 needs the user (locked, approval),
               5 refused by the user or a setting, 64 usage
