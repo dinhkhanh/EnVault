@@ -72,10 +72,10 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: 0.7.1
-        CURRENT_PROJECT_VERSION: 22
+        MARKETING_VERSION: 0.8.0
+        CURRENT_PROJECT_VERSION: 23
         # Date this version shipped; licenses whose updatesUntil is earlier run as Free on this build.
-        ENVAULT_RELEASE_DATE: "2026-10-16"
+        ENVAULT_RELEASE_DATE: "2026-10-20"
         ENABLE_PREVIEWS: true
         SWIFT_EMIT_LOC_STRINGS: false
         DEAD_CODE_STRIPPING: true
