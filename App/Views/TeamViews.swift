@@ -62,6 +62,8 @@ struct TeamMembersView: View {
     @State private var inviting = false
     @State private var showLog = false
     @State private var inviteRole: TeamRole = .member
+    @State private var exporting = false
+    @State private var newOwner: TeamMember?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,15 +79,19 @@ struct TeamMembersView: View {
                     agentSection(team)
                     if session.mode == .folder {
                         if team.canManage { folderInviteSection }
-                    } else if team.role == .owner, model.teamVaultsAvailable {
+                    } else if session.hostsShare, model.teamVaultsAvailable {
                         inviteSection
                     }
                     Section {
                         Button("Membership Log…") { showLog = true }
+                        if team.canManage { Button("Export as a Personal Vault…") { exporting = true } }
                         Button("Leave This Team Vault…", role: .destructive) { leaving = true }
                             .disabled(team.role == .owner)
                     } footer: {
-                        if team.role == .owner { Text("The owner can't leave. Ownership transfer comes later.").font(.caption) }
+                        if team.role == .owner { Text("The owner can't leave: make an admin the owner first.").font(.caption) }
+                        if session.hostsShare, team.role != .owner {
+                            Text("This vault lives in your iCloud. If you leave, the others keep it, but nobody can invite or take people off the iCloud share any more.").font(.caption)
+                        }
                     }
                 }
             }
@@ -100,6 +106,13 @@ struct TeamMembersView: View {
         .frame(width: 540, height: 600)
         .sheet(item: $approving) { ApproveMemberSheet(session: session, pending: $0) }
         .sheet(isPresented: $showLog) { MembershipLogView(session: session) }
+        .sheet(isPresented: $exporting) { ExportTeamVaultSheet(session: session) }
+        .confirmationDialog("Make \(newOwner?.name ?? "this admin") the owner?", isPresented: Binding(get: { newOwner != nil }, set: { if !$0 { newOwner = nil } }), presenting: newOwner) { m in
+            Button("Make Owner") { Task { await model.transferOwnership(to: m.id, in: session) } }
+        } message: { _ in
+            Text("You become an admin. The team's billing moves with a new license in their name."
+                 + (session.hostsShare ? " The vault stays in your iCloud, so keep this Mac signed in and don't leave it." : ""))
+        }
         .confirmationDialog("Remove \(removing?.name ?? "this member")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { m in
             Button("Remove", role: .destructive) { Task { await model.remove(m.id, from: session) } }
         } message: { _ in
@@ -237,6 +250,10 @@ struct TeamMembersView: View {
                     ForEach(TeamRole.assignable, id: \.self) { Text($0.title).tag($0) }
                 }
                 .labelsHidden().fixedSize()
+                if team.role == .owner, m.role == .admin {
+                    Button { newOwner = m } label: { Image(systemName: "crown") }
+                        .buttonStyle(.borderless).help("Make owner")
+                }
                 Button(role: .destructive) { removing = m } label: { Image(systemName: "person.badge.minus") }
                     .buttonStyle(.borderless).help("Remove from the vault")
             } else {
@@ -505,6 +522,7 @@ struct MembershipLogView: View {
         case .agentRules(let r): return "\(by) set the rules for AI agents" + (r.enabled ? "" : " (not allowed)")
         case .humansOnly(_, let on): return on ? "\(by) marked something for people only" : "\(by) opened something to AI agents again"
         case .invited(let role): return "\(by) sent an invitation (as \(role.title.lowercased()))"
+        case .ownershipTransferred(let to): return "\(by) made \(n(to)) the owner"
         }
     }
 
@@ -518,6 +536,7 @@ struct MembershipLogView: View {
         case .named, .titled: "pencil"
         case .agentRules, .humansOnly: "cpu"
         case .invited: "envelope"
+        case .ownershipTransferred: "crown"
         }
     }
 }
@@ -554,5 +573,55 @@ enum JoinFromInvitation {
         panel.message = "Choose the shared folder that holds \(name) on this Mac."
         guard panel.runModal() == .OK else { return nil }
         return panel.url
+    }
+}
+
+/// FR-30: the team vault's projects, with history, into a new personal vault
+/// with its own passphrase.
+struct ExportTeamVaultSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let session: VaultSession
+    @State private var folder: URL?
+    @State private var pass1 = ""
+    @State private var pass2 = ""
+    @State private var working = false
+    @State private var done = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Export “\(session.name)” as a Personal Vault").font(.headline)
+            if done {
+                Text("Done. Open it from the Vault menu when you need it, and create a recovery key for it in Settings.").font(.callout)
+                HStack { Spacer(); Button("Close") { dismiss() }.keyboardShortcut(.defaultAction) }
+            } else {
+                Text("Every project and its history, re-encrypted under a new passphrase. Nobody else on the team can open the copy.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Text(folder?.path(percentEncoded: false) ?? "No folder chosen").font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button("Choose…") { folder = NewTeamVaultSheet.chooseEmptyFolder() }
+                }
+                SecureField("Passphrase (8 characters or more)", text: $pass1)
+                SecureField("Confirm passphrase", text: $pass2)
+                if let e = model.errorMessage { Text(e).font(.callout).foregroundStyle(.red) }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Export") {
+                        guard let folder else { return }
+                        working = true
+                        Task {
+                            done = await model.exportTeamVault(session, to: folder, passphrase: pass1)
+                            working = false
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(working || folder == nil || pass1.count < 8 || pass1 != pass2)
+                }
+            }
+        }
+        .padding(20).frame(width: 440)
+        .task { model.errorMessage = nil }
     }
 }

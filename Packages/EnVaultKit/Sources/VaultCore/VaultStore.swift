@@ -261,6 +261,25 @@ public actor VaultStore {
         return index.current(rev)
     }
 
+    /// Copies a project and its items, every revision in order, into this
+    /// vault under new ids (`TeamVaultStore.exportAsPersonalVault`).
+    @discardableResult
+    public func importProject(_ history: [ProjectRevision], items: [[ItemRevision]]) async throws -> UUID {
+        let projectId = UUID()
+        for var rev in history {
+            rev.id = ULID(); rev.projectId = projectId
+            try await write(rev)
+        }
+        for revs in items {
+            let itemId = UUID()
+            for var rev in revs {
+                rev.id = ULID(); rev.itemId = itemId; rev.projectId = projectId
+                try await write(rev)
+            }
+        }
+        return projectId
+    }
+
     /// Removes all but the latest revision of an item from storage.
     public func compact(itemId: UUID) async throws {
         for path in index.compact(itemId: itemId) { try await storage.delete(path) }

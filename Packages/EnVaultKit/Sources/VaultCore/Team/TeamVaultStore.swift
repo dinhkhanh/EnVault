@@ -440,6 +440,7 @@ public actor TeamVaultStore {
             case .agentRules(let r): .agentRules(r)
             case .humansOnly(let target, let on): .humansOnly(target, on)
             case .invite(_, let role, _): .invited(role)
+            case .transferOwnership(let to): .ownershipTransferred(to)
             }
             return TeamLogEntry(id: e.id, author: e.author, change: change, rejected: state.rejected[e.id], late: lateEvents.contains(e.id))
         }
@@ -676,6 +677,26 @@ public actor TeamVaultStore {
         try await rotate()
     }
 
+    /// Hands ownership to an admin (FR-29); this person becomes an admin.
+    public func transferOwnership(to member: UUID) async throws {
+        try await record(.transferOwnership(to: member))
+    }
+
+    /// Exports the vault as a new personal vault under `passphrase` (FR-30):
+    /// every live project with its history, re-encrypted. Owner or admin.
+    @discardableResult
+    public func exportAsPersonalVault(to storage: VaultStorage, passphrase: String, kdf: KDFParams = .random()) async throws -> VaultStore {
+        guard let me, state.role(of: me.id)?.canManage == true else {
+            throw VaultError.notPermitted("Only an owner or admin exports a team vault.")
+        }
+        let personal = try await VaultStore.create(storage: storage, passphrase: passphrase, device: device, kdf: kdf)
+        for p in index.projects() {
+            let e = try index.export(p.id)
+            try await personal.importProject(e.history, items: e.items)
+        }
+        return personal
+    }
+
     /// Leaves the vault (FR-15). An admin's Mac rotates the key afterwards.
     public func leave() async throws {
         guard let me else { throw VaultError.locked }
@@ -810,6 +831,7 @@ public struct TeamLogEntry: Equatable, Sendable, Identifiable {
         case agentRules(TeamAgentRules)
         case humansOnly(UUID, Bool)
         case invited(TeamRole)
+        case ownershipTransferred(UUID)
     }
     public var id: ULID
     public var date: Date { id.timestamp }
