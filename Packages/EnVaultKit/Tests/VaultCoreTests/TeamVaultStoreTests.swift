@@ -294,6 +294,25 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(try await onAda.maintain().isEmpty)
     }
 
+    @Test func aNewcomerApprovedDuringARemovalIsRepaired() async throws {
+        let (_, macs) = try await team()
+        let onAda = try await open(macs[ada.id]!, as: ada)
+        let onBob = try await open(macs[bob.id]!, as: bob)
+        // Bob approves Xia; before his files reach Ada, Ada removes Dee, which rotates.
+        let xia = person("Xia"), xiaMac = MemoryStorage()
+        try await onBob.add(try xia.publicIdentity(), name: "Xia", role: .member)
+        try await Task.sleep(for: .milliseconds(3))
+        try await onAda.remove(dee.id)
+        await sync(macs[ada.id]!, macs[bob.id]!, xiaMac)
+        #expect(try await open(xiaMac, as: xia).access == .awaitingKey(.member))
+
+        try await onAda.refresh()
+        #expect(try await onAda.maintain().wraps == [xia.id])
+        await sync(macs[ada.id]!, xiaMac, macs[dee.id]!)
+        #expect(try await open(xiaMac, as: xia).access == .member(.member))
+        #expect(try await open(macs[dee.id]!, as: dee).access == .removed)
+    }
+
     @Test func lateChangesAreFlagged() async throws {
         let (_, macs) = try await team()
         let onAda = try await open(macs[ada.id]!, as: ada)
@@ -780,6 +799,26 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(throws: VaultError.self) {
             try TeamRevisionFile.decode(ProjectRevision.self, from: data, vaultId: store.vaultId, scope: .project, ownerId: p.id, revisionId: id, state: TeamState(header: store.header, events: []), keys: [epoch.id: key])
         }
+    }
+
+    @Test func savesUnderAKeyFromAFastClockStillCount() async throws {
+        let (store, storage) = try await vault()
+        // Ada's clock runs two hours fast when she rotates.
+        let id = ULID(date: Date().addingTimeInterval(7200)), key = TeamKeys.newKey()
+        let members = await store.state.members.values.map(\.identity)
+        let rotation = try MembershipEvent.signed(.rotate(recipients: members.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: store.vaultId, epoch: id), leftOut: []),
+                                                  by: ada, vaultId: store.vaultId, id: id)
+        try await storage.writeNew(VaultPath("members", "\(id.string).json"), data: try rotation.encoded())
+        for m in members {
+            try await storage.writeNew(VaultPath("keys", id.string, "\(m.id.uuidString).json"), data: try TeamKeys.wrap(key, for: m, vaultId: store.vaultId, epoch: id).encoded())
+        }
+        let onCyd = try await open(storage, as: cyd)
+        #expect(await onCyd.state.current?.id == id)
+        let p = try await onCyd.createProject(name: "api")
+        let item = try await onCyd.createItem(in: p.id, name: ".env", payload: secret)
+        let onBob = try await open(storage, as: bob)
+        #expect(await onBob.item(item.id) != nil)
+        #expect(await onBob.rejectedFiles.isEmpty)
     }
 
     @Test func junkFromTheFutureDoesntMakeEverythingLate() async throws {

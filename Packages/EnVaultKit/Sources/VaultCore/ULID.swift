@@ -21,38 +21,62 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
 
     /// Monotonic generator state: within one millisecond the random part is
     /// incremented, so ids made in quick succession on one device still sort
-    /// in creation order.
+    /// in creation order. Ids dated ahead (`init(notBefore:)`) keep their own,
+    /// so they never move this process's other ids forward.
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var lastMs: UInt64 = 0
-    nonisolated(unsafe) private static var lastRandom = [UInt8](repeating: 0, count: 10)
+    private struct Sequence { var ms: UInt64 = 0; var random = [UInt8](repeating: 0, count: 10) }
+    nonisolated(unsafe) private static var now = Sequence()
+    nonisolated(unsafe) private static var ahead = Sequence()
 
     /// A new id for "now", monotonic within this process. Pass an explicit
     /// `date` only for tests/fixtures; such ids are not clamped.
     public init(date: Date? = nil) {
-        var ms = UInt64(max(0, (date ?? Date()).timeIntervalSince1970 * 1000))
-        var random = [UInt8](repeating: 0, count: 10)
+        if let date {
+            self.init(ms: Self.ms(date), random: Self.freshRandom())
+        } else {
+            self.init(next: &ULID.now, ms: Self.ms(Date()))
+        }
+    }
+
+    /// A new id for now or `floor`, whichever is later; monotonic like `init()`.
+    public init(notBefore floor: Date) {
+        let now = Date()
+        if floor <= now { self.init() } else { self.init(next: &ULID.ahead, ms: Self.ms(floor)) }
+    }
+
+    private init(next seq: inout Sequence, ms: UInt64) {
+        var ms = ms, random: [UInt8]
         ULID.lock.lock()
         // Never let time go backwards within this process (clock skew, thread races).
-        if date == nil, ms < ULID.lastMs { ms = ULID.lastMs }
-        if date == nil, ms == ULID.lastMs {
-            random = ULID.lastRandom
+        if ms < seq.ms { ms = seq.ms }
+        if ms == seq.ms {
+            random = seq.random
             var i = 9
             while i >= 0 {
                 if random[i] == 0xff { random[i] = 0; i -= 1 } else { random[i] += 1; break }
             }
         } else {
-            _ = SecRandomCopyBytes(kSecRandomDefault, random.count, &random)
-            random[0] &= 0x7f // leave headroom so increments never overflow in practice
+            random = Self.freshRandom()
         }
-        if date == nil {
-            ULID.lastMs = ms
-            ULID.lastRandom = random
-        }
+        seq = Sequence(ms: ms, random: random)
         ULID.lock.unlock()
+        self.init(ms: ms, random: random)
+    }
+
+    private init(ms: UInt64, random: [UInt8]) {
         var bytes = [UInt8](repeating: 0, count: 16)
         for i in 0..<6 { bytes[i] = UInt8((ms >> (8 * UInt64(5 - i))) & 0xff) }
         for i in 0..<10 { bytes[6 + i] = random[i] }
         string = ULID.encode(bytes)
+    }
+
+    private static func ms(_ date: Date) -> UInt64 { UInt64(max(0, date.timeIntervalSince1970 * 1000)) }
+
+    private static func freshRandom() -> [UInt8] {
+        var random = [UInt8](repeating: 0, count: 10)
+        _ = SecRandomCopyBytes(kSecRandomDefault, random.count, &random)
+        random[0] &= 0x7f // leave headroom so increments never overflow in practice
+        return random
     }
 
     public init?(string: String) {

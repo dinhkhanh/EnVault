@@ -572,16 +572,16 @@ public actor TeamVaultStore {
         if hidesHumansOnly, index.projects().contains(where: { $0.name == name && state.humansOnly.contains($0.id) }) {
             throw VaultError.notPermitted("That project is for people only.")
         }
-        let rev = index.newProject(name: name, tags: tags, device: device)
-        try await write(rev)
+        var rev = index.newProject(name: name, tags: tags, device: device)
+        try await write(&rev)
         return Project(revision: rev, itemCount: 0)
     }
 
     @discardableResult
     public func updateProject(_ id: UUID, name: String? = nil, tags: [String]? = nil) async throws -> Project {
         try checkVisible(project: id, item: nil)
-        let rev = try index.updatedProject(id, name: name, tags: tags, device: device)
-        try await write(rev)
+        var rev = try index.updatedProject(id, name: name, tags: tags, device: device)
+        try await write(&rev)
         return Project(revision: rev, itemCount: index.liveItems(in: id).count)
     }
 
@@ -590,8 +590,8 @@ public actor TeamVaultStore {
         _ = try writer()
         try checkVisible(project: id, item: nil)
         for item in index.liveItems(in: id) { try await deleteItem(item.id) }
-        guard let rev = index.deletedProject(id, device: device) else { return }
-        try await write(rev)
+        guard var rev = index.deletedProject(id, device: device) else { return }
+        try await write(&rev)
     }
 
     @discardableResult
@@ -600,32 +600,32 @@ public actor TeamVaultStore {
         if hidesHumansOnly, index.items(in: projectId).contains(where: { $0.name == name && state.humansOnly.contains($0.id) }) {
             throw VaultError.notPermitted("That item is for people only.")
         }
-        let rev = try index.newItem(in: projectId, name: name, payload: payload, tags: tags, device: device)
-        try await write(rev)
+        var rev = try index.newItem(in: projectId, name: name, payload: payload, tags: tags, device: device)
+        try await write(&rev)
         return Item(revision: rev, revisionCount: 1)
     }
 
     @discardableResult
     public func updateItem(_ id: UUID, name: String? = nil, tags: [String]? = nil, payload: ItemPayload? = nil, projectId: UUID? = nil) async throws -> Item {
         try checkVisible(project: projectId, item: id)
-        guard let rev = try index.updatedItem(id, name: name, tags: tags, payload: payload, projectId: projectId, device: device) else {
+        guard var rev = try index.updatedItem(id, name: name, tags: tags, payload: payload, projectId: projectId, device: device) else {
             return index.item(id)!
         }
-        try await write(rev)
+        try await write(&rev)
         return index.current(rev)
     }
 
     public func deleteItem(_ id: UUID) async throws {
         try checkVisible(project: nil, item: id)
-        guard let rev = index.deletedItem(id, device: device) else { return }
-        try await write(rev)
+        guard var rev = index.deletedItem(id, device: device) else { return }
+        try await write(&rev)
     }
 
     @discardableResult
     public func restore(_ old: ItemRevision) async throws -> Item {
         try checkVisible(project: old.projectId, item: old.itemId)
-        let rev = index.restored(old, device: device)
-        try await write(rev)
+        var rev = index.restored(old, device: device)
+        try await write(&rev)
         return index.current(rev)
     }
 
@@ -645,8 +645,9 @@ public actor TeamVaultStore {
         return (me, e.id, key)
     }
 
-    private func write(_ rev: ProjectRevision) async throws {
+    private func write(_ rev: inout ProjectRevision) async throws {
         let w = try writer()
+        rev.id = Self.dated(rev.id, under: w.epoch)
         let data = try TeamRevisionFile.encode(rev, vaultId: vaultId, scope: .project, ownerId: rev.projectId, revisionId: rev.id, epoch: w.epoch, key: w.key, author: w.me)
         let path = RevisionLayout.projectPath(projectId: rev.projectId, revisionId: rev.id)
         try await storage.writeNew(path, data: data)
@@ -657,8 +658,9 @@ public actor TeamVaultStore {
         knownFiles[path.string] = Self.digest(data)
     }
 
-    private func write(_ rev: ItemRevision) async throws {
+    private func write(_ rev: inout ItemRevision) async throws {
         let w = try writer()
+        rev.id = Self.dated(rev.id, under: w.epoch)
         let data = try TeamRevisionFile.encode(rev, vaultId: vaultId, scope: .item, ownerId: rev.itemId, revisionId: rev.id, epoch: w.epoch, key: w.key, author: w.me)
         let path = RevisionLayout.itemPath(projectId: rev.projectId, itemId: rev.itemId, revisionId: rev.id)
         try await storage.writeNew(path, data: data)
@@ -667,6 +669,13 @@ public actor TeamVaultStore {
         authors[rev.id] = w.me.id
         revisionEpochs[rev.id] = w.epoch
         knownFiles[path.string] = Self.digest(data)
+    }
+
+    /// `id`, or a new one if the rotating admin's clock ran so far ahead of
+    /// ours that every Mac would refuse `id` as dated before its key.
+    private static func dated(_ id: ULID, under epoch: ULID) -> ULID {
+        let earliest = TeamRevisionFile.earliest(under: epoch)
+        return id.timestamp < earliest ? ULID(notBefore: earliest.addingTimeInterval(1)) : id
     }
 
     // MARK: - Joining (FR-7, FR-8)
@@ -740,13 +749,13 @@ public actor TeamVaultStore {
         let projectId = UUID()
         for var rev in history {
             rev.id = ULID(); rev.projectId = projectId; rev.device = device
-            try await write(rev)
+            try await write(&rev)
         }
         for revs in items {
             let itemId = UUID()
             for var rev in revs {
                 rev.id = ULID(); rev.itemId = itemId; rev.projectId = projectId; rev.device = device
-                try await write(rev)
+                try await write(&rev)
             }
         }
         return projectId
@@ -847,12 +856,12 @@ public actor TeamVaultStore {
         guard let me else { throw VaultError.locked }
         guard state.role(of: me.id)?.canManage == true else { throw VaultError.notPermitted("Only an owner or admin rotates the team key.") }
         try checkNotTampered()
-        let basis = acceptedEvents.max()
         let id = ULID()
         let key = TeamKeys.newKey()
         let recipients = state.members.values.map(\.identity)
+        let leftOut = state.everyone.keys.filter { state.members[$0] == nil }.compactMap { state.addedAt[$0] }
         try await writeWrap(key, epoch: id, for: try me.publicIdentity())
-        try await record(.rotate(recipients: recipients.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: vaultId, epoch: id), basis: basis), id: id)
+        try await record(.rotate(recipients: recipients.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: vaultId, epoch: id), leftOut: leftOut), id: id)
         keys[id] = key
         verifiedLinks[id] = []
         // One member's copy failing (a key HPKE refuses) mustn't stop the rest.
