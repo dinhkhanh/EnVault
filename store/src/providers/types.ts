@@ -3,6 +3,8 @@ import type { Plan } from "../license.ts";
 /** What a payment provider event asks the store to do. */
 export type Action =
   | { kind: "issue"; order: Order }
+  /** A subscription's seat count changed without a new order: a key for the new count replaces the old. */
+  | { kind: "reseat"; subscriptionId: string; seats: number; periodEnd: string | null }
   | { kind: "revoke"; orderId?: string; subscriptionId?: string; reason: string }
   | { kind: "ignore"; why: string };
 
@@ -17,6 +19,8 @@ export interface Order {
   seats: number;
   /** Subscriptions: end of the paid period; one-time purchases: null. */
   periodEnd: string | null;
+  /** Why it was charged: a first purchase, a yearly renewal, or a change of seats. */
+  reason?: "purchase" | "renewal" | "seats";
 }
 
 export function planFrom(metaPlan: unknown, productName: unknown): Plan {

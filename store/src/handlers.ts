@@ -20,7 +20,7 @@ export interface IssueRequest {
   updatesUntil?: string | null; expiresAt?: string | null;
 }
 
-export async function issue(s: Services, r: IssueRequest, notify = true): Promise<LicenseRow> {
+export async function issue(s: Services, r: IssueRequest, notify = true, mail: MailKind = "new"): Promise<LicenseRow> {
   const now = (s.now ?? (() => new Date()))();
   const issuedAt = isoSeconds(now);
   const updatesUntil = r.updatesUntil === undefined ? isoSeconds(addMonths(now, s.updatesMonths)) : r.updatesUntil;
@@ -38,8 +38,25 @@ export async function issue(s: Services, r: IssueRequest, notify = true): Promis
     customer_id: r.customerId, subscription_id: r.subscriptionId, status: "active", revoked_at: null, revoke_reason: null,
   };
   await s.store.insertLicense(row);
-  if (notify) await s.mailer.send(licenseMail([row], s.mail, "new"));
+  if (notify) await s.mailer.send(licenseMail([row], s.mail, mail));
   return row;
+}
+
+type MailKind = "new" | "renewal" | "seats";
+
+/** A new key for a subscription's new seat count; the keys it replaces are revoked. */
+async function reissueForSeats(s: Services, provider: string, subscriptionId: string, seats: number, periodEnd: string | null, orderId: string | null): Promise<Outcome> {
+  const active = (await s.store.bySubscription(provider, subscriptionId)).filter((r) => r.status === "active")
+    .sort((a, b) => b.issued_at.localeCompare(a.issued_at));
+  const latest = active[0];
+  if (!latest) return { status: 200, body: "no license for that subscription" };
+  if (latest.seats === seats && !orderId) return { status: 200, body: "seats unchanged" };
+  const row = await issue(s, {
+    provider, orderId, customerId: latest.customer_id, subscriptionId, email: latest.email, name: latest.name,
+    plan: latest.plan, seats, periodEnd: periodEnd ?? null, expiresAt: periodEnd ? undefined : latest.expires_at,
+  }, true, "seats");
+  for (const r of active) await s.store.revoke(r.id, `replaced by ${row.id} (${seats} seats)`);
+  return { status: 201, body: `issued ${row.id}` };
 }
 
 export interface Outcome { status: number; body: string; }
@@ -54,9 +71,12 @@ export async function applyAction(s: Services, provider: string, eventId: string
     case "issue": {
       const o: Order = action.order;
       if (await s.store.byOrder(o.provider, o.orderId)) return { status: 200, body: "order already licensed" };
-      const row = await issue(s, { ...o });
+      if (o.reason === "seats" && o.subscriptionId) return reissueForSeats(s, o.provider, o.subscriptionId, o.seats, o.periodEnd, o.orderId);
+      const row = await issue(s, { ...o }, true, o.reason === "renewal" ? "renewal" : "new");
       return { status: 201, body: `issued ${row.id}` };
     }
+    case "reseat":
+      return reissueForSeats(s, provider, action.subscriptionId, action.seats, action.periodEnd, null);
     case "revoke": {
       const rows: LicenseRow[] = [];
       if (action.orderId) { const r = await s.store.byOrder(provider, action.orderId); if (r) rows.push(r); }
