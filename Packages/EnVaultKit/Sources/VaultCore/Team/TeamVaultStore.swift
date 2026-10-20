@@ -339,19 +339,21 @@ public actor TeamVaultStore {
                 rejectedFiles[path.string] = error.localizedDescription
             }
         }
-        // Follow links until no new key turns up.
+        // Follow links until no new key turns up. Links between keys this Mac
+        // already holds are opened too: only links that open count, and upkeep
+        // links a new key to every older one it can't reach through them.
         var progress = true
         while progress {
             progress = false
             for (newer, olders) in linksPresent {
                 guard let newerKey = keys[newer] else { continue }
-                for older in olders where keys[older] == nil {
+                for older in olders where verifiedLinks[newer]?.contains(older) != true {
                     let path = Self.keysDir.appending(newer.string).appending("prev-\(older.string).json")
                     guard rejectedFiles[path.string] == nil, let epoch = state.epoch(older) else { continue }
                     do {
-                        keys[older] = try TeamKeys.open(try KeyLink.decode(try await storage.read(path)), with: newerKey, newer: newer, older: epoch, vaultId: vaultId)
+                        let key = try TeamKeys.open(try KeyLink.decode(try await storage.read(path)), with: newerKey, newer: newer, older: epoch, vaultId: vaultId)
                         verifiedLinks[newer, default: []].insert(older)
-                        progress = true
+                        if keys[older] == nil { keys[older] = key; progress = true }
                     } catch {
                         rejectedFiles[path.string] = error.localizedDescription
                     }
