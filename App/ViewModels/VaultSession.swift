@@ -125,9 +125,7 @@ final class VaultSession {
     /// list of event ids still reads).
     static func seen(at url: URL) -> TeamSeen {
         guard let data = try? Data(contentsOf: url) else { return TeamSeen() }
-        if let seen = try? JSONDecoder().decode(TeamSeen.self, from: data) { return seen }
-        let ids = (try? JSONDecoder().decode([String].self, from: data)) ?? []
-        return TeamSeen(events: Set(ids.compactMap(ULID.init(string:))))
+        return TeamSeen.decode(data)
     }
 
     /// Drops the decrypted snapshots (the store clears its own index on lock).

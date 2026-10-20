@@ -1008,4 +1008,14 @@ public struct TeamSeen: Codable, Equatable, Sendable {
     public init(events: Set<ULID> = [], eventDigests: [ULID: Data]? = nil, files: [String: Data]? = nil, late: Set<ULID> = []) {
         self.events = events; self.eventDigests = eventDigests; self.files = files; self.late = late
     }
+
+    /// Where the app keeps it, inside its container's Application Support.
+    public static func fileName(vaultId: UUID) -> String { "EnVault/TeamState/\(vaultId.uuidString)-seen.json" }
+
+    /// A saved seen file (0.8.0's plain list of event ids still reads).
+    public static func decode(_ data: Data) -> TeamSeen {
+        if let seen = try? JSONDecoder().decode(TeamSeen.self, from: data) { return seen }
+        let ids = (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        return TeamSeen(events: Set(ids.compactMap(ULID.init(string:))))
+    }
 }

@@ -727,7 +727,7 @@ final class AppModel {
 
     private static func seenURL(for vaultId: UUID) -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("EnVault/TeamState/\(vaultId.uuidString)-seen.json")
+        return support.appendingPathComponent(TeamSeen.fileName(vaultId: vaultId))
     }
 
     private func transport(for record: TeamRecord) -> CloudVaultTransport {
@@ -1471,6 +1471,10 @@ final class AppModel {
             storage: { [weak self] agent, vaultId in
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try self.vaultStorageForCLI(agent: agent, vaultId: vaultId)
+            },
+            seen: { vaultId in
+                let url = Self.seenURL(for: vaultId)
+                return FileManager.default.fileExists(atPath: url.path) ? VaultSession.seen(at: url) : nil
             })
         agentRunning = server.start()
         agent = server

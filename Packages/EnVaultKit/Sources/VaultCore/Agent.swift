@@ -12,7 +12,7 @@ public enum Agent {
     public static let portName = "dk.dinhkhanh.envault.agent"
 
     public struct Request: Codable, Sendable {
-        public enum Op: String, Codable, Sendable { case info, requestKey, poll, storage }
+        public enum Op: String, Codable, Sendable { case info, requestKey, poll, storage, teamSeen }
         public var op: Op
         public var vaultId: UUID?
         public var requestId: UUID?
@@ -86,6 +86,8 @@ public enum Agent {
         public var files: [Data]?
         public var exists: Bool?
         public var names: [String]?
+        /// `teamSeen`: what the app had accepted of the team vault (nil: never opened on this Mac).
+        public var seen: TeamSeen?
 
         public init(ok: Bool, error: String? = nil, info: Info? = nil, requestId: UUID? = nil, state: State? = nil, key: Data? = nil, denied: Bool? = nil) {
             self.ok = ok; self.error = error; self.info = info; self.requestId = requestId; self.state = state; self.key = key
@@ -122,6 +124,14 @@ public struct AgentClient {
             throw Agent.Failure("EnVault did not answer (status \(status))")
         }
         return try JSONDecoder().decode(Agent.Response.self, from: r as Data)
+    }
+
+    /// What the app had accepted of a team vault, so the CLI judges what it
+    /// reads against the same history (nil: never opened on this Mac).
+    public func teamSeen(vaultId: UUID) throws -> TeamSeen? {
+        let r = try send(Agent.Request(op: .teamSeen, vaultId: vaultId))
+        guard r.ok else { throw Agent.Failure(r.error ?? "EnVault didn't say what it has seen of this team vault") }
+        return r.seen
     }
 
     public func info() throws -> Agent.Info {
@@ -163,10 +173,13 @@ public final class AgentServer {
     /// Gets the requesting AI agent (nil for a person); throws to refuse.
     /// `vaultId`: a team vault the app keeps; nil for the vault it has open.
     public typealias StorageProvider = @MainActor (_ agent: String?, _ vaultId: UUID?) throws -> any VaultStorage
+    /// What this Mac had accepted of a team vault (`TeamVaultStore.seenState`), nil if nothing.
+    public typealias SeenProvider = @MainActor (_ vaultId: UUID) -> TeamSeen?
 
     private let info: InfoProvider
     private let authorize: Authorizer
     private let storage: StorageProvider?
+    private let seen: SeenProvider?
     private var port: CFMessagePort?
     private var source: CFRunLoopSource?
 
@@ -176,10 +189,11 @@ public final class AgentServer {
     /// The running server; the C callback has no context to find it otherwise.
     fileprivate static var current: AgentServer?
 
-    public init(info: @escaping InfoProvider, authorize: @escaping Authorizer, storage: StorageProvider? = nil) {
+    public init(info: @escaping InfoProvider, authorize: @escaping Authorizer, storage: StorageProvider? = nil, seen: SeenProvider? = nil) {
         self.info = info
         self.authorize = authorize
         self.storage = storage
+        self.seen = seen
     }
 
     /// Registers the port. False if the name is taken (another EnVault is running)
@@ -247,6 +261,11 @@ public final class AgentServer {
             return Agent.Response(ok: true, requestId: id, state: .pending)
         case .storage:
             return serveStorage(req)
+        case .teamSeen:
+            guard let seen, let vaultId = req.vaultId else { return .failure("this version of EnVault can't share what it has seen of a team vault") }
+            var r = Agent.Response(ok: true)
+            r.seen = seen(vaultId)
+            return r
         case .poll:
             guard let id = req.requestId, let r = requests[id] else { return .failure("unknown request") }
             switch r.outcome {
