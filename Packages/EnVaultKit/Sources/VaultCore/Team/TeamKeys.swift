@@ -22,6 +22,27 @@ public struct KeyWrap: Codable, Equatable, Sendable {
     }
 }
 
+/// A member's display name, AES-GCM under one epoch's key (NFR-13).
+public struct SealedName: Codable, Equatable, Sendable {
+    public var epoch: ULID
+    public var box: Data
+}
+
+/// An older epoch's key sealed under a newer one, stored as
+/// `keys/<newer>/prev-<older>.json`. Whoever holds the newer key can follow
+/// the links back and read revisions from before it, so a newcomer sees the
+/// vault's history (FR-16). Each key is checked against its epoch's commitment.
+public struct KeyLink: Codable, Equatable, Sendable {
+    public var newer: ULID
+    public var older: ULID
+    public var box: Data
+
+    public func encoded() throws -> Data { try JSONEncoder().encode(self) }
+    public static func decode(_ data: Data) throws -> KeyLink {
+        do { return try JSONDecoder().decode(KeyLink.self, from: data) } catch { throw VaultError.corruptRevision("key link: \(error)") }
+    }
+}
+
 /// Team keys: one random 256-bit AES key per epoch (NFR-2, NFR-3).
 public enum TeamKeys {
     /// X25519, HKDF-SHA256, AES-256-GCM.
@@ -71,6 +92,52 @@ public enum TeamKeys {
         }
         return key
     }
+
+    static func linkAAD(vaultId: UUID, newer: ULID, older: ULID) -> Data {
+        var c = CanonicalBytes("envault-epoch-link:1")
+        c.add(vaultId); c.add(newer); c.add(older)
+        return c.data
+    }
+
+    public static func link(_ olderKey: SymmetricKey, older: ULID, under newerKey: SymmetricKey, newer: ULID, vaultId: UUID) throws -> KeyLink {
+        let box = try AES.GCM.seal(olderKey.withUnsafeBytes { Data($0) }, using: newerKey,
+                                   authenticating: linkAAD(vaultId: vaultId, newer: newer, older: older)).combined!
+        return KeyLink(newer: newer, older: older, box: box)
+    }
+
+    /// Opens a link with the newer epoch's key and checks the result against the older epoch.
+    public static func open(_ link: KeyLink, with newerKey: SymmetricKey, older: TeamEpoch, vaultId: UUID) throws -> SymmetricKey {
+        guard link.older == older.id else { throw VaultError.corruptRevision("key link is for another epoch") }
+        let raw: Data
+        do {
+            raw = try AES.GCM.open(try AES.GCM.SealedBox(combined: link.box), using: newerKey,
+                                   authenticating: linkAAD(vaultId: vaultId, newer: link.newer, older: link.older))
+        } catch {
+            throw VaultError.corruptRevision("key link does not open")
+        }
+        let key = SymmetricKey(data: raw)
+        guard raw.count == 32, commitment(to: key, vaultId: vaultId, epoch: older.id) == older.keyCommitment else {
+            throw VaultError.corruptRevision("key link holds a key the epoch did not sign")
+        }
+        return key
+    }
+
+    static func nameAAD(vaultId: UUID, member: UUID, epoch: ULID) -> Data {
+        var c = CanonicalBytes("envault-member-name:1")
+        c.add(vaultId); c.add(member); c.add(epoch)
+        return c.data
+    }
+
+    public static func seal(name: String, member: UUID, vaultId: UUID, epoch: ULID, key: SymmetricKey) throws -> SealedName {
+        let box = try AES.GCM.seal(Data(name.utf8), using: key, authenticating: nameAAD(vaultId: vaultId, member: member, epoch: epoch)).combined!
+        return SealedName(epoch: epoch, box: box)
+    }
+
+    public static func open(_ name: SealedName, member: UUID, vaultId: UUID, key: SymmetricKey) -> String? {
+        guard let box = try? AES.GCM.SealedBox(combined: name.box),
+              let plain = try? AES.GCM.open(box, using: key, authenticating: nameAAD(vaultId: vaultId, member: member, epoch: name.epoch)) else { return nil }
+        return String(data: plain, encoding: .utf8)
+    }
 }
 
 /// A team vault revision file: `"EVT1"` + JSON envelope. The payload is
@@ -84,6 +151,12 @@ public enum TeamRevisionFile {
         var author: UUID
         var box: Data
         var signature: Data
+    }
+
+    /// The epoch a revision file is sealed under, read without opening it.
+    public static func epoch(of data: Data) -> ULID? {
+        guard data.count > magic.count, data.prefix(magic.count) == magic else { return nil }
+        return (try? JSONDecoder().decode(Envelope.self, from: data.dropFirst(magic.count)))?.epoch
     }
 
     static func aad(vaultId: UUID, scope: RevisionFile.Scope, ownerId: UUID, revisionId: ULID, epoch: ULID, author: UUID) -> Data {

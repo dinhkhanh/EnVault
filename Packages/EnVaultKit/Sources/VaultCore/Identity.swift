@@ -26,9 +26,11 @@ public struct UserIdentity: Sendable {
     }
 }
 
-/// The shareable half of a `UserIdentity`. Plain data, self-signed.
+/// The shareable half of a `UserIdentity`. Plain data; the id and keys are self-signed.
 public struct PublicIdentity: Codable, Hashable, Sendable {
     public var id: UUID
+    /// Not signed, and empty inside a team vault, which keeps names encrypted
+    /// in its membership log (NFR-13). The safety code is what identifies a person.
     public var name: String
     /// Raw 32-byte X25519 public key.
     public var agreementKey: Data
@@ -44,8 +46,14 @@ public struct PublicIdentity: Codable, Hashable, Sendable {
         c.add(id)
         c.add(agreementKey)
         c.add(signingKey)
-        c.add(name)
         return c.data
+    }
+
+    /// The same identity without its name, as a team vault stores it.
+    public var unnamed: PublicIdentity {
+        var p = self
+        p.name = ""
+        return p
     }
 
     /// The keys are well formed and the signature is the signing key's own.
@@ -78,7 +86,7 @@ public enum SafetyCode {
 }
 
 /// One encrypted revision of the identity, stored in the personal vault.
-struct IdentityRevision: Codable, Sendable {
+struct IdentityRevision: Codable, Sendable, Identifiable {
     var id: ULID
     var identityId: UUID
     var name: String

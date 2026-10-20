@@ -17,10 +17,8 @@ public actor VaultStore {
     public private(set) var header: VaultHeader
 
     private var vaultKey: VaultKey?
-    private var projectRevisions: [UUID: [ProjectRevision]] = [:]   // sorted ascending by id
-    private var itemRevisions: [UUID: [ItemRevision]] = [:]         // sorted ascending by id
+    private var index = RevisionIndex()
     private var identityRevisions: [UUID: [IdentityRevision]] = [:] // sorted ascending by id
-    private var indexedPaths: Set<String> = []
 
     public var isUnlocked: Bool { vaultKey != nil }
     public var vaultId: UUID { header.vaultId }
@@ -93,10 +91,8 @@ public actor VaultStore {
     }
 
     private func clearIndex() {
-        projectRevisions = [:]
-        itemRevisions = [:]
+        index = RevisionIndex()
         identityRevisions = [:]
-        indexedPaths = []
     }
 
     // MARK: - Indexing
@@ -104,52 +100,13 @@ public actor VaultStore {
     /// Progress callback for long scans: (revisions decrypted, revisions found).
     public typealias Progress = @Sendable (_ done: Int, _ total: Int) -> Void
 
-    private enum Pending: Sendable {
-        case project(VaultPath, ownerId: UUID, revisionId: ULID)
-        case item(VaultPath, ownerId: UUID, revisionId: ULID)
-        case identity(VaultPath, ownerId: UUID, revisionId: ULID)
-        var path: VaultPath { switch self { case .project(let p, _, _), .item(let p, _, _), .identity(let p, _, _): p } }
-    }
-
     /// Scans storage for revision files not yet indexed and decrypts them.
     /// Files are read in batches: per-file reads dominate, especially in iCloud Drive.
     /// Returns true when anything new was found.
     @discardableResult
     public func refresh(progress: Progress? = nil) async throws -> Bool {
         guard let vk = vaultKey else { throw VaultError.locked }
-        var pending: [Pending] = []
-        let projectsDir = VaultPath("projects")
-        for pid in try await storage.list(projectsDir) {
-            guard let projectId = UUID(uuidString: pid) else { continue }
-            let pdir = projectsDir.appending(pid)
-            if projectId == IdentityLayout.namespace {
-                let idDir = pdir.appending("identity")
-                for iid in try await storage.list(idDir) {
-                    guard let identityId = UUID(uuidString: iid) else { continue }
-                    for file in try await storage.list(idDir.appending(iid)) {
-                        let path = idDir.appending(iid).appending(file)
-                        guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
-                        pending.append(.identity(path, ownerId: identityId, revisionId: rid))
-                    }
-                }
-                continue
-            }
-            for file in try await storage.list(pdir.appending("meta")) {
-                let path = pdir.appending("meta").appending(file)
-                guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
-                pending.append(.project(path, ownerId: projectId, revisionId: rid))
-            }
-            let itemsDir = pdir.appending("items")
-            for iid in try await storage.list(itemsDir) {
-                guard let itemId = UUID(uuidString: iid) else { continue }
-                let idir = itemsDir.appending(iid)
-                for file in try await storage.list(idir) {
-                    let path = idir.appending(file)
-                    guard !indexedPaths.contains(path.string), let rid = revisionId(fromFileName: file) else { continue }
-                    pending.append(.item(path, ownerId: itemId, revisionId: rid))
-                }
-            }
-        }
+        let pending = try await RevisionLayout.scan(storage, skipping: index.indexedPaths)
         guard !pending.isEmpty else { return false }
 
         let total = pending.count
@@ -158,18 +115,17 @@ public actor VaultStore {
         for start in stride(from: 0, to: total, by: 100) {
             let batch = Array(pending[start..<min(start + 100, total)])
             let files = try await storage.readMany(batch.map(\.path))
-            for (p, data) in zip(batch, files) {
-                switch p {
-                case .project(let path, let owner, let rid):
-                    insert(try RevisionFile.decode(ProjectRevision.self, from: data, vaultId: vaultId, scope: .project, ownerId: owner, revisionId: rid, key: vk))
-                    indexedPaths.insert(path.string)
-                case .item(let path, let owner, let rid):
-                    insert(try RevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: owner, revisionId: rid, key: vk))
-                    indexedPaths.insert(path.string)
-                case .identity(let path, let owner, let rid):
-                    insert(try RevisionFile.decode(IdentityRevision.self, from: data, vaultId: vaultId, scope: .identity, ownerId: owner, revisionId: rid, key: vk))
-                    indexedPaths.insert(path.string)
+            for (f, data) in zip(batch, files) {
+                switch f.scope {
+                case .project:
+                    index.insert(try RevisionFile.decode(ProjectRevision.self, from: data, vaultId: vaultId, scope: .project, ownerId: f.ownerId, revisionId: f.revisionId, key: vk))
+                case .item:
+                    index.insert(try RevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: f.ownerId, revisionId: f.revisionId, key: vk))
+                case .identity:
+                    let rev = try RevisionFile.decode(IdentityRevision.self, from: data, vaultId: vaultId, scope: .identity, ownerId: f.ownerId, revisionId: f.revisionId, key: vk)
+                    RevisionIndex.insert(rev, into: &identityRevisions[rev.identityId, default: []])
                 }
+                index.indexedPaths.insert(f.path.string)
             }
             done += batch.count
             progress?(done, total)
@@ -177,77 +133,15 @@ public actor VaultStore {
         return true
     }
 
-    private func revisionId(fromFileName name: String) -> ULID? {
-        guard name.hasSuffix("." + RevisionFile.fileExtension) else { return nil }
-        return ULID(string: String(name.dropLast(RevisionFile.fileExtension.count + 1)))
-    }
-
-    private func insert(_ rev: ProjectRevision) {
-        var list = projectRevisions[rev.projectId] ?? []
-        if let i = list.firstIndex(where: { $0.id >= rev.id }) {
-            if list[i].id != rev.id { list.insert(rev, at: i) }
-        } else { list.append(rev) }
-        projectRevisions[rev.projectId] = list
-    }
-
-    private func insert(_ rev: ItemRevision) {
-        var list = itemRevisions[rev.itemId] ?? []
-        if let i = list.firstIndex(where: { $0.id >= rev.id }) {
-            if list[i].id != rev.id { list.insert(rev, at: i) }
-        } else { list.append(rev) }
-        itemRevisions[rev.itemId] = list
-    }
-
-    private func insert(_ rev: IdentityRevision) {
-        var list = identityRevisions[rev.identityId] ?? []
-        if let i = list.firstIndex(where: { $0.id >= rev.id }) {
-            if list[i].id != rev.id { list.insert(rev, at: i) }
-        } else { list.append(rev) }
-        identityRevisions[rev.identityId] = list
-    }
-
     // MARK: - Reading
 
-    public func projects(includeDeleted: Bool = false) -> [Project] {
-        projectRevisions.values.compactMap { revs -> Project? in
-            guard let latest = revs.last, includeDeleted || !latest.deleted else { return nil }
-            return Project(revision: latest, itemCount: liveItems(in: latest.projectId).count)
-        }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    public func project(_ id: UUID) -> Project? {
-        guard let latest = projectRevisions[id]?.last, !latest.deleted else { return nil }
-        return Project(revision: latest, itemCount: liveItems(in: id).count)
-    }
-
-    public func items(in projectId: UUID) -> [Item] {
-        liveItems(in: projectId).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    public func allItems() -> [Item] {
-        itemRevisions.values.compactMap { revs in
-            guard let latest = revs.last, !latest.deleted, project(latest.projectId) != nil else { return nil }
-            return Item(revision: latest, revisionCount: revs.count)
-        }
-    }
-
-    public func item(_ id: UUID) -> Item? {
-        guard let revs = itemRevisions[id], let latest = revs.last, !latest.deleted else { return nil }
-        return Item(revision: latest, revisionCount: revs.count)
-    }
-
+    public func projects(includeDeleted: Bool = false) -> [Project] { index.projects(includeDeleted: includeDeleted) }
+    public func project(_ id: UUID) -> Project? { index.project(id) }
+    public func items(in projectId: UUID) -> [Item] { index.items(in: projectId) }
+    public func allItems() -> [Item] { index.allItems() }
+    public func item(_ id: UUID) -> Item? { index.item(id) }
     /// All revisions of an item, newest first.
-    public func history(of itemId: UUID) -> [ItemRevision] {
-        (itemRevisions[itemId] ?? []).reversed()
-    }
-
-    private func liveItems(in projectId: UUID) -> [Item] {
-        itemRevisions.values.compactMap { revs in
-            guard let latest = revs.last, latest.projectId == projectId, !latest.deleted else { return nil }
-            return Item(revision: latest, revisionCount: revs.count)
-        }
-    }
+    public func history(of itemId: UUID) -> [ItemRevision] { index.history(of: itemId) }
 
     // MARK: - Identity (Team, FR-1)
 
@@ -284,79 +178,57 @@ public actor VaultStore {
 
     @discardableResult
     public func createProject(name: String, tags: [String] = []) async throws -> Project {
-        let now = Date()
-        let rev = ProjectRevision(projectId: UUID(), name: name, tags: tags, createdAt: now, modifiedAt: now, device: device)
+        let rev = index.newProject(name: name, tags: tags, device: device)
         try await write(rev)
         return Project(revision: rev, itemCount: 0)
     }
 
     @discardableResult
     public func updateProject(_ id: UUID, name: String? = nil, tags: [String]? = nil) async throws -> Project {
-        guard var rev = projectRevisions[id]?.last else { throw VaultError.io("Unknown project") }
-        rev.id = ULID(); rev.modifiedAt = Date(); rev.device = device
-        if let name { rev.name = name }
-        if let tags { rev.tags = tags }
+        let rev = try index.updatedProject(id, name: name, tags: tags, device: device)
         try await write(rev)
-        return Project(revision: rev, itemCount: liveItems(in: id).count)
+        return Project(revision: rev, itemCount: index.liveItems(in: id).count)
     }
 
     /// Soft-deletes the project and every live item in it (each gets a tombstone).
     public func deleteProject(_ id: UUID) async throws {
-        for item in liveItems(in: id) { try await deleteItem(item.id) }
-        guard var rev = projectRevisions[id]?.last else { return }
-        rev.id = ULID(); rev.modifiedAt = Date(); rev.device = device; rev.deleted = true
+        for item in index.liveItems(in: id) { try await deleteItem(item.id) }
+        guard let rev = index.deletedProject(id, device: device) else { return }
         try await write(rev)
     }
 
     @discardableResult
     public func createItem(in projectId: UUID, name: String, payload: ItemPayload, tags: [String] = []) async throws -> Item {
-        guard project(projectId) != nil else { throw VaultError.io("Unknown project") }
-        let now = Date()
-        let rev = ItemRevision(itemId: UUID(), projectId: projectId, name: name, tags: tags, payload: payload, createdAt: now, modifiedAt: now, device: device)
+        let rev = try index.newItem(in: projectId, name: name, payload: payload, tags: tags, device: device)
         try await write(rev)
         return Item(revision: rev, revisionCount: 1)
     }
 
     @discardableResult
     public func updateItem(_ id: UUID, name: String? = nil, tags: [String]? = nil, payload: ItemPayload? = nil, projectId: UUID? = nil) async throws -> Item {
-        guard var rev = itemRevisions[id]?.last else { throw VaultError.io("Unknown item") }
-        if let name { rev.name = name }
-        if let tags { rev.tags = tags }
-        if let payload { rev.payload = payload }
-        if let projectId { rev.projectId = projectId }
-        // Skip no-op saves so history stays meaningful.
-        if let last = itemRevisions[id]?.last, last.name == rev.name, last.tags == rev.tags, last.payload == rev.payload, last.projectId == rev.projectId, !last.deleted {
-            return Item(revision: last, revisionCount: itemRevisions[id]!.count)
+        guard let rev = try index.updatedItem(id, name: name, tags: tags, payload: payload, projectId: projectId, device: device) else {
+            return index.item(id)!
         }
-        rev.id = ULID(); rev.modifiedAt = Date(); rev.device = device; rev.deleted = false
         try await write(rev)
-        return Item(revision: rev, revisionCount: itemRevisions[id]!.count)
+        return index.current(rev)
     }
 
     public func deleteItem(_ id: UUID) async throws {
-        guard var rev = itemRevisions[id]?.last, !rev.deleted else { return }
-        rev.id = ULID(); rev.modifiedAt = Date(); rev.device = device; rev.deleted = true
+        guard let rev = index.deletedItem(id, device: device) else { return }
         try await write(rev)
     }
 
     /// Writes a new revision whose content equals an older one (undelete or restore).
     @discardableResult
     public func restore(_ old: ItemRevision) async throws -> Item {
-        var rev = old
-        rev.id = ULID(); rev.modifiedAt = Date(); rev.device = device; rev.deleted = false
+        let rev = index.restored(old, device: device)
         try await write(rev)
-        return Item(revision: rev, revisionCount: itemRevisions[rev.itemId]!.count)
+        return index.current(rev)
     }
 
     /// Removes all but the latest revision of an item from storage.
     public func compact(itemId: UUID) async throws {
-        guard let revs = itemRevisions[itemId], revs.count > 1, let latest = revs.last else { return }
-        for old in revs.dropLast() {
-            let path = itemPath(projectId: old.projectId, itemId: itemId, revisionId: old.id)
-            try await storage.delete(path)
-            indexedPaths.remove(path.string)
-        }
-        itemRevisions[itemId] = [latest]
+        for path in index.compact(itemId: itemId) { try await storage.delete(path) }
     }
 
     public func changePassphrase(current: String, new: String) async throws {
@@ -406,39 +278,32 @@ public actor VaultStore {
         header = newHeader
     }
 
-    // MARK: - Paths & encoding
-
-    private func itemPath(projectId: UUID, itemId: UUID, revisionId: ULID) -> VaultPath {
-        VaultPath("projects", projectId.uuidString, "items", itemId.uuidString, "\(revisionId.string).\(RevisionFile.fileExtension)")
-    }
-    private func projectPath(projectId: UUID, revisionId: ULID) -> VaultPath {
-        VaultPath("projects", projectId.uuidString, "meta", "\(revisionId.string).\(RevisionFile.fileExtension)")
-    }
+    // MARK: - Encoding
 
     private func write(_ rev: ProjectRevision) async throws {
         guard let vk = vaultKey else { throw VaultError.locked }
         let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .project, ownerId: rev.projectId, revisionId: rev.id, key: vk)
-        let path = projectPath(projectId: rev.projectId, revisionId: rev.id)
+        let path = RevisionLayout.projectPath(projectId: rev.projectId, revisionId: rev.id)
         try await storage.writeNew(path, data: data)
-        insert(rev)
-        indexedPaths.insert(path.string)
+        index.insert(rev)
+        index.indexedPaths.insert(path.string)
     }
 
     private func write(_ rev: IdentityRevision) async throws {
         guard let vk = vaultKey else { throw VaultError.locked }
         let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .identity, ownerId: rev.identityId, revisionId: rev.id, key: vk)
-        let path = VaultPath("projects", IdentityLayout.namespace.uuidString, "identity", rev.identityId.uuidString, "\(rev.id.string).\(RevisionFile.fileExtension)")
+        let path = RevisionLayout.identityPath(identityId: rev.identityId, revisionId: rev.id)
         try await storage.writeNew(path, data: data)
-        insert(rev)
-        indexedPaths.insert(path.string)
+        RevisionIndex.insert(rev, into: &identityRevisions[rev.identityId, default: []])
+        index.indexedPaths.insert(path.string)
     }
 
     private func write(_ rev: ItemRevision) async throws {
         guard let vk = vaultKey else { throw VaultError.locked }
         let data = try RevisionFile.encode(rev, vaultId: vaultId, scope: .item, ownerId: rev.itemId, revisionId: rev.id, key: vk)
-        let path = itemPath(projectId: rev.projectId, itemId: rev.itemId, revisionId: rev.id)
+        let path = RevisionLayout.itemPath(projectId: rev.projectId, itemId: rev.itemId, revisionId: rev.id)
         try await storage.writeNew(path, data: data)
-        insert(rev)
-        indexedPaths.insert(path.string)
+        index.insert(rev)
+        index.indexedPaths.insert(path.string)
     }
 }
