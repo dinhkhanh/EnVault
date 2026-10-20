@@ -62,6 +62,8 @@ public actor TeamVaultStore {
     private var linksPresent: [ULID: Set<ULID>] = [:]   // newer epoch → older epochs
     private var index = RevisionIndex()
     private var authors: [ULID: UUID] = [:]
+    /// The epoch each indexed revision is sealed under.
+    private var revisionEpochs: [ULID: ULID] = [:]
     /// The event set the index was checked against; a change re-checks every revision.
     private var indexedEvents: Set<ULID>?
     /// Revisions sealed under an epoch whose key this Mac does not hold yet.
@@ -136,6 +138,7 @@ public actor TeamVaultStore {
         linksPresent = [:]
         index = RevisionIndex()
         authors = [:]
+        revisionEpochs = [:]
         indexedEvents = nil
         waitingForKey = [:]
         requests = [:]
@@ -284,6 +287,7 @@ public actor TeamVaultStore {
             changed = indexedEvents != nil && !index.indexedPaths.isEmpty
             index = RevisionIndex()
             authors = [:]
+            revisionEpochs = [:]
             waitingForKey = [:]
             rejectedFiles = rejectedFiles.filter { !$0.key.hasPrefix("projects/") }
             indexedEvents = eventIds
@@ -313,12 +317,14 @@ public actor TeamVaultStore {
                         guard rev.id == f.revisionId, rev.projectId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
                         index.insert(rev)
                         authors[rev.id] = author
+                        revisionEpochs[rev.id] = epoch
                     case .item:
                         let (rev, author) = try TeamRevisionFile.decode(ItemRevision.self, from: data, vaultId: vaultId, scope: .item, ownerId: f.ownerId,
                                                                         revisionId: f.revisionId, state: state, keys: keys)
                         guard rev.id == f.revisionId, rev.itemId == f.ownerId else { throw VaultError.corruptRevision("revision does not match its path") }
                         index.insert(rev)
                         authors[rev.id] = author
+                        revisionEpochs[rev.id] = epoch
                     case .identity, .team:
                         throw VaultError.corruptRevision("only a personal vault holds this")
                     }
@@ -344,6 +350,57 @@ public actor TeamVaultStore {
     public func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) { try index.export(projectId) }
     /// Who wrote a revision (FR-19).
     public func author(of revision: ULID) -> UUID? { authors[revision] }
+
+    // MARK: - Exposure after removal (FR-14)
+
+    /// Former members, each with the newest epoch they held a key for. With
+    /// it they could open that epoch and, through its links, every older one.
+    private func formerHolders() -> [UUID: ULID] {
+        var newest: [UUID: ULID] = [:]
+        for id in state.everyone.keys where state.members[id] == nil {
+            if let e = state.epochs.last(where: { $0.holders.contains(id) }) { newest[id] = e.id }
+        }
+        return newest
+    }
+
+    /// The people no longer in the vault who could read this revision.
+    public func formerReaders(of revision: ULID) -> Set<UUID> {
+        guard let epoch = revisionEpochs[revision] else { return [] }
+        return Set(formerHolders().filter { epoch <= $0.value }.keys)
+    }
+
+    /// Live items whose current version people who left could read: the
+    /// secrets to rotate, with who could read each (FR-14). An item drops off
+    /// once it is saved again under a newer key.
+    public func exposedItems() -> [(item: Item, readers: Set<UUID>)] {
+        let holders = formerHolders()
+        guard !holders.isEmpty else { return [] }
+        return index.allItems().compactMap { item in
+            guard let epoch = revisionEpochs[item.revisionId] else { return nil }
+            let readers = Set(holders.filter { epoch <= $0.value }.keys)
+            return readers.isEmpty ? nil : (item, readers)
+        }
+        .sorted { $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending }
+    }
+
+    // MARK: - Membership log (FR-19)
+
+    /// Every membership change, newest first, with join requests among them.
+    public func log() -> [TeamLogEntry] {
+        var out: [TeamLogEntry] = events.values.map { e in
+            let change: TeamLogEntry.Change = switch e.change {
+            case .add(let identity, let role): .added(identity.id, role)
+            case .setRole(let member, let role): .roleChanged(member, role)
+            case .remove(let member): member == e.author ? .left(member) : .removed(member)
+            case .rotate: .rotated
+            case .name(let member, _): .named(member)
+            case .title: .titled
+            }
+            return TeamLogEntry(id: e.id, author: e.author, change: change, rejected: state.rejected[e.id], late: lateEvents.contains(e.id))
+        }
+        out += requests.values.map { TeamLogEntry(id: $0.id, author: $0.identity.id, change: .asked($0.identity.id), rejected: nil, late: false) }
+        return out.sorted { $0.id > $1.id }
+    }
 
     /// Current members, owner first, then by role and name.
     public func members() -> [TeamMember] {
@@ -442,6 +499,7 @@ public actor TeamVaultStore {
         index.insert(rev)
         index.indexedPaths.insert(path.string)
         authors[rev.id] = w.me.id
+        revisionEpochs[rev.id] = w.epoch
     }
 
     private func write(_ rev: ItemRevision) async throws {
@@ -452,6 +510,7 @@ public actor TeamVaultStore {
         index.insert(rev)
         index.indexedPaths.insert(path.string)
         authors[rev.id] = w.me.id
+        revisionEpochs[rev.id] = w.epoch
     }
 
     // MARK: - Joining (FR-7, FR-8)
@@ -661,4 +720,26 @@ public actor TeamVaultStore {
         }
         return seen
     }
+}
+
+/// One line of a team vault's membership log (FR-19).
+public struct TeamLogEntry: Equatable, Sendable, Identifiable {
+    public enum Change: Equatable, Sendable {
+        case asked(UUID)
+        case added(UUID, TeamRole)
+        case roleChanged(UUID, TeamRole)
+        case removed(UUID)
+        case left(UUID)
+        case rotated
+        case named(UUID)
+        case titled
+    }
+    public var id: ULID
+    public var date: Date { id.timestamp }
+    public var author: UUID
+    public var change: Change
+    /// Why every Mac ignores this change, if it does.
+    public var rejected: String?
+    /// Arrived after newer changes were applied (see `TeamVaultStore.lateEvents`).
+    public var late: Bool
 }

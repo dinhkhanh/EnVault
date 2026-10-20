@@ -57,6 +57,40 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         await #expect(throws: VaultError.unsupportedFormatVersion(2)) { try await VaultStore.open(storage: storage) }
     }
 
+    @Test func secretsSeenByFormerMembersAreListedUntilChanged() async throws {
+        let (store, _) = try await team()
+        let p = try await store.createProject(name: "api")
+        let seen = try await store.createItem(in: p.id, name: "seen", payload: secret)
+        #expect(await store.exposedItems().isEmpty)
+        try await store.remove(dee.id)
+        let later = try await store.createItem(in: p.id, name: "later", payload: secret)
+        #expect(await store.exposedItems().map(\.item.id) == [seen.id])
+        #expect(await store.exposedItems().first?.readers == [dee.id])
+        #expect(await store.formerReaders(of: seen.revisionId) == [dee.id])
+        #expect(await store.formerReaders(of: later.revisionId).isEmpty)
+
+        try await store.remove(cyd.id)                       // Cyd could read "later" too
+        #expect(await store.exposedItems().map(\.item.id).sorted() == [seen.id, later.id].sorted())
+        let rotated = try await store.updateItem(seen.id, payload: .envFile(text: "API_KEY=2"))
+        #expect(await store.formerReaders(of: rotated.revisionId).isEmpty)
+        #expect(await store.exposedItems().map(\.item.id) == [later.id])
+    }
+
+    @Test func theMembershipLogTellsTheStory() async throws {
+        let (store, macs) = try await team()
+        try await store.setRole(of: cyd.id, to: .viewer)
+        let onDee = try await open(macs[dee.id]!, as: dee)
+        await sync(macs[ada.id]!, macs[dee.id]!)
+        try await onDee.leave()
+        await sync(macs[ada.id]!, macs[dee.id]!)
+        try await store.refresh()
+        try await store.remove(bob.id)
+        let log = await store.log().map(\.change)
+        #expect(Array(log.prefix(4)) == [.rotated, .removed(bob.id), .left(dee.id), .roleChanged(cyd.id, .viewer)])
+        #expect(log.contains(.added(cyd.id, .member)) && log.contains(.titled) && log.contains(.named(ada.id)))
+        #expect(await store.log().allSatisfy { $0.rejected == nil })
+    }
+
     @Test func everyRoleSeesTheSameVault() async throws {
         let (_, macs) = try await team()
         let onCyd = try await open(macs[cyd.id]!, as: cyd)

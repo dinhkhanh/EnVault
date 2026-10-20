@@ -90,6 +90,7 @@ struct ItemListView: View {
 }
 
 struct ItemRow: View {
+    @Environment(AppModel.self) private var model
     let item: Item
     var body: some View {
         HStack(spacing: 8) {
@@ -99,6 +100,10 @@ struct ItemRow: View {
                 Text("\(Text(item.modifiedAt, style: .relative)) ago").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if let readers = model.session?.team?.exposed[item.id], let team = model.session?.team {
+                Image(systemName: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.red)
+                    .help("\(readers.map(team.name).sorted().formatted(.list(type: .and))) could read the current value before leaving. Rotate it.")
+            }
             if !item.tags.isEmpty {
                 Text(item.tags.joined(separator: " ")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }

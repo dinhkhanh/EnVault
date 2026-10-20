@@ -81,6 +81,7 @@ struct EnvFileView: View {
     @State private var draft: String
     @State private var exportConfirm: URL?
     @State private var keyAges: [String: Date] = [:]
+    @State private var exposedKeys: [String: String] = [:]
     /// Temporary, per-editor override of the "Mask values by default" setting;
     /// never written back to it. Starts from the setting each time an item opens.
     @State private var masked = UserDefaults.standard.bool(forKey: Prefs.maskValues)
@@ -144,7 +145,7 @@ struct EnvFileView: View {
 
             switch mode {
             case .table:
-                EnvTableView(doc: doc, masked: masked, keyAges: keyAges, issues: issues) { key, value in
+                EnvTableView(doc: doc, masked: masked, keyAges: keyAges, exposed: exposedKeys, issues: issues) { key, value in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.setting(key, to: value).text)) }
                 } onDelete: { key in
                     Task { await model.updateItem(item.id, payload: .envFile(text: doc.removing(key).text)) }
@@ -163,6 +164,7 @@ struct EnvFileView: View {
                 return (r.modifiedAt, t)
             }
             keyAges = EnvHygiene.keyAges(revisions: revs)
+            exposedKeys = await model.exposedKeys(of: item)
         }
         .confirmationDialog("Replace existing file?", isPresented: Binding(get: { exportConfirm != nil }, set: { if !$0 { exportConfirm = nil } }), presenting: exportConfirm) { url in
             Button("Replace", role: .destructive) { write(to: url) }

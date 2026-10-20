@@ -10,6 +10,8 @@ struct HistoryView: View {
     @State private var revisions: [ItemRevision] = []
     @State private var selected: ItemRevision?
     @State private var confirmCompact = false
+    /// Team vaults: who wrote each revision.
+    @State private var authors: [ULID: String] = [:]
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +22,7 @@ struct HistoryView: View {
                         if r.id == item.revisionId { Text("current").font(.caption).padding(.horizontal, 5).background(.tint.opacity(0.2), in: Capsule()) }
                         if r.deleted { Text("deleted").font(.caption).foregroundStyle(.red) }
                     }
-                    Text(r.device.name).font(.caption).foregroundStyle(.secondary)
+                    Text(authors[r.id].map { "\($0) · \(r.device.name)" } ?? r.device.name).font(.caption).foregroundStyle(.secondary)
                 }
                 .tag(r)
             }
@@ -69,6 +71,7 @@ struct HistoryView: View {
 
     private func load() async {
         revisions = await model.history(of: item.id)
+        authors = await model.authorNames(of: revisions)
         selected = revisions.first
     }
 }
