@@ -1008,8 +1008,7 @@ final class AppModel {
                 : "The Team license doesn't allow new members: \(Self.describe(license))"
             return
         }
-        let members = s.team?.members.count ?? 0
-        guard members < seats else {
+        guard seatsUsed(in: s) < seats else {
             errorMessage = "The Team license covers \(seats) seats and all are taken. The owner can add seats in their subscription."
             return
         }
@@ -1034,7 +1033,23 @@ final class AppModel {
         if let seen = Self.seenLicenseEvent(s.vaultId), (s.team?.licenseEvent).map({ $0 < seen }) ?? true {
             return .invalid("The vault's license was removed or rolled back. The owner's Mac puts it back when it next opens the vault.")
         }
-        return TeamLicenseStatus.evaluate(s.team?.licenseKey, verifier: licenseVerifier)
+        return TeamLicenseStatus.evaluate(s.team?.license?.entitlement, verifier: licenseVerifier)
+    }
+
+    /// Seats in use for a team vault's license: its members plus the people in
+    /// the owner's other team vaults (each person counted once).
+    func seatsUsed(in s: VaultSession) -> Int {
+        (s.team?.members.count ?? 0) + (s.team?.license?.elsewhere ?? 0)
+    }
+
+    /// On the owner's Mac: people in the owner's other team vaults who aren't in `s`.
+    private func peopleElsewhere(than s: VaultSession) -> Int {
+        let here = Set(s.team?.members.map(\.id) ?? [])
+        var others = Set<UUID>()
+        for o in sessions where o !== s && o.isTeam && o.team?.role == .owner {
+            others.formUnion(o.team?.members.map(\.id) ?? [])
+        }
+        return others.subtracting(here).count
     }
 
     private static func seenLicenseKey(_ vaultId: UUID) -> String { "dk.dinhkhanh.envault.teamLicenseEvent.\(vaultId.uuidString)" }
@@ -1047,7 +1062,8 @@ final class AppModel {
         if let event = s.team?.licenseEvent, Self.seenLicenseEvent(s.vaultId).map({ event > $0 }) ?? true {
             UserDefaults.standard.set(event.string, forKey: Self.seenLicenseKey(s.vaultId))
         }
-        if s.team?.role == .owner { Task { await syncLicense(s) } }
+        // Any of the owner's vaults changing can change the others' counts.
+        if s.team?.role == .owner { Task { for o in sessions where o.isTeam { await syncLicense(o) } } }
     }
 
     static func describe(_ status: TeamLicenseStatus) -> String {
@@ -1070,18 +1086,24 @@ final class AppModel {
         }
     }
 
-    /// On the owner's Mac: puts this Mac's Team key into the vault when it is
-    /// newer than the one there (a first key, a renewal, more seats).
+    /// On the owner's Mac: puts the vault entitlement from this Mac's Team key
+    /// into the vault, with the count of people in the owner's other team vaults,
+    /// when either changed. Never the key itself: members could reuse it.
     private func syncLicense(_ s: VaultSession) async {
         guard s.team?.role == .owner, let own = ownLicenseKey, let licenseVerifier,
-              let mine = try? licenseVerifier.verify(own), mine.plan == .team else { return }
-        if let current = s.team?.licenseKey {
-            if LicenseCodec.normalize(current) == LicenseCodec.normalize(own) { return }
+              let mine = try? licenseVerifier.verify(own), mine.plan == .team, let entitlement = mine.vaultEntitlement,
+              let fresh = try? licenseVerifier.verify(entitlement), fresh.plan == .teamVault else { return }
+        var next = TeamVaultLicense(entitlement: LicenseCodec.normalize(entitlement), elsewhere: peopleElsewhere(than: s))
+        if let current = s.team?.license {
             // The newest key wins (a renewal or a seat change replaces the one before),
             // so two of the owner's Macs holding different keys never take turns.
-            if let theirs = try? licenseVerifier.verify(current, allowExpired: true), theirs.plan == .team, theirs.issuedAt >= mine.issuedAt { return }
+            if let theirs = try? licenseVerifier.verify(current.entitlement, allowExpired: true), theirs.plan == .teamVault,
+               theirs.issuedAt > fresh.issuedAt {
+                next.entitlement = current.entitlement
+            }
+            if next == current { return }
         }
-        await performOnTeam(s) { try await $0.setLicense(LicenseCodec.normalize(own)) }
+        await performOnTeam(s) { try await $0.setLicense(next) }
     }
 
     func setRole(of member: UUID, to role: TeamRole, in s: VaultSession) async {

@@ -37,8 +37,8 @@ final class VaultSession {
         var agentRules: TeamAgentRules?
         /// Projects and items AI agents never get (FR-24).
         var humansOnly: Set<UUID>
-        /// The Team license key the owner put in the vault (FR-28), and the event that did.
-        var licenseKey: String?
+        /// The license the owner put in the vault (FR-28), and the event that did.
+        var license: TeamVaultLicense?
         var licenseEvent: ULID?
         /// Invitations sent, with the role offered and when they lapse (FR-6).
         var invites: [ULID: TeamState.Invite]
@@ -109,7 +109,7 @@ final class VaultSession {
         team = TeamSnapshot(access: await t.access, members: await t.members(), pending: await t.pendingMembers(),
                             hasRequestedToJoin: await t.hasRequestedToJoin, lateEvents: await t.lateEvents,
                             needsRotation: state.needsRotation, names: names, exposed: exposed, log: await t.log(),
-                            agentRules: state.agentRules, humansOnly: state.humansOnly, licenseKey: await t.licenseKey, licenseEvent: state.licenseEvent,
+                            agentRules: state.agentRules, humansOnly: state.humansOnly, license: await t.license, licenseEvent: state.licenseEvent,
                             invites: state.invites)
         if let title = await t.title { name = title }
         if let seenURL, let data = try? JSONEncoder().encode(await t.knownEvents.map(\.string).sorted()) {

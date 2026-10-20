@@ -88,8 +88,10 @@ import CryptoKit
         let key = Curve25519.Signing.PrivateKey()
         let verifier = LicenseVerifier(publicKey: key.publicKey)
         let now = Date()
+        // What a vault carries: the entitlement inside a Team key.
         func team(expires: Date?, plan: Plan = .team) throws -> String {
-            try LicenseCodec.encode(License(email: "a@b.c", name: "A", plan: plan, expiresAt: expires, seats: 5), signingKey: key)
+            let k = try LicenseCodec.issue(License(email: "a@b.c", name: "A", plan: plan, expiresAt: expires, seats: 5), signingKey: key)
+            return try verifier.verify(k, allowExpired: true).vaultEntitlement ?? k
         }
         #expect(TeamLicenseStatus.evaluate(nil, verifier: verifier) == .missing)
         #expect(TeamLicenseStatus.evaluate(try team(expires: now.addingTimeInterval(86_400)), verifier: verifier, now: now).seats == 5)
@@ -102,10 +104,21 @@ import CryptoKit
         #expect(!over.allowsWrites && over.seats == nil)
         // A Pro key, a forged key, a revoked key.
         if case .invalid = TeamLicenseStatus.evaluate(try team(expires: nil, plan: .pro), verifier: verifier) {} else { Issue.record("pro accepted") }
-        let other = try LicenseCodec.encode(License(email: "a@b.c", name: "A", plan: .team, seats: 5), signingKey: .init())
+        let other = try LicenseCodec.encode(License(email: "", name: "", plan: .teamVault, seats: 5), signingKey: .init())
         if case .invalid = TeamLicenseStatus.evaluate(other, verifier: verifier) {} else { Issue.record("forged accepted") }
         let k = try team(expires: nil)
         let id = try verifier.verify(k).id.uuidString
         if case .invalid = TeamLicenseStatus.evaluate(k, verifier: LicenseVerifier(publicKey: key.publicKey, revoked: [id])) {} else { Issue.record("revoked accepted") }
+    }
+
+    @Test func aTeamKeyCarriesAnEntitlementThatNamesNobody() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let verifier = LicenseVerifier(publicKey: key.publicKey)
+        let lic = try verifier.verify(try LicenseCodec.issue(License(email: "a@b.c", name: "Ada", plan: .team, seats: 7), signingKey: key))
+        let ent = try verifier.verify(try #require(lic.vaultEntitlement))
+        #expect(ent.plan == .teamVault && ent.id == lic.id && ent.seats == 7 && ent.email.isEmpty && ent.name.isEmpty)
+        // Pasted as a license it unlocks nothing.
+        #expect(!Entitlements(plan: ent.plan, license: ent).allows(.unlimitedProjects))
+        #expect(try verifier.verify(try LicenseCodec.issue(License(email: "a@b.c", name: "Ada", plan: .pro), signingKey: key)).vaultEntitlement == nil)
     }
 }

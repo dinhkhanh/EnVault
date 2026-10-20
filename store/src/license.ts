@@ -2,16 +2,26 @@
 // Ed25519 via WebCrypto; works in Cloudflare Workers and Node 20+.
 
 export type Plan = "pro" | "team";
+/** "team-vault": the entitlement inside a Team key that a team vault carries. It names
+ *  nobody, and the app refuses it as a license key, so members can't reuse it. */
+export type EntitlementPlan = "team-vault";
 
 export interface LicensePayload {
   id: string;            // UUID
   email: string;
   name: string;
-  plan: Plan;
+  plan: Plan | EntitlementPlan;
   issuedAt: string;      // ISO 8601, seconds precision (Swift's .iso8601 decoder rejects fractions)
   updatesUntil?: string;
   expiresAt?: string;
   seats: number;
+  /** Team keys: the signed team-vault entitlement (same id, seats and expiry; no name or email). */
+  vaultEntitlement?: string;
+}
+
+/** A Team key's vault entitlement: signed like a key, plan "team-vault", nobody named. */
+export async function signVaultEntitlement(p: LicensePayload, key: CryptoKey): Promise<string> {
+  return signLicense({ id: p.id, email: "", name: "", plan: "team-vault", issuedAt: p.issuedAt, expiresAt: p.expiresAt, seats: p.seats }, key);
 }
 
 const enc = new TextEncoder();

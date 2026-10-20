@@ -50,6 +50,6 @@ public struct Entitlements: Equatable, Sendable {
     }
 
     private func rank(_ p: Plan) -> Int {
-        switch p { case .free: 0; case .pro: 1; case .team: 2 }
+        switch p { case .free, .teamVault: 0; case .pro: 1; case .team: 2 }
     }
 }

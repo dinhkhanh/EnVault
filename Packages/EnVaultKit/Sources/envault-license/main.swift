@@ -40,7 +40,7 @@ case "issue":
     let updates = opt("--updates-until", args).flatMap(dateFmt.date(from:))
     let expires = opt("--expires", args).flatMap(dateFmt.date(from:))
     let lic = License(email: email, name: name, plan: plan, updatesUntil: updates, expiresAt: expires, seats: seats)
-    print(try LicenseCodec.encode(lic, signingKey: key))
+    print(try LicenseCodec.issue(lic, signingKey: key))
 
 case "verify":
     guard args.count == 2 else { fail(usage) }

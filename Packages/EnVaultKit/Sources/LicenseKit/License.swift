@@ -6,6 +6,9 @@ public enum Plan: String, Codable, Sendable, CaseIterable {
     case free
     case pro
     case team
+    /// Not a license: the entitlement a team vault carries (seats and expiry,
+    /// nobody named). Settings › License refuses it, so members can't reuse it.
+    case teamVault = "team-vault"
 }
 
 /// The signed payload inside a license key. Verified offline with the
@@ -21,10 +24,14 @@ public struct License: Codable, Equatable, Sendable {
     /// Hard expiry (subscriptions); nil = never.
     public var expiresAt: Date?
     public var seats: Int
+    /// Team keys: the signed team-vault entitlement the owner's Mac puts in
+    /// their team vaults instead of the key itself.
+    public var vaultEntitlement: String?
 
-    public init(id: UUID = UUID(), email: String, name: String, plan: Plan, issuedAt: Date = Date(), updatesUntil: Date? = nil, expiresAt: Date? = nil, seats: Int = 1) {
+    public init(id: UUID = UUID(), email: String, name: String, plan: Plan, issuedAt: Date = Date(), updatesUntil: Date? = nil, expiresAt: Date? = nil, seats: Int = 1, vaultEntitlement: String? = nil) {
         self.id = id; self.email = email; self.name = name; self.plan = plan
         self.issuedAt = issuedAt; self.updatesUntil = updatesUntil; self.expiresAt = expiresAt; self.seats = seats
+        self.vaultEntitlement = vaultEntitlement
     }
 
     public var isExpired: Bool { expiresAt.map { $0 < Date() } ?? false }
@@ -62,6 +69,17 @@ public enum LicenseCodec {
     static let decoder: JSONDecoder = {
         let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d
     }()
+
+    /// Encodes a key as the store issues it: a Team key gets its vault entitlement
+    /// (same id, seats and expiry, plan "team-vault", nobody named).
+    public static func issue(_ license: License, signingKey: Curve25519.Signing.PrivateKey) throws -> String {
+        var lic = license
+        if lic.plan == .team {
+            let entitlement = License(id: lic.id, email: "", name: "", plan: .teamVault, issuedAt: lic.issuedAt, expiresAt: lic.expiresAt, seats: lic.seats)
+            lic.vaultEntitlement = try encode(entitlement, signingKey: signingKey)
+        }
+        return try encode(lic, signingKey: signingKey)
+    }
 
     public static func encode(_ license: License, signingKey: Curve25519.Signing.PrivateKey) throws -> String {
         let payload = try encoder.encode(license)

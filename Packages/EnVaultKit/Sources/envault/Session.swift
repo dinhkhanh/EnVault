@@ -161,7 +161,7 @@ struct Session {
     /// here too. (Revoked keys are only known to the app; it ships the list.)
     static func checkWritable(_ store: TeamVaultStore) async throws {
         guard let verifier = try? LicenseVerifier(publicKeyBase64: VendorKey.licensePublicKey) else { return }
-        let status = TeamLicenseStatus.evaluate(await store.licenseKey, verifier: verifier)
+        let status = TeamLicenseStatus.evaluate(await store.license?.entitlement, verifier: verifier)
         guard status.allowsWrites else {
             throw CLIError("this team vault is read-only: its Team license has lapsed. Nothing is lost; the owner renews it in EnVault", code: .denied)
         }
