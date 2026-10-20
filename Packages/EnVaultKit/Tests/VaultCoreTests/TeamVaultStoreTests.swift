@@ -165,6 +165,20 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await personal.history(of: copied.id).map(\.payload) == [.envFile(text: "API_KEY=2"), secret])
     }
 
+    @Test func onlyTheOwnerSetsTheLicense() async throws {
+        let (store, macs) = try await team()
+        await #expect(throws: VaultError.self) { try await open(macs[bob.id]!, as: bob).setLicense("EVL1.x.y") }
+        try await store.setLicense("EVL1.a.b")
+        try await store.setLicense("EVL1.c.d")       // a renewal replaces it
+        #expect(await store.licenseKey == "EVL1.c.d")
+        #expect(try await open(macs[dee.id]!, as: dee).licenseKey == nil)   // not synced yet
+        await sync(macs[ada.id]!, macs[dee.id]!)
+        #expect(try await open(macs[dee.id]!, as: dee).licenseKey == "EVL1.c.d")
+        #expect(await store.log().first?.change == .licensed)
+        // Sealed: the key (which names the buyer) is not in any file.
+        for (_, data) in await macs[ada.id]!.allFiles() { #expect(!String(decoding: data, as: UTF8.self).contains("EVL1.c.d")) }
+    }
+
     @Test func everyRoleSeesTheSameVault() async throws {
         let (_, macs) = try await team()
         let onCyd = try await open(macs[cyd.id]!, as: cyd)

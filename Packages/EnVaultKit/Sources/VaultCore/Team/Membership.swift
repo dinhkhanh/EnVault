@@ -41,6 +41,11 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
         /// An invitation sent as a file (folder mode, FR-6): the role offered
         /// and when it lapses (seconds since 1970). Join requests name it.
         case invite(id: ULID, role: TeamRole, expires: Int64)
+        /// The owner puts the team's license key in the vault (FR-10, FR-27, FR-28),
+        /// so every Mac knows the seats and the expiry. Sealed under a team key:
+        /// the key names the buyer (NFR-13). Each Mac verifies it with the
+        /// vendor's key; the event only says the owner chose it.
+        case license(SealedName)
         /// The owner hands ownership to an admin and becomes an admin (FR-29).
         /// The header keeps the first owner: it is the root every Mac pins.
         case transferOwnership(to: UUID)
@@ -84,6 +89,8 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
             c.add("invite"); c.add(id); c.add(role.rawValue); c.add(String(expires))
         case .transferOwnership(let to):
             c.add("transferOwnership"); c.add(to)
+        case .license(let sealed):
+            c.add("license"); c.add(sealed.epoch); c.add(sealed.box)
         }
         return c.data
     }
@@ -140,6 +147,10 @@ public struct TeamState: Sendable {
         public var expiresAt: Date
         public var by: UUID
     }
+    /// The license key the owner put in the vault last, sealed, if any, and
+    /// the event that put it there (so a Mac notices one removed or rolled back).
+    public private(set) var license: SealedName?
+    public private(set) var licenseEvent: ULID?
     /// When each former member was last removed.
     public private(set) var removedAt: [UUID: ULID] = [:]
     /// Events ignored, with the reason (shown in the membership log, FR-18/FR-19).
@@ -241,6 +252,11 @@ public struct TeamState: Sendable {
             guard by.canManage else { return "only an owner or admin invites" }
             guard role != .owner else { return "nobody is invited as owner" }
             invites[id] = Invite(role: role, expiresAt: Date(timeIntervalSince1970: TimeInterval(expires)), by: e.author)
+        case .license(let sealed):
+            guard by == .owner else { return "only the owner sets the team's license" }
+            guard epoch(sealed.epoch) != nil else { return "unknown key epoch" }
+            license = sealed
+            licenseEvent = e.id
         case .transferOwnership(let to):
             guard by == .owner else { return "only the owner hands over ownership" }
             guard let target = members[to], target.role == .admin else { return "ownership goes to an admin" }

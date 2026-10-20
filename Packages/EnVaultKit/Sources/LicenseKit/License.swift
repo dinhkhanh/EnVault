@@ -80,13 +80,13 @@ public enum LicenseCodec {
         return parts.count == 3 && parts[0] == prefix && parts[1].count >= 40 && parts[2].count >= 80
     }
 
-    public static func decode(_ key: String, publicKey: Curve25519.Signing.PublicKey) throws -> License {
+    public static func decode(_ key: String, publicKey: Curve25519.Signing.PublicKey, allowExpired: Bool = false) throws -> License {
         let parts = normalize(key).split(separator: ".")
         guard parts.count == 3, parts[0] == prefix,
               let payload = unbase64url(String(parts[1])), let sig = unbase64url(String(parts[2])) else { throw LicenseError.malformed }
         guard publicKey.isValidSignature(sig, for: payload) else { throw LicenseError.badSignature }
         guard let license = try? decoder.decode(License.self, from: payload) else { throw LicenseError.malformed }
-        if license.isExpired { throw LicenseError.expired }
+        if license.isExpired, !allowExpired { throw LicenseError.expired }
         return license
     }
 
@@ -118,8 +118,10 @@ public struct LicenseVerifier: Sendable {
         self.init(publicKey: try Curve25519.Signing.PublicKey(rawRepresentation: d), revoked: revoked)
     }
 
-    public func verify(_ key: String) throws -> License {
-        let lic = try LicenseCodec.decode(key, publicKey: publicKey)
+    /// `allowExpired`: still returns a genuine key past its expiry (a team vault's
+    /// grace period needs the date); revoked and forged keys still fail.
+    public func verify(_ key: String, allowExpired: Bool = false) throws -> License {
+        let lic = try LicenseCodec.decode(key, publicKey: publicKey, allowExpired: allowExpired)
         if revoked.contains(lic.id.uuidString.uppercased()) { throw LicenseError.revoked }
         return lic
     }

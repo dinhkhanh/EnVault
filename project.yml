@@ -111,6 +111,8 @@ targets:
         product: VaultCore
       - package: EnVaultKit
         product: EnvKit
+      - package: EnVaultKit
+        product: LicenseKit
     configFiles:
       Debug-iCloud: Config/Signing.xcconfig
       Release-iCloud: Config/Signing.xcconfig

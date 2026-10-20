@@ -441,6 +441,7 @@ public actor TeamVaultStore {
             case .humansOnly(let target, let on): .humansOnly(target, on)
             case .invite(_, let role, _): .invited(role)
             case .transferOwnership(let to): .ownershipTransferred(to)
+            case .license: .licensed
             }
             return TeamLogEntry(id: e.id, author: e.author, change: change, rejected: state.rejected[e.id], late: lateEvents.contains(e.id))
         }
@@ -677,6 +678,21 @@ public actor TeamVaultStore {
         try await rotate()
     }
 
+    /// The owner puts the team's license key in the vault (FR-28).
+    public func setLicense(_ key: String) async throws {
+        let (epoch, teamKey) = try currentKey()
+        try await record(.license(TeamKeys.seal(name: key, member: Self.licenseSlot, vaultId: vaultId, epoch: epoch, key: teamKey)))
+    }
+
+    /// The license key the owner put in the vault, opened with the team key.
+    public var licenseKey: String? {
+        guard let l = state.license, let key = keys[l.epoch] else { return nil }
+        return TeamKeys.open(l, member: Self.licenseSlot, vaultId: vaultId, key: key)
+    }
+
+    /// Binds a sealed license to its role, apart from member names and the title.
+    static let licenseSlot = UUID(uuidString: "00000000-0000-4000-8000-11ce05e00001")!
+
     /// Hands ownership to an admin (FR-29); this person becomes an admin.
     public func transferOwnership(to member: UUID) async throws {
         try await record(.transferOwnership(to: member))
@@ -832,6 +848,7 @@ public struct TeamLogEntry: Equatable, Sendable, Identifiable {
         case humansOnly(UUID, Bool)
         case invited(TeamRole)
         case ownershipTransferred(UUID)
+        case licensed
     }
     public var id: ULID
     public var date: Date { id.timestamp }

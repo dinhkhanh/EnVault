@@ -83,4 +83,29 @@ import CryptoKit
         #expect(pro.canAddProject(existing: 100))
         #expect(Entitlements(plan: .team).allows(.teamSharing))
     }
+
+    @Test func teamLicenseStatusFollowsTheExpiry() throws {
+        let key = Curve25519.Signing.PrivateKey()
+        let verifier = LicenseVerifier(publicKey: key.publicKey)
+        let now = Date()
+        func team(expires: Date?, plan: Plan = .team) throws -> String {
+            try LicenseCodec.encode(License(email: "a@b.c", name: "A", plan: plan, expiresAt: expires, seats: 5), signingKey: key)
+        }
+        #expect(TeamLicenseStatus.evaluate(nil, verifier: verifier) == .missing)
+        #expect(TeamLicenseStatus.evaluate(try team(expires: now.addingTimeInterval(86_400)), verifier: verifier, now: now).seats == 5)
+        // Expired three days ago: grace, still 5 seats, writes allowed.
+        let grace = TeamLicenseStatus.evaluate(try team(expires: now.addingTimeInterval(-3 * 86_400)), verifier: verifier, now: now)
+        #expect(grace.seats == 5 && grace.allowsWrites)
+        if case .grace = grace {} else { Issue.record("expected grace, got \(grace)") }
+        // Expired 15 days ago: read-only, no approvals.
+        let over = TeamLicenseStatus.evaluate(try team(expires: now.addingTimeInterval(-15 * 86_400)), verifier: verifier, now: now)
+        #expect(!over.allowsWrites && over.seats == nil)
+        // A Pro key, a forged key, a revoked key.
+        if case .invalid = TeamLicenseStatus.evaluate(try team(expires: nil, plan: .pro), verifier: verifier) {} else { Issue.record("pro accepted") }
+        let other = try LicenseCodec.encode(License(email: "a@b.c", name: "A", plan: .team, seats: 5), signingKey: .init())
+        if case .invalid = TeamLicenseStatus.evaluate(other, verifier: verifier) {} else { Issue.record("forged accepted") }
+        let k = try team(expires: nil)
+        let id = try verifier.verify(k).id.uuidString
+        if case .invalid = TeamLicenseStatus.evaluate(k, verifier: LicenseVerifier(publicKey: key.publicKey, revoked: [id])) {} else { Issue.record("revoked accepted") }
+    }
 }
