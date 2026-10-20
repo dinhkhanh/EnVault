@@ -136,10 +136,6 @@ public actor CloudMirror {
                 if f.path == VaultHeader.fileName {
                     // Someone else's header (another vault's, or garbage) never replaces ours.
                     guard (try? JSONDecoder().decode(HeaderIdentity.self, from: f.data))?.vaultId == vaultId else { continue }
-                    // Who wrote the header we keep: a first-time joiner checks it is the zone's owner.
-                    var creators = state.creators ?? [:]
-                    creators[f.path] = f.creator
-                    state.creators = creators
                     // Only act on a header we have not seen (uploaded or downloaded) before.
                     // Our own upload echoing back has the same hash and is skipped.
                     let h = Self.hash(f.data)
@@ -153,6 +149,11 @@ public actor CloudMirror {
                         state.headerHash = h
                         continue
                     }
+                    // Who wrote the header we keep, a first-time joiner checks it is the zone's
+                    // owner. Never recorded for one refused above: it would vouch for ours.
+                    var creators = state.creators ?? [:]
+                    creators[f.path] = f.creator
+                    state.creators = creators
                     if h != known {
                         try await storage.writeReplace(path, data: f.data)
                         written += 1
