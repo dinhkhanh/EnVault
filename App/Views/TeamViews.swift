@@ -60,6 +60,7 @@ struct TeamMembersView: View {
     @State private var inviteEmail = ""
     @State private var inviteLink: URL?
     @State private var inviting = false
+    @State private var showLog = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,12 +68,14 @@ struct TeamMembersView: View {
                 if let team = session.team {
                     statusSection(team)
                     if team.canManage, !team.lateEvents.isEmpty { lateSection(team) }
+                    if !team.exposed.isEmpty { rotateSection(team) }
                     if team.canManage, !team.pending.isEmpty {
                         Section("Asking to Join") { ForEach(team.pending) { pendingRow($0) } }
                     }
                     Section("Members") { ForEach(team.members) { memberRow($0, team: team) } }
                     if team.role == .owner, model.teamVaultsAvailable { inviteSection }
                     Section {
+                        Button("Membership Log…") { showLog = true }
                         Button("Leave This Team Vault…", role: .destructive) { leaving = true }
                             .disabled(team.role == .owner)
                     } footer: {
@@ -90,6 +93,7 @@ struct TeamMembersView: View {
         }
         .frame(width: 540, height: 600)
         .sheet(item: $approving) { ApproveMemberSheet(session: session, pending: $0) }
+        .sheet(isPresented: $showLog) { MembershipLogView(session: session) }
         .confirmationDialog("Remove \(removing?.name ?? "this member")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { m in
             Button("Remove", role: .destructive) { Task { await model.remove(m.id, from: session) } }
         } message: { _ in
@@ -132,6 +136,34 @@ struct TeamMembersView: View {
         Section("Review") {
             Text("\(team.lateEvents.count) membership change\(team.lateEvents.count == 1 ? "" : "s") arrived after newer ones. That happens when an admin was offline, but check the member list is what you expect.")
             Button("Looks Right") { Task { await model.dismissLateEvents(in: session) } }
+        }
+    }
+
+    /// FR-14: what people who left could read, until each value is changed.
+    private func rotateSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        Section {
+            ForEach(session.items.filter { team.exposed[$0.id] != nil }) { item in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(item.name)
+                        Text("\(session.projects.first { $0.id == item.projectId }?.name ?? "") · seen by \(team.exposed[item.id]!.map(team.name).sorted().formatted(.list(type: .and)))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Show") {
+                        model.selectedVaultId = session.vaultId == model.personal?.vaultId ? nil : session.vaultId
+                        model.selectedToolId = nil
+                        model.selectedProjectId = item.projectId
+                        model.selectedItemId = item.id
+                        dismiss()
+                    }
+                }
+            }
+        } header: {
+            Text("Secrets to Rotate")
+        } footer: {
+            Text("People who left could read these values. Issue new ones where they come from and save them here; each drops off this list once changed. In env files, the keys to change are marked.")
+                .font(.caption)
         }
     }
 
@@ -312,5 +344,60 @@ struct JoinIdentitySheet: View {
             }
         }
         .padding(20).frame(width: 400)
+    }
+}
+
+/// Who joined, was approved, changed role, left or was removed, and every
+/// key rotation, newest first (FR-19). Ignored changes are listed with why.
+struct MembershipLogView: View {
+    @Environment(\.dismiss) private var dismiss
+    let session: VaultSession
+
+    var body: some View {
+        let team = session.team
+        VStack(spacing: 0) {
+            List(team?.log ?? []) { entry in
+                HStack(alignment: .top) {
+                    Image(systemName: icon(entry.change)).foregroundStyle(entry.rejected == nil ? Color.secondary : Color.red).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(text(entry, team: team)).strikethrough(entry.rejected != nil)
+                        HStack(spacing: 6) {
+                            Text(entry.date, format: .dateTime.day().month().year().hour().minute())
+                            if entry.late { Text("arrived late").foregroundStyle(.orange) }
+                            if let why = entry.rejected { Text("ignored: \(why)").foregroundStyle(.red) }
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }.padding(12)
+        }
+        .frame(width: 520, height: 520)
+    }
+
+    private func text(_ e: TeamLogEntry, team: VaultSession.TeamSnapshot?) -> String {
+        let by = team?.name(e.author) ?? "Someone"
+        func n(_ id: UUID) -> String { team?.name(id) ?? "someone" }
+        switch e.change {
+        case .asked(let who): return "\(n(who)) asked to join"
+        case .added(let who, let role): return "\(by) approved \(n(who)) as \(role.title.lowercased())"
+        case .roleChanged(let who, let role): return "\(by) made \(n(who)) \(role == .admin ? "an" : "a") \(role.title.lowercased())"
+        case .removed(let who): return "\(by) removed \(n(who))"
+        case .left(let who): return "\(n(who)) left"
+        case .rotated: return "\(by) rotated the team key"
+        case .named(let who): return who == e.author ? "\(by) set their name" : "\(by) named \(n(who))"
+        case .titled: return "\(by) named the vault"
+        }
+    }
+
+    private func icon(_ c: TeamLogEntry.Change) -> String {
+        switch c {
+        case .asked: "hand.raised"
+        case .added: "person.badge.plus"
+        case .roleChanged: "person.badge.key"
+        case .removed, .left: "person.badge.minus"
+        case .rotated: "key"
+        case .named, .titled: "pencil"
+        }
     }
 }

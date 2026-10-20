@@ -24,6 +24,21 @@ import Foundation
         #expect(EnvHygiene.keyAges(revisions: []).isEmpty)
     }
 
+    @Test func exposedKeysFollowTheValueBack() {
+        let bob = UUID(), cyd = UUID()
+        let revs: [(text: String, readers: Set<UUID>)] = [
+            ("A=1\nB=new\nC=3\nD=", []),           // saved after both left
+            ("A=1\nB=old\nD=", [cyd]),              // Cyd could read this one
+            ("A=1", [bob, cyd]),
+        ]
+        let exposed = EnvHygiene.exposedKeys(revisions: revs)
+        #expect(exposed["A"] == [bob, cyd])   // unchanged since both could read it
+        #expect(exposed["B"] == nil)          // changed since
+        #expect(exposed["C"] == nil)          // new
+        #expect(exposed["D"] == nil)          // empty values aren't secrets
+        #expect(EnvHygiene.exposedKeys(revisions: []).isEmpty)
+    }
+
     // Fixtures are assembled at runtime so no token-shaped literal lives in
     // the source (GitHub push protection would otherwise block the repo).
     static let fakeAWS = "AKIA" + "IOSFODNN7" + "EXAMPLE"

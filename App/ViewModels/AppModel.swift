@@ -967,6 +967,28 @@ final class AppModel {
         }
     }
 
+    /// In a team vault, the keys of an env file whose current value people who
+    /// left could read, with their names (FR-14). Empty in a personal vault.
+    func exposedKeys(of item: Item) async -> [String: String] {
+        guard let s = session, let t = s.teamStore, let team = s.team, team.exposed[item.id] != nil else { return [:] }
+        var revisions: [(text: String, readers: Set<UUID>)] = []
+        for r in await t.history(of: item.id) {
+            guard case .envFile(let text) = r.payload else { continue }
+            revisions.append((text, await t.formerReaders(of: r.id)))
+        }
+        return EnvHygiene.exposedKeys(revisions: revisions).mapValues { ids in
+            ids.map(team.name).sorted().formatted(.list(type: .and))
+        }
+    }
+
+    /// Who wrote each revision, by name, in a team vault (FR-19). Empty in a personal vault.
+    func authorNames(of revisions: [ItemRevision]) async -> [ULID: String] {
+        guard let s = session, let t = s.teamStore, let team = s.team else { return [:] }
+        var out: [ULID: String] = [:]
+        for r in revisions { if let a = await t.author(of: r.id) { out[r.id] = team.name(a) } }
+        return out
+    }
+
     private func performOnTeam(_ s: VaultSession, _ op: @escaping (TeamVaultStore) async throws -> Void) async {
         await perform(on: s) { content in
             guard let t = content as? TeamVaultStore else { return }

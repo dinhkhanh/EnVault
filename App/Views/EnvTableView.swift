@@ -8,6 +8,8 @@ struct EnvTableView: View {
     let doc: EnvDocument
     let masked: Bool
     var keyAges: [String: Date] = [:]
+    /// Team vaults: keys whose value people who left could read, with their names.
+    var exposed: [String: String] = [:]
     var issues: [EnvLint.Issue] = []
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
@@ -19,7 +21,7 @@ struct EnvTableView: View {
                 ForEach(doc.lines) { line in
                     switch line.kind {
                     case .entry(let e):
-                        EnvEntryRow(entry: e, masked: masked, lastChanged: keyAges[e.key], issues: issuesByLine[line.id] ?? [], onEdit: onEdit, onDelete: onDelete)
+                        EnvEntryRow(entry: e, masked: masked, lastChanged: keyAges[e.key], exposedTo: exposed[e.key], issues: issuesByLine[line.id] ?? [], onEdit: onEdit, onDelete: onDelete)
                     case .comment(let c):
                         Text("# " + c).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
                             .padding(.horizontal, 16).padding(.vertical, 3)
@@ -46,6 +48,7 @@ struct EnvEntryRow: View {
     let entry: EnvEntry
     let masked: Bool
     var lastChanged: Date?
+    var exposedTo: String?
     var issues: [EnvLint.Issue] = []
     let onEdit: (String, String) -> Void
     let onDelete: (String) -> Void
@@ -90,7 +93,11 @@ struct EnvEntryRow: View {
                 Image(systemName: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
                     .help(issues.map(\.message).joined(separator: "\n"))
             }
-            if let d = lastChanged, !editing, !entry.value.isEmpty {
+            if let who = exposedTo, !editing {
+                Label("Rotate", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption).foregroundStyle(.red)
+                    .help("\(who) could read this value before leaving the team vault. Issue a new one where it comes from, then save it here.")
+            } else if let d = lastChanged, !editing, !entry.value.isEmpty {
                 let days = Int(Date().timeIntervalSince(d) / 86400)
                 if days >= 90 {
                     Label("\(days)d", systemImage: "clock.badge.exclamationmark")

@@ -28,6 +28,12 @@ final class VaultSession {
         var hasRequestedToJoin: Bool
         var lateEvents: Set<ULID>
         var needsRotation: Bool
+        /// Everyone who was ever a member, by id (names in the history and the log).
+        var names: [UUID: String]
+        /// Items whose current value people who left could read, with who (FR-14).
+        var exposed: [UUID: Set<UUID>]
+        var log: [TeamLogEntry]
+        func name(_ id: UUID) -> String { names[id] ?? "Someone" }
         var role: TeamRole? {
             switch access { case .member(let r), .awaitingKey(let r): r; default: nil }
         }
@@ -83,9 +89,13 @@ final class VaultSession {
 
     private func reloadTeam(_ t: TeamVaultStore) async {
         let state = await t.state
+        var names: [UUID: String] = [:]
+        for id in state.everyone.keys { if let n = await t.name(of: id) { names[id] = n } }
+        var exposed: [UUID: Set<UUID>] = [:]
+        for e in await t.exposedItems() { exposed[e.item.id] = e.readers }
         team = TeamSnapshot(access: await t.access, members: await t.members(), pending: await t.pendingMembers(),
                             hasRequestedToJoin: await t.hasRequestedToJoin, lateEvents: await t.lateEvents,
-                            needsRotation: state.needsRotation)
+                            needsRotation: state.needsRotation, names: names, exposed: exposed, log: await t.log())
         if let title = await t.title { name = title }
         if let seenURL, let data = try? JSONEncoder().encode(await t.knownEvents.map(\.string).sorted()) {
             try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)

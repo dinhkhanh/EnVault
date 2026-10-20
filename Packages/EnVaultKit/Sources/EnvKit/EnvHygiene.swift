@@ -51,6 +51,25 @@ public enum EnvHygiene {
         return lastChanged
     }
 
+    /// Keys whose current value someone who left a team vault could read,
+    /// with who (FR-14). `revisions` are newest-first, each with the people
+    /// no longer in the vault who could open it. A key is exposed if any
+    /// revision since its value last changed was readable to them.
+    public static func exposedKeys(revisions: [(text: String, readers: Set<UUID>)]) -> [String: Set<UUID>] {
+        let parsed = revisions.map { (values: DotEnv.parse($0.text).values, readers: $0.readers) }
+        guard let newest = parsed.first else { return [:] }
+        var exposed: [String: Set<UUID>] = [:]
+        for (key, value) in newest.values where !value.isEmpty {
+            var readers = Set<UUID>()
+            for r in parsed {
+                guard r.values[key] == value else { break }
+                readers.formUnion(r.readers)
+            }
+            if !readers.isEmpty { exposed[key] = readers }
+        }
+        return exposed
+    }
+
     public struct Finding: Hashable, Sendable, Identifiable {
         public var id: String { "\(file):\(line):\(kind)" }
         public var file: String
