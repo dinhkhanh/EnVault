@@ -34,6 +34,12 @@ public struct VaultHeader: Codable, Equatable, Sendable {
     public static func decode(_ data: Data) throws -> VaultHeader {
         let dec = JSONDecoder()
         dec.dateDecodingStrategy = .iso8601
+        // Version first: a newer format (a team vault is 2) may lack v1's fields,
+        // and must read as "update EnVault", not as a corrupt vault (NFR-5).
+        struct Version: Decodable { var formatVersion: Int }
+        if let v = try? dec.decode(Version.self, from: data), v.formatVersion > currentFormatVersion {
+            throw VaultError.unsupportedFormatVersion(v.formatVersion)
+        }
         do {
             let h = try dec.decode(VaultHeader.self, from: data)
             guard h.formatVersion <= currentFormatVersion else { throw VaultError.unsupportedFormatVersion(h.formatVersion) }
