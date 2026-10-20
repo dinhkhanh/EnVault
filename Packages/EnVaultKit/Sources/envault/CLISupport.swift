@@ -40,6 +40,8 @@ struct Link: Codable {
     var path: String
     var project: String
     var item: String
+    /// The team vault (`--team`), nil for the personal vault.
+    var team: String?
 }
 
 enum Links {

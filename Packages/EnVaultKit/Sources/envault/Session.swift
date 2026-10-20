@@ -70,6 +70,8 @@ struct Session {
     var interactive: Bool
     /// Only `envault unlock`'s cached key; nothing that could prompt (shell hooks).
     var cachedOnly = false
+    /// `--team`: a team vault (name or id) instead of the personal vault (FR-22).
+    var team: String?
 
     /// An iCloud-mode vault lives in the app's sandbox container, which macOS
     /// won't let Terminal (or an editor, or an MCP host) read without asking.
@@ -129,6 +131,114 @@ struct Session {
         }
         try await store.unlock(passphrase: Self.promptPassphrase())
         return store
+    }
+
+    // MARK: Team vaults (FR-22)
+
+    /// The vault a command works on: the personal vault, or with `--team` one
+    /// of the team vaults the person belongs to.
+    func content(_ purpose: AIAgents.Purpose, _ detail: String? = nil) async throws -> any VaultContent {
+        guard let team else { return try await unlocked(purpose, detail) }
+        guard let agent else { return try await teamVault(team, purpose, detail).store }
+        // An agent: the team's rules are inside the vault, so open it for use
+        // first, then have EnVault approve the real purpose under those rules (FR-23).
+        let (store, personalId) = try await teamVault(team, .use, detail)
+        let rules = await store.state.agentRules
+        if purpose != .use || rules != nil {
+            try approveUnderTeamRules(rules, agent: agent, purpose: purpose, vaultId: personalId, detail: "team \(team)" + (detail.map { ": \($0)" } ?? ""))
+        }
+        await store.hideHumansOnly()   // FR-24
+        return store
+    }
+
+    /// Asks EnVault again with the team's rules applied, or, without the app,
+    /// applies them here. Throws when they refuse.
+    private func approveUnderTeamRules(_ rules: TeamAgentRules?, agent: String, purpose: AIAgents.Purpose, vaultId: UUID, detail: String) throws {
+        if let app = appAgent(launch: true) {
+            do {
+                _ = try app.requestKey(vaultId: vaultId, client: client, agent: agent, purpose: purpose, detail: detail, teamRules: rules)
+                return
+            } catch let f as Agent.Failure {
+                throw CLIError("EnVault: \(f.message)", code: f.denied ? .denied : .needsUser)
+            }
+        }
+        // No app: reading values already needed it, so only these remain.
+        if rules?.enabled == false { throw CLIError("this team vault doesn't allow AI agents", code: .denied) }
+        if purpose == .write, rules?.writes == false { throw CLIError("this team vault doesn't let AI agents change env files", code: .denied) }
+    }
+
+    struct TeamVault {
+        var id: UUID
+        var title: String?
+        var access: TeamAccess
+        var store: TeamVaultStore
+    }
+
+    /// Every team vault the personal vault remembers, unlocked with this
+    /// person's identity. One approval covers them all: it unlocks the personal vault.
+    func teamVaults(_ purpose: AIAgents.Purpose, _ detail: String? = nil) async throws -> [TeamVault] {
+        try await teamVaultsWithPersonal(purpose, detail).vaults
+    }
+
+    private func teamVaultsWithPersonal(_ purpose: AIAgents.Purpose, _ detail: String?, only id: UUID? = nil) async throws -> (vaults: [TeamVault], personalId: UUID) {
+        let personal = try await unlocked(purpose, detail)
+        guard let me = try await personal.identity() else {
+            throw CLIError("this vault has no Team identity yet: set one up in EnVault › Settings", code: .notFound)
+        }
+        var out: [TeamVault] = []
+        for record in await personal.teams() where id == nil || record.vaultId == id {
+            guard record.kind == TeamRecord.cloudKit || record.kind == TeamRecord.folder else { continue }
+            do {
+                let store = try await TeamVaultStore.open(storage: try teamStorage(record), device: device, owner: record.ownerKey)
+                let access = try await store.unlock(identity: me)
+                out.append(TeamVault(id: record.vaultId, title: await store.title, access: access, store: store))
+            } catch where id == nil {
+                // One unreachable team vault (a folder team not located on this Mac) doesn't hide the others.
+                Out.stderr("skipping team vault \(record.vaultId.uuidString.prefix(8)): \(CLIError.from(error).description)")
+            }
+        }
+        return (out, await personal.vaultId)
+    }
+
+    /// One team vault by id (or its first 8 characters) or name, with the personal vault's id.
+    func teamVault(_ selector: String, _ purpose: AIAgents.Purpose, _ detail: String?) async throws -> (store: TeamVaultStore, personalId: UUID) {
+        let what = "team \(selector)" + (detail.map { ": \($0)" } ?? "")
+        let byId = UUID(uuidString: selector)
+        let (all, personalId) = try await teamVaultsWithPersonal(purpose, what, only: byId)
+        let matches = byId != nil ? all : all.filter {
+            $0.title?.localizedCaseInsensitiveCompare(selector) == .orderedSame
+                || (selector.count >= 8 && $0.id.uuidString.lowercased().hasPrefix(selector.lowercased()))
+        }
+        guard matches.count == 1, let match = matches.first else {
+            let names = all.map { "\($0.title ?? "untitled")  (\($0.id.uuidString.prefix(8)))" }.joined(separator: ", ")
+            throw CLIError(matches.isEmpty ? "no team vault \(selector)" + (names.isEmpty ? "" : "; yours: \(names)")
+                                           : "\(selector) matches several team vaults; use the id: \(names)", code: .notFound)
+        }
+        return (match.store, personalId)
+    }
+
+    /// A team vault's files, read through the EnVault app: iCloud teams live
+    /// in its container, and only it knows where a folder team is on this Mac.
+    /// With ENVAULT_NO_APP, iCloud teams are read from the container directly.
+    private func teamStorage(_ record: TeamRecord) throws -> any VaultStorage {
+        let vaultId = record.vaultId
+        let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+        let local = URL(fileURLWithPath: home + "/Library/Containers/dk.dinhkhanh.envault/Data/Library/Application Support/EnVault/Vaults/\(vaultId.uuidString)")
+        guard useApp else {
+            guard record.kind == TeamRecord.cloudKit else {
+                throw CLIError("folder-mode team vaults are found through the EnVault app; unset ENVAULT_NO_APP", code: .needsUser)
+            }
+            return LocalFolderStorage(root: local)
+        }
+        guard appAgent(launch: true) != nil else {
+            throw CLIError("team vaults are kept inside the EnVault app: open EnVault so envault can read them", code: .needsUser)
+        }
+        return AppVaultStorage(agent: agent, vaultId: vaultId)
+    }
+
+    private var device: DeviceIdentity {
+        let me = DeviceIdentity.current()
+        return DeviceIdentity(id: me.id, name: me.name + (agent == nil ? " (cli)" : " (\(agent!))"))
     }
 
     /// Agents go through the app whenever it can be reached, so its settings
@@ -206,8 +316,11 @@ struct Session {
 
 // MARK: - Items
 
-func find(_ store: VaultStore, _ projectName: String, _ itemName: String) async throws -> Item {
-    guard let p = await store.projects().first(where: { $0.name == projectName }) else {
+func find(_ store: any VaultContent, _ projectName: String, _ itemName: String) async throws -> Item {
+    if let team = store as? TeamVaultStore, await team.isHiddenAsHumansOnly(project: projectName, item: itemName) {
+        throw CLIError("\(projectName)/\(itemName) is marked for people only in this team vault: ask the user", code: .denied)
+    }
+    guard let p = await store.projects(includeDeleted: false).first(where: { $0.name == projectName }) else {
         throw CLIError("no project named \(projectName)", code: .notFound)
     }
     guard let item = await store.items(in: p.id).first(where: { $0.name == itemName }) else {
@@ -223,19 +336,19 @@ func envDoc(_ item: Item) throws -> EnvDocument {
 
 /// Creates or updates an env file (and its project). Returns what happened.
 @discardableResult
-func upsert(_ store: VaultStore, project: String, item: String, text: String) async throws -> String {
+func upsert(_ store: any VaultContent, project: String, item: String, text: String) async throws -> String {
     var created: [String] = []
-    if await store.projects().first(where: { $0.name == project }) == nil {
-        try await store.createProject(name: project)
+    if await store.projects(includeDeleted: false).first(where: { $0.name == project }) == nil {
+        try await store.createProject(name: project, tags: [])
         created.append("created project \(project)")
     }
-    guard let p = await store.projects().first(where: { $0.name == project }) else { throw CLIError("project \(project) vanished") }
+    guard let p = await store.projects(includeDeleted: false).first(where: { $0.name == project }) else { throw CLIError("project \(project) vanished") }
     if let existing = await store.items(in: p.id).first(where: { $0.name == item }) {
         if existing.payload.primaryText == text { return "\(project)/\(item) unchanged" }
-        try await store.updateItem(existing.id, payload: .envFile(text: text))
+        try await store.updateItem(existing.id, name: nil, tags: nil, payload: .envFile(text: text), projectId: nil)
         created.append("updated \(project)/\(item)")
     } else {
-        try await store.createItem(in: p.id, name: item, payload: .envFile(text: text))
+        try await store.createItem(in: p.id, name: item, payload: .envFile(text: text), tags: [])
         created.append("created \(project)/\(item)")
     }
     return created.joined(separator: "\n")
@@ -243,7 +356,7 @@ func upsert(_ store: VaultStore, project: String, item: String, text: String) as
 
 /// Sets and removes variables in an env file, creating it if needed.
 @discardableResult
-func editEnv(_ store: VaultStore, project: String, item: String, set: [(key: String, value: String)], unset: [String]) async throws -> String {
+func editEnv(_ store: any VaultContent, project: String, item: String, set: [(key: String, value: String)], unset: [String]) async throws -> String {
     for k in set.map(\.key) + unset where !DotEnv.isValidKey(k) { throw CLIError("\(k) is not a valid variable name", code: .usage) }
     var doc = DotEnv.parse("")
     if let existing = try? await find(store, project, item) { doc = try envDoc(existing) }

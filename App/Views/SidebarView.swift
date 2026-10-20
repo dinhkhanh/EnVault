@@ -61,6 +61,15 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .top) {
+            ForEach(model.unlocatedTeams, id: \.vaultId) { record in
+                Button("Locate a team vault's shared folder…") {
+                    if let folder = JoinFromInvitation.chooseFolder(for: "a team vault you belong to") {
+                        Task { await model.locate(record, folder: folder) }
+                    }
+                }
+                .buttonStyle(.link).font(.caption).padding(.horizontal, 12).padding(.top, 6)
+                .help("You joined this folder-mode team vault on another Mac; show EnVault where its folder is on this one.")
+            }
             // Only with more than one open vault (team vaults; debug: Vault › Attach Another Vault…).
             if model.sessions.count > 1 {
                 VStack(alignment: .leading, spacing: 4) {
@@ -117,10 +126,17 @@ struct ProjectRow: View {
         HStack {
             Label(project.name, systemImage: "folder")
             Spacer()
+            if model.session?.team?.humansOnly.contains(project.id) == true {
+                Image(systemName: "person.fill").font(.caption2).foregroundStyle(.secondary).help("For people only: AI agents never get it")
+            }
             Text(String(project.itemCount)).foregroundStyle(.secondary).font(.caption)
         }
         .contextMenu {
             Button("Rename…", action: onRename)
+            if let team = model.session?.team, team.canManage {
+                let on = team.humansOnly.contains(project.id)
+                Button(on ? "Open to AI Agents Again" : "For People Only") { Task { await model.setHumansOnly(project.id, !on) } }
+            }
             if !targets.isEmpty {
                 Menu("Copy to Team Vault") {
                     ForEach(targets, id: \.vaultId) { t in Button(t.name) { Task { await model.copyProject(project.id, to: t, move: false) } } }

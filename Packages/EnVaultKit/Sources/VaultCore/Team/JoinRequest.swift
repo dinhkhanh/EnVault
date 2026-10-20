@@ -11,9 +11,11 @@ public struct JoinRequest: Codable, Equatable, Sendable {
     public var identity: PublicIdentity
     /// The requester's name, one HPKE copy per owner or admin (`member` = who can open it).
     public var names: [KeyWrap]
+    /// The invitation this answers (folder mode), if any.
+    public var invite: ULID?
     public var signature: Data
 
-    public static func signed(by person: UserIdentity, managers: [PublicIdentity], vaultId: UUID, id: ULID = ULID()) throws -> JoinRequest {
+    public static func signed(by person: UserIdentity, managers: [PublicIdentity], vaultId: UUID, invite: ULID? = nil, id: ULID = ULID()) throws -> JoinRequest {
         let names = try managers.map { m in
             let recipient = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: m.agreementKey)
             var sender = try HPKE.Sender(recipientKey: recipient, ciphersuite: TeamKeys.suite,
@@ -21,7 +23,7 @@ public struct JoinRequest: Codable, Equatable, Sendable {
             let ct = try sender.seal(Data(person.name.utf8))
             return KeyWrap(member: m.id, encapsulatedKey: sender.encapsulatedKey, ciphertext: ct)
         }
-        var r = JoinRequest(id: id, identity: try person.publicIdentity().unnamed, names: names, signature: Data())
+        var r = JoinRequest(id: id, identity: try person.publicIdentity().unnamed, names: names, invite: invite, signature: Data())
         r.signature = try person.signingKey.signature(for: r.signedBytes(vaultId: vaultId))
         return r
     }
@@ -35,6 +37,7 @@ public struct JoinRequest: Codable, Equatable, Sendable {
         for n in names.sorted(by: { $0.member.uuidString < $1.member.uuidString }) {
             c.add(n.member); c.add(n.encapsulatedKey); c.add(n.ciphertext)
         }
+        c.add(invite?.string ?? "")
         return c.data
     }
 
@@ -81,6 +84,10 @@ public struct PendingMember: Equatable, Sendable, Identifiable {
     public var identity: PublicIdentity
     /// The name they gave; nil when it was not sealed to this admin.
     public var name: String?
+    /// The role their invitation offered (folder mode).
+    public var invitedAs: TeamRole?
+    /// They answered an invitation that has lapsed (or never existed): send a new one.
+    public var inviteLapsed: Bool = false
     public var safetyCode: String { identity.safetyCode }
     public var requestedAt: Date { request.timestamp }
 }

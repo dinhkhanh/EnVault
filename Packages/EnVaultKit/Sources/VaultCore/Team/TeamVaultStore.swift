@@ -340,14 +340,56 @@ public actor TeamVaultStore {
 
     // MARK: - Reading
 
-    public func projects(includeDeleted: Bool = false) -> [Project] { index.projects(includeDeleted: includeDeleted) }
-    public func project(_ id: UUID) -> Project? { index.project(id) }
-    public func items(in projectId: UUID) -> [Item] { index.items(in: projectId) }
-    public func allItems() -> [Item] { index.allItems() }
-    public func item(_ id: UUID) -> Item? { index.item(id) }
+    public func projects(includeDeleted: Bool = false) -> [Project] { index.projects(includeDeleted: includeDeleted).filter { visible(project: $0.id) } }
+    public func project(_ id: UUID) -> Project? { visible(project: id) ? index.project(id) : nil }
+    public func items(in projectId: UUID) -> [Item] { visible(project: projectId) ? index.items(in: projectId).filter(visible) : [] }
+    public func allItems() -> [Item] { index.allItems().filter(visible) }
+    public func item(_ id: UUID) -> Item? { index.item(id).flatMap { visible($0) ? $0 : nil } }
     /// All revisions of an item, newest first.
-    public func history(of itemId: UUID) -> [ItemRevision] { index.history(of: itemId) }
-    public func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) { try index.export(projectId) }
+    public func history(of itemId: UUID) -> [ItemRevision] { item(itemId) == nil && hidesHumansOnly ? [] : index.history(of: itemId) }
+    public func export(_ projectId: UUID) throws -> (history: [ProjectRevision], items: [[ItemRevision]]) {
+        guard visible(project: projectId) else { throw VaultError.io("Unknown project") }
+        return try index.export(projectId)
+    }
+
+    // MARK: - Humans only (FR-24)
+
+    /// Set by the command line when an AI agent runs it: humans-only projects
+    /// and items are then neither listed, read nor changed.
+    public private(set) var hidesHumansOnly = false
+    public func hideHumansOnly() { hidesHumansOnly = true }
+
+    public func isHumansOnly(_ id: UUID) -> Bool { state.humansOnly.contains(id) }
+
+    /// Whether a project (and item) by these names exists but is hidden as humans only,
+    /// so the command line can say so instead of "not found".
+    public func isHiddenAsHumansOnly(project: String, item: String?) -> Bool {
+        guard hidesHumansOnly, let p = index.projects().first(where: { $0.name == project }) else { return false }
+        if state.humansOnly.contains(p.id) { return true }
+        guard let item else { return false }
+        return index.items(in: p.id).contains { $0.name == item && state.humansOnly.contains($0.id) }
+    }
+
+    private func visible(project id: UUID) -> Bool { !hidesHumansOnly || !state.humansOnly.contains(id) }
+    private func visible(_ item: Item) -> Bool {
+        !hidesHumansOnly || !(state.humansOnly.contains(item.id) || state.humansOnly.contains(item.projectId))
+    }
+
+    /// Refuses a change to something an agent may not touch.
+    private func checkVisible(project: UUID?, item: UUID?) throws {
+        guard hidesHumansOnly else { return }
+        if let project, state.humansOnly.contains(project) { throw VaultError.notPermitted("That project is for people only.") }
+        if let item, let i = index.item(item), !visible(i) { throw VaultError.notPermitted("That item is for people only.") }
+    }
+
+    public func setHumansOnly(_ id: UUID, _ on: Bool) async throws {
+        try await record(.humansOnly(target: id, on: on))
+    }
+
+    public func setAgentRules(_ rules: TeamAgentRules) async throws {
+        try await record(.agentRules(rules))
+    }
+
     /// Who wrote a revision (FR-19).
     public func author(of revision: ULID) -> UUID? { authors[revision] }
 
@@ -395,6 +437,9 @@ public actor TeamVaultStore {
             case .rotate: .rotated
             case .name(let member, _): .named(member)
             case .title: .titled
+            case .agentRules(let r): .agentRules(r)
+            case .humansOnly(let target, let on): .humansOnly(target, on)
+            case .invite(_, let role, _): .invited(role)
             }
             return TeamLogEntry(id: e.id, author: e.author, change: change, rejected: state.rejected[e.id], late: lateEvents.contains(e.id))
         }
@@ -428,6 +473,10 @@ public actor TeamVaultStore {
 
     @discardableResult
     public func createProject(name: String, tags: [String] = []) async throws -> Project {
+        // An agent must not get around a humans-only project by making its twin.
+        if hidesHumansOnly, index.projects().contains(where: { $0.name == name && state.humansOnly.contains($0.id) }) {
+            throw VaultError.notPermitted("That project is for people only.")
+        }
         let rev = index.newProject(name: name, tags: tags, device: device)
         try await write(rev)
         return Project(revision: rev, itemCount: 0)
@@ -435,6 +484,7 @@ public actor TeamVaultStore {
 
     @discardableResult
     public func updateProject(_ id: UUID, name: String? = nil, tags: [String]? = nil) async throws -> Project {
+        try checkVisible(project: id, item: nil)
         let rev = try index.updatedProject(id, name: name, tags: tags, device: device)
         try await write(rev)
         return Project(revision: rev, itemCount: index.liveItems(in: id).count)
@@ -443,6 +493,7 @@ public actor TeamVaultStore {
     /// Soft-deletes the project and every live item in it.
     public func deleteProject(_ id: UUID) async throws {
         _ = try writer()
+        try checkVisible(project: id, item: nil)
         for item in index.liveItems(in: id) { try await deleteItem(item.id) }
         guard let rev = index.deletedProject(id, device: device) else { return }
         try await write(rev)
@@ -450,6 +501,10 @@ public actor TeamVaultStore {
 
     @discardableResult
     public func createItem(in projectId: UUID, name: String, payload: ItemPayload, tags: [String] = []) async throws -> Item {
+        try checkVisible(project: projectId, item: nil)
+        if hidesHumansOnly, index.items(in: projectId).contains(where: { $0.name == name && state.humansOnly.contains($0.id) }) {
+            throw VaultError.notPermitted("That item is for people only.")
+        }
         let rev = try index.newItem(in: projectId, name: name, payload: payload, tags: tags, device: device)
         try await write(rev)
         return Item(revision: rev, revisionCount: 1)
@@ -457,6 +512,7 @@ public actor TeamVaultStore {
 
     @discardableResult
     public func updateItem(_ id: UUID, name: String? = nil, tags: [String]? = nil, payload: ItemPayload? = nil, projectId: UUID? = nil) async throws -> Item {
+        try checkVisible(project: projectId, item: id)
         guard let rev = try index.updatedItem(id, name: name, tags: tags, payload: payload, projectId: projectId, device: device) else {
             return index.item(id)!
         }
@@ -465,12 +521,14 @@ public actor TeamVaultStore {
     }
 
     public func deleteItem(_ id: UUID) async throws {
+        try checkVisible(project: nil, item: id)
         guard let rev = index.deletedItem(id, device: device) else { return }
         try await write(rev)
     }
 
     @discardableResult
     public func restore(_ old: ItemRevision) async throws -> Item {
+        try checkVisible(project: old.projectId, item: old.itemId)
         let rev = index.restored(old, device: device)
         try await write(rev)
         return index.current(rev)
@@ -517,11 +575,11 @@ public actor TeamVaultStore {
 
     /// Asks to join: writes a signed request with this person's name sealed to
     /// the vault's current owner and admins. Safe to repeat; the newest counts.
-    public func requestToJoin() async throws {
+    public func requestToJoin(invite: ULID? = nil) async throws {
         guard let me else { throw VaultError.locked }
         guard state.role(of: me.id) == nil else { return }
         let managers = state.members.values.filter { $0.role.canManage }.map(\.identity)
-        let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId)
+        let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId, invite: invite)
         let path = Self.requestsDir.appending(me.id.uuidString).appending("\(r.id.string).json")
         try await storage.writeNew(path, data: try r.encoded())
         requests[me.id] = r
@@ -535,7 +593,14 @@ public actor TeamVaultStore {
             let id = r.identity.id
             guard state.members[id] == nil else { return nil }
             if let removed = state.removedAt[id], r.id < removed { return nil }
-            return PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
+            var p = PendingMember(request: r.id, identity: r.identity, name: me.flatMap { r.name(for: $0, vaultId: vaultId) })
+            if let invite = r.invite {
+                let offer = state.invites[invite]
+                p.invitedAs = offer?.role
+                // Asked after the invitation lapsed, or named one that doesn't exist.
+                p.inviteLapsed = offer.map { r.id.timestamp > $0.expiresAt } ?? true
+            }
+            return p
         }
         .sorted { $0.request > $1.request }
     }
@@ -545,6 +610,15 @@ public actor TeamVaultStore {
     public func joinRequest(of member: UUID) -> (id: ULID, path: String)? {
         guard let r = requests[member] else { return nil }
         return (r.id, Self.requestsDir.appending(member.uuidString).appending("\(r.id.string).json").string)
+    }
+
+    /// Invites someone by file (folder mode, FR-6): signs the offer of `role`
+    /// for `days`, and returns the file to send them.
+    public func createInvite(role: TeamRole, days: Int = 7) async throws -> TeamInvite {
+        let id = ULID()
+        let expires = Int64(Date().addingTimeInterval(TimeInterval(days) * 86_400).timeIntervalSince1970)
+        try await record(.invite(id: id, role: role, expires: expires))
+        return TeamInvite(vaultId: vaultId, ownerKey: header.owner.signingKey, invite: id, title: title)
     }
 
     /// Whether this person has a request waiting.
@@ -733,6 +807,9 @@ public struct TeamLogEntry: Equatable, Sendable, Identifiable {
         case rotated
         case named(UUID)
         case titled
+        case agentRules(TeamAgentRules)
+        case humansOnly(UUID, Bool)
+        case invited(TeamRole)
     }
     public var id: ULID
     public var date: Date { id.timestamp }

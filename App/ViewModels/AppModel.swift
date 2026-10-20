@@ -249,6 +249,7 @@ final class AppModel {
         for s in sessions { s.close() }
         sessions = []
         selectedVaultId = nil
+        unlocatedTeams = []
         VaultLocation.forget()
         UserDefaults.standard.removeObject(forKey: Self.iCloudVaultKey)
         phase = .noVault
@@ -536,6 +537,8 @@ final class AppModel {
         sessions = [personal]
         selectedVaultId = nil
         unlockGeneration += 1
+        unlocatedTeams = []
+        TeamFolders.stopAll()
         Task { await personal.store.lock() }
         personal.isUnlocked = false
         personal.clear()
@@ -736,22 +739,41 @@ final class AppModel {
     @ObservationIgnored private var opening: Set<UUID> = []
     /// Per team vault (owner's Mac): members who are no longer on the iCloud share.
     private(set) var offShare: [UUID: Set<UUID>] = [:]
+    /// Folder-mode team vaults this person belongs to whose folder this Mac doesn't know yet.
+    private(set) var unlocatedTeams: [TeamRecord] = []
+
+    /// Where a team vault's files are on this Mac: the app's container for
+    /// iCloud teams, the folder the person chose for folder teams.
+    private func teamRoot(_ record: TeamRecord) -> URL? {
+        if record.kind == TeamRecord.folder {
+            return sessions.first { $0.vaultId == record.vaultId }?.url ?? TeamFolders.restore(record.vaultId)
+        }
+        return Self.localRoot(for: record.vaultId)
+    }
 
     /// Opens every team vault the personal vault remembers.
     private func openTeams() async {
-        guard TeamFeatures.enabled, cloudAvailable, let store, let me = try? await store.identity() else { return }
+        unlocatedTeams = []
+        guard TeamFeatures.enabled, let store, let me = try? await store.identity() else { return }
         let generation = unlockGeneration
-        for record in await store.teams() where record.kind == TeamRecord.cloudKit {
+        // iCloud teams need the CloudKit entitlement; folder teams don't.
+        for record in await store.teams() where (record.kind == TeamRecord.cloudKit && cloudAvailable) || record.kind == TeamRecord.folder {
             guard !sessions.contains(where: { $0.vaultId == record.vaultId }), opening.insert(record.vaultId).inserted else { continue }
             defer { opening.remove(record.vaultId) }
-            let root = Self.localRoot(for: record.vaultId)
+            guard let root = teamRoot(record) else {
+                unlocatedTeams.append(record)   // folder mode, not yet located on this Mac
+                continue
+            }
             do {
-                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-                if await !VaultStore.vaultExists(in: LocalFolderStorage(root: root)) {
-                    try await CloudMirror(vaultId: record.vaultId, localRoot: root, stateURL: Self.stateURL(for: record.vaultId),
-                                          transport: transport(for: record)).pull()
+                if record.kind == TeamRecord.cloudKit {
+                    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                    if await !VaultStore.vaultExists(in: LocalFolderStorage(root: root)) {
+                        try await CloudMirror(vaultId: record.vaultId, localRoot: root, stateURL: Self.stateURL(for: record.vaultId),
+                                              transport: transport(for: record)).pull()
+                    }
                 }
                 let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: root), owner: record.ownerKey)
+                guard team.vaultId == record.vaultId else { throw VaultError.corruptHeader("the folder holds a different team vault") }
                 try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: record.vaultId)))
                 await attach(team, record: record, generation: generation)
             } catch {
@@ -770,34 +792,43 @@ final class AppModel {
             await team.lock()
             return nil
         }
-        let root = Self.localRoot(for: record.vaultId)
-        let s = VaultSession(store: team, url: root, vaultId: record.vaultId, mode: .iCloud, name: title ?? "Team vault")
+        guard let root = teamRoot(record), team.vaultId == record.vaultId else { await team.lock(); return nil }
+        let isCloud = record.kind == TeamRecord.cloudKit
+        let s = VaultSession(store: team, url: root, vaultId: record.vaultId, mode: isCloud ? .iCloud : .folder, name: title ?? "Team vault")
         s.seenURL = Self.seenURL(for: record.vaultId)
         s.didSyncTeam = { [weak self] in await self?.reconcileShare($0) }
         wire(s)
         s.isUnlocked = true
         sessions.append(s)
+        unlocatedTeams.removeAll { $0.vaultId == record.vaultId }
         await s.reload()
         s.startWatching()
-        s.startCloud(transport: transport(for: record), stateURL: Self.stateURL(for: record.vaultId))
+        if isCloud {
+            // Upkeep runs after its first sync, so it never acts on a stale copy.
+            s.startCloud(transport: transport(for: record), stateURL: Self.stateURL(for: record.vaultId))
+        } else {
+            await s.upkeep()
+        }
         return s
     }
 
-    /// Creates a team vault owned by this person in their iCloud (FR-3). The
+    /// Creates a team vault owned by this person (FR-3): in their iCloud, or
+    /// in `folder` (an empty shared folder: Dropbox, a git checkout…). The
     /// caller has checked the Team license and made sure an identity exists.
-    func createTeamVault(title: String) async -> Bool {
-        guard phase == .unlocked, let store, cloudAvailable else {
-            errorMessage = "Team vaults need iCloud (CloudKit) in this version."
+    func createTeamVault(title: String, folder: URL? = nil) async -> Bool {
+        guard phase == .unlocked, let store, folder != nil || cloudAvailable else {
+            errorMessage = "Choose a shared folder: iCloud isn't available in this build."
             return false
         }
         let generation = unlockGeneration
         do {
             guard let me = try await store.identity() else { throw VaultError.notPermitted("Set up your Team identity first.") }
             let id = UUID()
-            let root = Self.localRoot(for: id)
+            let root = folder ?? Self.localRoot(for: id)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let team = try await TeamVaultStore.create(storage: LocalFolderStorage(root: root), owner: me, title: title, vaultId: id)
-            let record = TeamRecord(vaultId: id, ownerKey: team.header.owner.signingKey)
+            let record = TeamRecord(vaultId: id, ownerKey: team.header.owner.signingKey, kind: folder == nil ? TeamRecord.cloudKit : TeamRecord.folder)
+            if let folder { try TeamFolders.save(folder, for: id) }
             try await store.saveTeam(record)
             personal?.schedulePush()
             errorMessage = nil
@@ -884,6 +915,75 @@ final class AppModel {
         }
     }
 
+    // MARK: Folder-mode teams (FR-6)
+
+    /// Creates an invitation file's contents for a folder-mode team vault.
+    func createInvite(role: TeamRole, in s: VaultSession) async -> TeamInvite? {
+        guard let t = s.teamStore else { return nil }
+        do {
+            let invite = try await t.createInvite(role: role)
+            await s.reload()
+            return invite
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Joins a folder-mode team vault from an invitation file: checks the
+    /// shared folder against the owner key the file carries, remembers the
+    /// folder on this Mac, and asks to join.
+    func join(_ invite: TeamInvite, folder: URL) async {
+        guard TeamFeatures.enabled, phase == .unlocked, let store else { return }
+        let generation = unlockGeneration
+        do {
+            guard let me = try await store.identity() else {
+                shareNeedsIdentity = true
+                errorMessage = "Create your Team identity first (Settings › Vault), then open the invitation again."
+                return
+            }
+            if sessions.contains(where: { $0.vaultId == invite.vaultId }) { selectedVaultId = invite.vaultId; return }
+            if let pinned = await store.pinnedOwnerKey(for: invite.vaultId), pinned != invite.ownerKey {
+                throw VaultError.corruptHeader("this invitation names a different owner than the one you knew for this vault")
+            }
+            let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: folder), owner: invite.ownerKey)
+            guard team.vaultId == invite.vaultId else {
+                throw VaultError.corruptHeader("this folder holds a different team vault from the one in the invitation")
+            }
+            let access = try await team.unlock(identity: me)
+            if access == .notMember || access == .removed {
+                try invite.check(header: team.header, state: await team.state)
+                if await !team.hasRequestedToJoin { try await team.requestToJoin(invite: invite.invite) }
+            }
+            try TeamFolders.save(folder, for: invite.vaultId)
+            let record = TeamRecord(vaultId: invite.vaultId, ownerKey: invite.ownerKey, kind: TeamRecord.folder)
+            try await store.saveTeam(record)
+            personal?.schedulePush()
+            guard await attach(team, record: record, generation: generation) != nil else { return }
+            selectedVaultId = invite.vaultId
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn't join: \(error.localizedDescription)"
+        }
+    }
+
+    /// Tells this Mac where a folder-mode team vault it already belongs to is.
+    func locate(_ record: TeamRecord, folder: URL) async {
+        guard let store, let me = try? await store.identity() else { return }
+        let generation = unlockGeneration
+        do {
+            let team = try await TeamVaultStore.open(storage: LocalFolderStorage(root: folder), owner: record.ownerKey)
+            guard team.vaultId == record.vaultId else { throw VaultError.io("That folder holds a different team vault.") }
+            try await team.unlock(identity: me, seenEvents: VaultSession.seenEvents(at: Self.seenURL(for: record.vaultId)))
+            try TeamFolders.save(folder, for: record.vaultId)
+            guard await attach(team, record: record, generation: generation) != nil else { return }
+            selectedVaultId = record.vaultId
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Approves a join request after the safety code was compared (FR-8, FR-9).
     func approve(_ pending: PendingMember, name: String, role: TeamRole, in s: VaultSession) async {
         await performOnTeam(s) { try await $0.add(pending.identity, name: name, role: role) }
@@ -899,6 +999,16 @@ final class AppModel {
     func remove(_ member: UUID, from s: VaultSession) async {
         await performOnTeam(s) { try await $0.remove(member) }
         await reconcileShare(s)
+    }
+
+    func setAgentRules(_ rules: TeamAgentRules, in s: VaultSession) async {
+        await performOnTeam(s) { try await $0.setAgentRules(rules) }
+    }
+
+    /// Marks a project or item of the vault shown "for people only" (FR-24).
+    func setHumansOnly(_ id: UUID, _ on: Bool) async {
+        guard let s = session, s.isTeam else { return }
+        await performOnTeam(s) { try await $0.setHumansOnly(id, on) }
     }
 
     func renameTeamVault(_ s: VaultSession, to title: String) async {
@@ -920,7 +1030,8 @@ final class AppModel {
         guard let t = s.teamStore, let store else { return }
         do {
             if s.team?.role?.canWrite == true { try await t.leave() }
-            if let event = await t.leaveEvent {
+            // A folder team's removal is in the shared folder already; an iCloud one must reach iCloud first.
+            if s.mode == .iCloud, let event = await t.leaveEvent {
                 await s.syncNow()
                 guard await s.mirror?.isUploaded("members/\(event.string).json") == true else {
                     errorMessage = "You haven't left yet: your Mac couldn't reach iCloud. Try again when it's online."
@@ -935,8 +1046,13 @@ final class AppModel {
                 personal?.schedulePush()
             }
             closeTeam(s)
-            try? FileManager.default.removeItem(at: s.url)
-            try? FileManager.default.removeItem(at: Self.stateURL(for: s.vaultId))
+            if s.mode == .iCloud {
+                try? FileManager.default.removeItem(at: s.url)
+                try? FileManager.default.removeItem(at: Self.stateURL(for: s.vaultId))
+            } else {
+                // A shared folder belongs to the team: only forget where it is.
+                TeamFolders.forget(s.vaultId)
+            }
             try? FileManager.default.removeItem(at: Self.seenURL(for: s.vaultId))
         } catch {
             errorMessage = error.localizedDescription
@@ -945,6 +1061,7 @@ final class AppModel {
 
     private func closeTeam(_ s: VaultSession) {
         s.close()
+        if s.mode == .folder { TeamFolders.stop(s.vaultId) }
         Task { await s.store.lock() }
         sessions.removeAll { $0 === s }
         if selectedVaultId == s.vaultId { selectedVaultId = nil }
@@ -1158,9 +1275,9 @@ final class AppModel {
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try await self.authorizeCLI(request)
             },
-            storage: { [weak self] agent in
+            storage: { [weak self] agent, vaultId in
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
-                return try self.vaultStorageForCLI(agent: agent)
+                return try self.vaultStorageForCLI(agent: agent, vaultId: vaultId)
             })
         agentRunning = server.start()
         agent = server
@@ -1184,14 +1301,17 @@ final class AppModel {
         guard let store, let vaultId else { throw refuse("no vault is open in EnVault", denied: false) }
         guard r.vaultId == vaultId else { throw refuse("EnVault has a different vault open; pass --vault for this one", denied: false) }
 
-        var policy = Prefs.agentPolicy
+        // A team vault's rules can only make this Mac's setting stricter (FR-23).
+        let own = Prefs.agentPolicy
+        var policy = own.restricted(by: r.teamRules)
         if let agent = r.agent {
-            guard policy.enabled else { throw refuse("AI agents are turned off in EnVault Settings › AI Agents") }
+            func whose(_ ownAllows: Bool) -> String { ownAllows ? "this team vault's rules" : "Settings › AI Agents" }
+            guard policy.enabled else { throw refuse("AI agents are turned off (\(whose(own.enabled)))") }
             if r.purpose == .reveal, policy.values == .never {
-                throw refuse("EnVault doesn't show secret values to AI agents (Settings › AI Agents); use `envault run` instead")
+                throw refuse("EnVault doesn't show secret values to AI agents (\(whose(own.values != .never))); use `envault run` instead")
             }
             if r.purpose == .write, !policy.writes {
-                throw refuse("AI agents may not change env files (Settings › AI Agents)")
+                throw refuse("AI agents may not change env files (\(whose(own.writes)))")
             }
             let mustAsk = r.purpose == .reveal && policy.values == .ask
             if !mustAsk, phase == .unlocked, let until = agentGrants[agent], until > Date(), let key = await store.currentVaultKey() {
@@ -1229,8 +1349,9 @@ final class AppModel {
     }
 
     /// The open vault's files for the CLI, which can't read this app's
-    /// container itself in iCloud mode. Ciphertext; the key is a separate request.
-    private func vaultStorageForCLI(agent: String?) throws -> any VaultStorage {
+    /// container itself in iCloud mode, or a team vault's (`vaultId`; FR-22).
+    /// Ciphertext; the key is a separate request, and team vaults unlock with it.
+    private func vaultStorageForCLI(agent: String?, vaultId: UUID?) throws -> any VaultStorage {
         guard UserDefaults.standard.bool(forKey: Prefs.cliAgentEnabled) else {
             throw Agent.Failure("the command line is turned off in EnVault Settings › Command Line", denied: true)
         }
@@ -1238,6 +1359,14 @@ final class AppModel {
             throw Agent.Failure("AI agents are turned off in EnVault Settings › AI Agents", denied: true)
         }
         guard store != nil, let vaultURL else { throw Agent.Failure("no vault is open in EnVault") }
+        if let vaultId, vaultId != self.vaultId {
+            // Any team vault this Mac keeps, locked or not: the files are ciphertext.
+            let root = sessions.first { $0.vaultId == vaultId }?.url ?? TeamFolders.restore(vaultId) ?? Self.localRoot(for: vaultId)
+            guard TeamFeatures.enabled, FileManager.default.fileExists(atPath: root.appendingPathComponent(VaultHeader.fileName).path) else {
+                throw Agent.Failure("this Mac has no team vault \(vaultId.uuidString.prefix(8)); open it in EnVault first")
+            }
+            return LocalFolderStorage(root: root)
+        }
         return LocalFolderStorage(root: vaultURL)
     }
 

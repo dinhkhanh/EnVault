@@ -34,6 +34,13 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
         case name(member: UUID, name: SealedName)
         /// The vault's own display name, sealed under a team key; owner or admin.
         case title(SealedName)
+        /// What AI agents may do in this vault (FR-23); owner or admin.
+        case agentRules(TeamAgentRules)
+        /// Marks a project or item "humans only": agents never get it (FR-24); owner or admin.
+        case humansOnly(target: UUID, on: Bool)
+        /// An invitation sent as a file (folder mode, FR-6): the role offered
+        /// and when it lapses (seconds since 1970). Join requests name it.
+        case invite(id: ULID, role: TeamRole, expires: Int64)
     }
 
     public var id: ULID
@@ -66,6 +73,12 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
             c.add("name"); c.add(member); c.add(name.epoch); c.add(name.box)
         case .title(let name):
             c.add("title"); c.add(name.epoch); c.add(name.box)
+        case .agentRules(let r):
+            c.add("agentRules"); c.add(r.enabled ? "1" : "0"); c.add(r.values.rawValue); c.add(r.writes ? "1" : "0")
+        case .humansOnly(let target, let on):
+            c.add("humansOnly"); c.add(target); c.add(on ? "1" : "0")
+        case .invite(let id, let role, let expires):
+            c.add("invite"); c.add(id); c.add(role.rawValue); c.add(String(expires))
         }
         return c.data
     }
@@ -111,6 +124,17 @@ public struct TeamState: Sendable {
     public private(set) var names: [UUID: SealedName] = [:]
     /// The vault's latest sealed display name.
     public private(set) var title: SealedName?
+    /// The team's rules for AI agents, nil until an admin sets them.
+    public private(set) var agentRules: TeamAgentRules?
+    /// Projects and items agents never get.
+    public private(set) var humansOnly: Set<UUID> = []
+    /// Invitations by id: the role offered, when they lapse, who sent them.
+    public private(set) var invites: [ULID: Invite] = [:]
+    public struct Invite: Equatable, Sendable {
+        public var role: TeamRole
+        public var expiresAt: Date
+        public var by: UUID
+    }
     /// When each former member was last removed.
     public private(set) var removedAt: [UUID: ULID] = [:]
     /// Events ignored, with the reason (shown in the membership log, FR-18/FR-19).
@@ -199,6 +223,16 @@ public struct TeamState: Sendable {
             guard by.canManage else { return "only an owner or admin renames the vault" }
             guard epoch(name.epoch) != nil else { return "unknown key epoch" }
             title = name
+        case .agentRules(let rules):
+            guard by.canManage else { return "only an owner or admin sets the rules for AI agents" }
+            agentRules = rules
+        case .humansOnly(let target, let on):
+            guard by.canManage else { return "only an owner or admin marks things humans only" }
+            if on { humansOnly.insert(target) } else { humansOnly.remove(target) }
+        case .invite(let id, let role, let expires):
+            guard by.canManage else { return "only an owner or admin invites" }
+            guard role != .owner else { return "nobody is invited as owner" }
+            invites[id] = Invite(role: role, expiresAt: Date(timeIntervalSince1970: TimeInterval(expires)), by: e.author)
         }
         return nil
     }

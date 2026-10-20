@@ -72,7 +72,9 @@ struct EnVaultApp: App {
                 if TeamFeatures.enabled {
                     Divider()
                     Button("New Team Vault…") { NotificationCenter.default.post(name: .newTeamVault, object: nil) }
-                        .disabled(model.phase != .unlocked || !model.teamVaultsAvailable)
+                        .disabled(model.phase != .unlocked)
+                    Button("Join Team Vault from Invitation…") { JoinFromInvitation.run(model) }
+                        .disabled(model.phase != .unlocked)
                 }
                 #if DEBUG
                 Divider()

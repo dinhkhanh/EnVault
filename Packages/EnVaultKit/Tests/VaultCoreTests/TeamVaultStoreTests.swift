@@ -91,6 +91,45 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await store.log().allSatisfy { $0.rejected == nil })
     }
 
+    @Test func teamRulesOnlyTightenAMembersOwnSetting() async throws {
+        let (store, macs) = try await team()
+        let onCyd = try await open(macs[cyd.id]!, as: cyd)
+        await #expect(throws: VaultError.self) { try await onCyd.setAgentRules(TeamAgentRules(values: .allow)) }   // members can't
+        try await store.setAgentRules(TeamAgentRules(enabled: true, values: .never, writes: false))
+        let rules = await store.state.agentRules
+        let mine = AIAgents.Policy(enabled: true, values: .allow, writes: true)
+        #expect(mine.restricted(by: rules) == AIAgents.Policy(enabled: true, values: .never, writes: false))
+        let strict = AIAgents.Policy(enabled: false, values: .ask, writes: false)
+        #expect(strict.restricted(by: TeamAgentRules(values: .allow)) == strict)     // can't loosen
+        #expect(mine.restricted(by: nil) == mine)
+        #expect(await store.log().first?.change == .agentRules(TeamAgentRules(enabled: true, values: .never, writes: false)))
+    }
+
+    @Test func humansOnlyIsInvisibleToAgents() async throws {
+        let (store, macs) = try await team()
+        let p = try await store.createProject(name: "billing")
+        let prod = try await store.createItem(in: p.id, name: "prod.env", payload: secret)
+        let dev = try await store.createItem(in: p.id, name: "dev.env", payload: secret)
+        try await store.setHumansOnly(prod.id, true)
+
+        let asAgent = try await open(macs[ada.id]!, as: ada)
+        await sync(macs[ada.id]!)
+        try await asAgent.refresh()
+        await asAgent.hideHumansOnly()
+        #expect(await asAgent.items(in: p.id).map(\.id) == [dev.id])
+        #expect(await asAgent.item(prod.id) == nil)
+        #expect(await asAgent.history(of: prod.id).isEmpty)
+        await #expect(throws: VaultError.self) { try await asAgent.updateItem(prod.id, payload: .envFile(text: "X=1")) }
+        await #expect(throws: VaultError.self) { try await asAgent.createItem(in: p.id, name: "prod.env", payload: secret) }
+
+        try await store.setHumansOnly(p.id, true)
+        try await asAgent.refresh()
+        #expect(await asAgent.projects().isEmpty)
+        #expect(await asAgent.allItems().isEmpty)
+        await #expect(throws: VaultError.self) { try await asAgent.createProject(name: "billing") }
+        #expect(await store.items(in: p.id).count == 2)           // people still see everything
+    }
+
     @Test func everyRoleSeesTheSameVault() async throws {
         let (_, macs) = try await team()
         let onCyd = try await open(macs[cyd.id]!, as: cyd)
@@ -385,6 +424,45 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         try await store.refresh()
         #expect(await store.pendingMembers().isEmpty)
         #expect(await store.rejectedFiles.keys.filter { $0.hasPrefix("identities/") }.count == 2)
+    }
+
+    @Test func anInvitationFileChecksTheFolder() async throws {
+        let (store, storage) = try await vault()
+        let invite = try await store.createInvite(role: .viewer)
+        let file = try TeamInvite.decode(try invite.encoded())
+        #expect(file == invite && file.title == "Acme")
+
+        // Eve's Mac sees the shared folder and checks it against the file.
+        let eve = person("Eve"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        let onEve = try await open(eveMac, as: eve)
+        try file.check(header: onEve.header, state: await onEve.state)
+        try await onEve.requestToJoin(invite: file.invite)
+        await sync(storage, eveMac)
+        try await store.refresh()
+        let pending = try #require(await store.pendingMembers().first)
+        #expect(pending.invitedAs == .viewer && !pending.inviteLapsed)
+        #expect(await store.log().contains { $0.change == .invited(.viewer) })
+
+        // A folder whose header someone swapped, a lapsed invitation, an unknown one.
+        let fake = try TeamHeader.create(owner: person("Mallory"), vaultId: store.vaultId)
+        #expect(throws: VaultError.self) { try file.check(header: fake, state: TeamState(header: fake, events: [])) }
+        let state = await store.state
+        #expect(throws: VaultError.self) { try file.check(header: store.header, state: state, now: Date().addingTimeInterval(8 * 86_400)) }
+        var unknown = file; unknown.invite = ULID()
+        #expect(throws: VaultError.self) { try unknown.check(header: store.header, state: state) }
+        // Members can't invite.
+        await #expect(throws: VaultError.self) { try await open(storage, as: cyd).createInvite(role: .member) }
+    }
+
+    @Test func aRequestNamingAnUnknownInvitationIsMarked() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        try await open(eveMac, as: eve).requestToJoin(invite: ULID())
+        await sync(storage, eveMac)
+        try await store.refresh()
+        #expect(await store.pendingMembers().first?.inviteLapsed == true)
     }
 
     @Test func onlyLeavingYourselfCountsAsALeave() async throws {

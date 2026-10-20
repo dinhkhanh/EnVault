@@ -33,6 +33,10 @@ final class VaultSession {
         /// Items whose current value people who left could read, with who (FR-14).
         var exposed: [UUID: Set<UUID>]
         var log: [TeamLogEntry]
+        /// What the team lets AI agents do (FR-23), nil = no team rule.
+        var agentRules: TeamAgentRules?
+        /// Projects and items AI agents never get (FR-24).
+        var humansOnly: Set<UUID>
         func name(_ id: UUID) -> String { names[id] ?? "Someone" }
         var role: TeamRole? {
             switch access { case .member(let r), .awaitingKey(let r): r; default: nil }
@@ -95,7 +99,8 @@ final class VaultSession {
         for e in await t.exposedItems() { exposed[e.item.id] = e.readers }
         team = TeamSnapshot(access: await t.access, members: await t.members(), pending: await t.pendingMembers(),
                             hasRequestedToJoin: await t.hasRequestedToJoin, lateEvents: await t.lateEvents,
-                            needsRotation: state.needsRotation, names: names, exposed: exposed, log: await t.log())
+                            needsRotation: state.needsRotation, names: names, exposed: exposed, log: await t.log(),
+                            agentRules: state.agentRules, humansOnly: state.humansOnly)
         if let title = await t.title { name = title }
         if let seenURL, let data = try? JSONEncoder().encode(await t.knownEvents.map(\.string).sorted()) {
             try? FileManager.default.createDirectory(at: seenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -120,7 +125,11 @@ final class VaultSession {
     func refreshFromDisk() async {
         guard isUnlocked else { return }
         do {
-            if try await store.refresh() { await reload() }
+            if try await store.refresh() {
+                await reload()
+                // Folder teams have no sync pass of their own: their changes arrive here.
+                if mode == .folder, isTeam { await upkeep() }
+            }
             lastRefresh = Date()
         } catch {
             reportError("Sync read failed: \(error.localizedDescription)")
@@ -182,8 +191,14 @@ final class VaultSession {
             try? await personalStore?.reloadHeader()
             await refreshFromDisk()
         }
+        await upkeep()
+        await didSyncTeam(self)
+    }
+
+    /// An admin's Mac repairs a team vault's keys after each sync or change
+    /// from other Macs: rotation, missing copies, links. Nothing for other roles.
+    func upkeep() async {
         guard let t = teamStore, isUnlocked else { return }
-        // An admin's Mac repairs the team's keys after each sync (rotation, missing copies, links).
         do {
             if try await !t.maintain().isEmpty {
                 await reload()
@@ -192,7 +207,6 @@ final class VaultSession {
         } catch {
             reportError("Team key upkeep failed: \(error.localizedDescription)")
         }
-        await didSyncTeam(self)
     }
 
     /// Local files changed (our own writes): push soon, coalesced.

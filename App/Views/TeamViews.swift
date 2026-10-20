@@ -61,6 +61,7 @@ struct TeamMembersView: View {
     @State private var inviteLink: URL?
     @State private var inviting = false
     @State private var showLog = false
+    @State private var inviteRole: TeamRole = .member
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,7 +74,12 @@ struct TeamMembersView: View {
                         Section("Asking to Join") { ForEach(team.pending) { pendingRow($0) } }
                     }
                     Section("Members") { ForEach(team.members) { memberRow($0, team: team) } }
-                    if team.role == .owner, model.teamVaultsAvailable { inviteSection }
+                    agentSection(team)
+                    if session.mode == .folder {
+                        if team.canManage { folderInviteSection }
+                    } else if team.role == .owner, model.teamVaultsAvailable {
+                        inviteSection
+                    }
                     Section {
                         Button("Membership Log…") { showLog = true }
                         Button("Leave This Team Vault…", role: .destructive) { leaving = true }
@@ -97,7 +103,8 @@ struct TeamMembersView: View {
         .confirmationDialog("Remove \(removing?.name ?? "this member")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { m in
             Button("Remove", role: .destructive) { Task { await model.remove(m.id, from: session) } }
         } message: { _ in
-            Text("They lose access to anything saved from now on; the team key is rotated. What they already synced stays on their Macs, so rotate the secrets they could read.")
+            Text("They lose access to anything saved from now on; the team key is rotated. What they already synced stays on their Macs, so rotate the secrets they could read."
+                 + (session.mode == .folder ? " Also take away their access to the shared folder: until then they can still add files, which every Mac ignores." : ""))
         }
         .confirmationDialog("Leave “\(session.name)”?", isPresented: $leaving) {
             Button("Leave", role: .destructive) { Task { await model.leave(session); dismiss() } }
@@ -139,6 +146,37 @@ struct TeamMembersView: View {
         }
     }
 
+    /// FR-23: the team's rules for AI agents. Each member's own setting can only be stricter.
+    @ViewBuilder private func agentSection(_ team: VaultSession.TeamSnapshot) -> some View {
+        let rules = team.agentRules ?? TeamAgentRules()
+        Section {
+            if team.canManage {
+                Toggle("Allow AI agents", isOn: Binding(get: { rules.enabled }, set: { v in var r = rules; r.enabled = v; Task { await model.setAgentRules(r, in: session) } }))
+                Picker("Secret values", selection: Binding(get: { rules.values }, set: { v in var r = rules; r.values = v; Task { await model.setAgentRules(r, in: session) } })) {
+                    Text("Never").tag(AIAgents.Policy.Values.never)
+                    Text("Ask each time").tag(AIAgents.Policy.Values.ask)
+                    Text("As each member's setting allows").tag(AIAgents.Policy.Values.allow)
+                }
+                .disabled(!rules.enabled)
+                Toggle("May change env files", isOn: Binding(get: { rules.writes }, set: { v in var r = rules; r.writes = v; Task { await model.setAgentRules(r, in: session) } }))
+                    .disabled(!rules.enabled)
+            } else {
+                Text(team.agentRules == nil ? "No team rule: your own setting applies." : describe(rules))
+            }
+        } header: {
+            Text("AI Agents")
+        } footer: {
+            Text("Applies to the envault command and its MCP server in this vault. Each member's own setting (Settings › AI Agents) can only make it stricter. Mark a project or item For People Only from its menu to keep agents away from it entirely.")
+                .font(.caption)
+        }
+    }
+
+    private func describe(_ r: TeamAgentRules) -> String {
+        guard r.enabled else { return "AI agents are not allowed in this vault." }
+        let values = switch r.values { case .never: "never see values"; case .ask: "need approval for each look at values"; case .allow: "see values as each member's setting allows" }
+        return "AI agents \(values) and \(r.writes ? "may" : "may not") change env files."
+    }
+
     /// FR-14: what people who left could read, until each value is changed.
     private func rotateSection(_ team: VaultSession.TeamSnapshot) -> some View {
         Section {
@@ -171,7 +209,12 @@ struct TeamMembersView: View {
         HStack {
             VStack(alignment: .leading) {
                 Text(p.name ?? "Name not shared with you")
-                Text("Asked \(p.requestedAt, style: .relative) ago").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("Asked \(p.requestedAt, style: .relative) ago")
+                    if p.inviteLapsed { Text("· invitation lapsed").foregroundStyle(.orange) }
+                    else if let role = p.invitedAs { Text("· invited as \(role.title.lowercased())") }
+                }
+                .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Button("Approve…") { approving = p }
@@ -199,6 +242,32 @@ struct TeamMembersView: View {
             } else {
                 Text(m.role.title).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Folder mode (FR-6): an invitation file, plus sharing the folder itself.
+    private var folderInviteSection: some View {
+        Section {
+            HStack {
+                Picker("Role", selection: $inviteRole) { ForEach(TeamRole.assignable, id: \.self) { Text($0.title).tag($0) } }
+                    .fixedSize()
+                Spacer()
+                Button("Create Invitation File…") {
+                    Task {
+                        guard let invite = await model.createInvite(role: inviteRole, in: session) else { return }
+                        let panel = NSSavePanel()
+                        panel.nameFieldStringValue = "\(session.name).\(TeamInvite.fileExtension)"
+                        panel.message = "Save the invitation, then send it to the person you're inviting."
+                        guard panel.runModal() == .OK, let url = panel.url else { return }
+                        do { try invite.encoded().write(to: url, options: .atomic) } catch { model.errorMessage = error.localizedDescription }
+                    }
+                }
+            }
+        } header: {
+            Text("Invite")
+        } footer: {
+            Text("Send them the file and share this vault's folder with them (Dropbox, git…) with write access. They open the file in EnVault › Vault › Join Team Vault from Invitation…, then you approve them here after comparing safety codes. The invitation lapses after 7 days.")
+                .font(.caption)
         }
     }
 
@@ -251,6 +320,14 @@ struct ApproveMemberSheet: View {
             Text("Ask them to read the safety code shown in their EnVault, on a call or in person. Approve only if it matches:")
                 .font(.callout).foregroundStyle(.secondary)
             Text(pending.safetyCode).font(.title2.monospaced()).textSelection(.enabled)
+            if pending.inviteLapsed {
+                Text("They answered an invitation that has lapsed. Send them a new one.").font(.callout).foregroundStyle(.orange)
+            } else if let offered = pending.invitedAs {
+                // Anyone who can write to the folder can name an open invitation, so the role is the admin's call.
+                Text("The invitation offered \(offered.title.lowercased()). Choose the role yourself.").font(.callout).foregroundStyle(.secondary)
+            } else if session.mode == .folder {
+                Text("This request doesn't name an invitation.").font(.callout).foregroundStyle(.secondary)
+            }
             Toggle("They read me the same code", isOn: $codesMatch)
             Form {
                 TextField("Name in this vault", text: $name)
@@ -265,11 +342,15 @@ struct ApproveMemberSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!codesMatch || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!codesMatch || pending.inviteLapsed || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20).frame(width: 440)
-        .onAppear { name = pending.name ?? "" }
+        .onAppear {
+            name = pending.name ?? ""
+            // Never preselect more than member: the safety code identifies the person, not the invitation.
+            role = min(pending.invitedAs ?? .member, .member)
+        }
     }
 }
 
@@ -280,6 +361,8 @@ struct NewTeamVaultSheet: View {
     @State private var title = ""
     @State private var myName = NSFullUserName()
     @State private var working = false
+    @State private var folder: URL?
+    @State private var useFolder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -287,6 +370,18 @@ struct NewTeamVaultSheet: View {
             Text("A vault you share with your team through iCloud. Everything in it is encrypted on your Macs; Apple sees only ciphertext.")
                 .font(.callout).foregroundStyle(.secondary)
             TextField("Vault name (e.g. Acme)", text: $title).textFieldStyle(.roundedBorder)
+            Picker("Where", selection: $useFolder) {
+                Text("iCloud").tag(false).disabled(!model.teamVaultsAvailable)
+                Text("A shared folder (Dropbox, git…)").tag(true)
+            }
+            .pickerStyle(.radioGroup)
+            if useFolder {
+                HStack {
+                    Text(folder?.path(percentEncoded: false) ?? "No folder chosen").font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button("Choose…") { folder = Self.chooseEmptyFolder() }
+                }
+            }
             if model.identity == nil {
                 TextField("Your name, as teammates see it", text: $myName).textFieldStyle(.roundedBorder)
             }
@@ -298,21 +393,41 @@ struct NewTeamVaultSheet: View {
                     working = true
                     Task {
                         if model.identity == nil { await model.createIdentity(name: myName.trimmingCharacters(in: .whitespaces)) }
-                        let ok = await model.createTeamVault(title: title.trimmingCharacters(in: .whitespaces))
+                        let ok = await model.createTeamVault(title: title.trimmingCharacters(in: .whitespaces), folder: useFolder ? folder : nil)
                         working = false
                         if ok { dismiss() }
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(working || title.trimmingCharacters(in: .whitespaces).isEmpty
+                .disabled(working || title.trimmingCharacters(in: .whitespaces).isEmpty || (useFolder && folder == nil)
                           || (model.identity == nil && myName.trimmingCharacters(in: .whitespaces).isEmpty))
             }
         }
         .padding(20).frame(width: 400)
         .task {
             model.errorMessage = nil
+            useFolder = !model.teamVaultsAvailable
             await model.loadIdentity()
         }
+    }
+
+    static func chooseEmptyFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Use Folder"
+        panel.message = "Choose an empty folder that your team shares (in Dropbox, a git repository…)."
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
+        guard entries.allSatisfy({ $0.hasPrefix(".") }) else {
+            let alert = NSAlert()
+            alert.messageText = "Choose an empty folder"
+            alert.informativeText = "“\(url.lastPathComponent)” already has files in it."
+            alert.runModal()
+            return nil
+        }
+        return url
     }
 }
 
@@ -387,6 +502,9 @@ struct MembershipLogView: View {
         case .rotated: return "\(by) rotated the team key"
         case .named(let who): return who == e.author ? "\(by) set their name" : "\(by) named \(n(who))"
         case .titled: return "\(by) named the vault"
+        case .agentRules(let r): return "\(by) set the rules for AI agents" + (r.enabled ? "" : " (not allowed)")
+        case .humansOnly(_, let on): return on ? "\(by) marked something for people only" : "\(by) opened something to AI agents again"
+        case .invited(let role): return "\(by) sent an invitation (as \(role.title.lowercased()))"
         }
     }
 
@@ -398,6 +516,43 @@ struct MembershipLogView: View {
         case .removed, .left: "person.badge.minus"
         case .rotated: "key"
         case .named, .titled: "pencil"
+        case .agentRules, .humansOnly: "cpu"
+        case .invited: "envelope"
         }
+    }
+}
+
+/// Vault › Join Team Vault from Invitation…: the invitation file, then the
+/// shared folder it is for (FR-6).
+@MainActor
+enum JoinFromInvitation {
+    static func run(_ model: AppModel) {
+        let file = NSOpenPanel()
+        file.allowedContentTypes = []
+        file.allowsOtherFileTypes = true
+        file.message = "Choose the invitation file (.\(TeamInvite.fileExtension)) you were sent."
+        file.prompt = "Open Invitation"
+        guard file.runModal() == .OK, let url = file.url else { return }
+        let invite: TeamInvite
+        do {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            invite = try TeamInvite.decode(try Data(contentsOf: url))
+        } catch {
+            model.errorMessage = error.localizedDescription
+            return
+        }
+        guard let folder = chooseFolder(for: invite.title ?? "the team vault") else { return }
+        Task { await model.join(invite, folder: folder) }
+    }
+
+    static func chooseFolder(for name: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the shared folder that holds \(name) on this Mac."
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 }
