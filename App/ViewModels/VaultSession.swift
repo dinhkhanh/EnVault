@@ -175,7 +175,7 @@ final class VaultSession {
     // MARK: - iCloud (CloudKit) mode
 
     func startCloud(transport: CloudVaultTransport, stateURL: URL) {
-        mirror = CloudMirror(vaultId: vaultId, localRoot: url, stateURL: stateURL, transport: transport)
+        mirror = CloudMirror(vaultId: vaultId, localRoot: url, stateURL: stateURL, transport: transport, hostsZone: !isTeam || hostsShare)
         cloudTimer?.cancel()
         cloudTimer = Task { [weak self] in
             await self?.syncNow()

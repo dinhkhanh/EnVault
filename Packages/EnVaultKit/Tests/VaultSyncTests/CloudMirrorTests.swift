@@ -245,7 +245,7 @@ private struct Device {
         defer { try? FileManager.default.removeItem(at: root) }
         let joiner = CloudMirror(vaultId: vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud)
         try await joiner.pull()
-        #expect(await joiner.creator(of: VaultHeader.fileName) == "_mallory")
+        #expect(await joiner.creator(of: VaultHeader.fileName) == nil)       // Ada created the record, Mallory changed it
         await cloud.signIn(as: "_ada")
         try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: real)], vaultId: vaultId, overwrite: true)
         // Retrying keeps the header on disk (Mallory's), so the owner mustn't be named as its writer.
@@ -290,11 +290,118 @@ private struct Device {
         #expect(try await cloud.fetchFile(path: event, vaultId: store.vaultId) != nil)
     }
 
+    /// Ada's Mac hosts a team vault's zone; Cyd's Mac downloads it.
+    private func hostedTeam(_ cloud: MemoryCloudTransport) async throws -> (host: CloudMirror, vaultId: UUID, roots: [URL]) {
+        let root = Device.tmp()
+        let owner = UserIdentity(id: UUID(), name: "Ada", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        let store = try await TeamVaultStore.create(storage: LocalFolderStorage(root: root), owner: owner, title: "Acme", device: macA)
+        await cloud.signIn(as: "_ada")
+        let host = CloudMirror(vaultId: store.vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud, hostsZone: true)
+        try await host.bootstrap()
+        await host.sync()
+        return (host, store.vaultId, [root])
+    }
+
+    private func mirror(_ vaultId: UUID, _ cloud: MemoryCloudTransport) -> (CloudMirror, URL) {
+        let root = Device.tmp()
+        return (CloudMirror(vaultId: vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud), root)
+    }
+
+    @Test func aTeamFileOverwrittenInPlaceIsPutBack() async throws {
+        let cloud = MemoryCloudTransport()
+        let (host, vaultId, roots) = try await hostedTeam(cloud)
+        let event = try #require(await host.localFiles().first { $0.hasPrefix("members/") })
+        let real = try #require(try await cloud.fetchFile(path: event, vaultId: vaultId))
+
+        await cloud.signIn(as: "_bob")
+        let (bob, bobRoot) = mirror(vaultId, cloud)
+        let (cyd, cydRoot) = mirror(vaultId, cloud)
+        defer { for r in roots + [bobRoot, cydRoot] { try? FileManager.default.removeItem(at: r) } }
+        try await bob.pull()
+
+        // A participant overwrites a membership event; Cyd's new Mac downloads the junk.
+        await cloud.signIn(as: "_mallory")
+        try await cloud.upload([CloudFile(path: event, data: Data("junk".utf8))], vaultId: vaultId, overwrite: true)
+        await cloud.signIn(as: "_cyd")
+        try await cyd.pull()
+
+        // Bob's Mac puts its copy back. Cyd's came overwritten: it follows the zone
+        // and never puts the junk back, though the record is no longer Ada's alone.
+        await cloud.signIn(as: "_bob")
+        await bob.sync()
+        #expect(try await cloud.fetchFile(path: event, vaultId: vaultId) == real)
+        await cloud.signIn(as: "_cyd")
+        await cyd.sync()
+        #expect(try await cloud.fetchFile(path: event, vaultId: vaultId) == real)
+        #expect(try Data(contentsOf: cydRoot.appendingPathComponent(event)) == real)
+
+        // Again, with the owner's Mac (the record's uploader) putting it back.
+        await cloud.signIn(as: "_mallory")
+        try await cloud.upload([CloudFile(path: event, data: Data("junk".utf8))], vaultId: vaultId, overwrite: true)
+        await cloud.signIn(as: "_ada")
+        await host.sync()
+        #expect(try await cloud.fetchFile(path: event, vaultId: vaultId) == real)
+    }
+
+    @Test func aReSavedOrDeletedTeamHeaderComesBack() async throws {
+        let cloud = MemoryCloudTransport()
+        let (host, vaultId, roots) = try await hostedTeam(cloud)
+        defer { for r in roots { try? FileManager.default.removeItem(at: r) } }
+        let header = try #require(try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: vaultId))
+
+        // Mallory saves the same bytes again: a joiner couldn't tell it was the owner's.
+        await cloud.signIn(as: "_mallory")
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: header)], vaultId: vaultId, overwrite: true)
+        await cloud.signIn(as: "_ada")
+        await host.sync()
+        let (joiner, joinerRoot) = mirror(vaultId, cloud)
+        defer { try? FileManager.default.removeItem(at: joinerRoot) }
+        try await joiner.pull()
+        #expect(await joiner.creator(of: VaultHeader.fileName) == "_ada")
+
+        // Deleted: the owner's Mac uploads it again.
+        try await cloud.delete(paths: [VaultHeader.fileName], vaultId: vaultId)
+        await host.sync()
+        #expect(try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: vaultId) == header)
+    }
+
+    @Test func onlyItsAuthorPutsBackADeletedJoinRequest() async throws {
+        let cloud = MemoryCloudTransport()
+        let (host, vaultId, roots) = try await hostedTeam(cloud)
+        await cloud.signIn(as: "_bob")
+        let (bob, bobRoot) = mirror(vaultId, cloud)
+        defer { for r in roots + [bobRoot] { try? FileManager.default.removeItem(at: r) } }
+        try await bob.pull()
+        let request = "identities/\(UUID().uuidString)/\(ULID().string).json"
+        try FileManager.default.createDirectory(at: bobRoot.appendingPathComponent(request).deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: bobRoot.appendingPathComponent(request))
+        await bob.sync()
+        await cloud.signIn(as: "_ada")
+        await host.sync()
+
+        // Deleted while Bob's Mac is away: Ada's Mac would become its uploader, so it leaves it.
+        try await cloud.delete(paths: [request], vaultId: vaultId)
+        await host.sync()
+        #expect(try await cloud.fetchFile(path: request, vaultId: vaultId) == nil)
+        await cloud.signIn(as: "_bob")
+        await bob.sync()
+        #expect(try await cloud.fetchFile(path: request, vaultId: vaultId) != nil)
+        await cloud.signIn(as: "_ada")
+        try await host.pull()
+        #expect(await host.creator(of: request) == "_bob")
+    }
+
     @Test func syncablePaths() {
         #expect(SyncPaths.isSyncable("vault.json"))
-        #expect(SyncPaths.isSyncable("projects/A/items/B/01J.evr"))
-        #expect(SyncPaths.isSyncable("members/01J.evr"))
-        #expect(!SyncPaths.isSyncable("projects/A/notes.txt"))
+        let p = UUID().uuidString, i = UUID().uuidString, r = ULID().string
+        #expect(SyncPaths.isSyncable("projects/\(p)/items/\(i)/\(r).evr"))
+        #expect(SyncPaths.isSyncable("members/\(r).json") && SyncPaths.isSyncable("keys/\(r)/prev-\(r).json"))
+        #expect(!SyncPaths.isSyncable("projects/\(p)/notes.txt"))
+        // Twins that differ only in case would take the real file's place on a Mac's disk.
+        #expect(!SyncPaths.isSyncable("projects/\(p.lowercased())/items/\(i)/\(r).evr"))
+        #expect(!SyncPaths.isSyncable("projects/\(p)/ITEMS/\(i)/\(r).evr"))
+        #expect(!SyncPaths.isSyncable("keys/\(r.lowercased())/\(i).json") && !SyncPaths.isSyncable("keys/\(r)/prev-\(r.lowercased()).json"))
+        #expect(!SyncPaths.isSyncable("members/\(r).JSON") && !SyncPaths.isSyncable("spike/Probe.json"))
         #expect(!SyncPaths.isSyncable("devices/x.json"))
         #expect(!SyncPaths.isSyncable("../x"))
         #expect(!SyncPaths.isSyncable("spike/..") && !SyncPaths.isSyncable("spike/"))
