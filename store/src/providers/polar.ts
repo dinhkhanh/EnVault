@@ -21,8 +21,15 @@ export function polarAction(event: any): Action {
           plan: planFrom(d.product?.metadata?.plan, d.product?.name),
           seats: Math.max(1, Number(d.seats ?? d.subscription?.seats ?? 1) || 1),
           periodEnd: d.subscription?.current_period_end ?? null,
+          reason: d.billing_reason === "subscription_cycle" ? "renewal" : d.billing_reason === "subscription_update" ? "seats" : "purchase",
         },
       };
+    }
+    case "subscription.updated": {
+      const seats = Number(d.seats);
+      if (!d.id || !Number.isInteger(seats) || seats < 1) return { kind: "ignore", why: "no seat count" };
+      if (d.status && d.status !== "active" && d.status !== "trialing") return { kind: "ignore", why: `subscription ${d.status}` };
+      return { kind: "reseat", subscriptionId: d.id, seats, periodEnd: d.current_period_end ?? null };
     }
     case "order.refunded": {
       const full = d.status === "refunded" || (Number(d.refunded_amount ?? 0) >= Number(d.total_amount ?? 0) && Number(d.total_amount ?? 0) > 0);

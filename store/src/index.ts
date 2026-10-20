@@ -10,7 +10,7 @@ import { resendForm, resendDone, thanks } from "./pages.ts";
 export interface Env {
   DB: D1Database;
   LICENSE_PUBLIC_KEY: string; LICENSE_PRIVATE_KEY: string;
-  SITE_URL: string; STORE_URL?: string; POLAR_CHECKOUT_URL: string; PADDLE_CHECKOUT_URL: string; CHECKOUT_PROVIDER: string;
+  SITE_URL: string; STORE_URL?: string; POLAR_CHECKOUT_URL: string; POLAR_TEAM_CHECKOUT_URL?: string; PADDLE_CHECKOUT_URL: string; CHECKOUT_PROVIDER: string;
   FROM_EMAIL: string; SUPPORT_EMAIL: string; UPDATES_MONTHS: string; MAIL_MODE: string;
   POLAR_WEBHOOK_SECRET?: string; PADDLE_WEBHOOK_SECRET?: string; PADDLE_API_KEY?: string; PADDLE_SANDBOX?: string;
   RESEND_API_KEY?: string; ADMIN_TOKEN?: string;
@@ -63,9 +63,11 @@ export default {
     try {
       if (req.method === "GET" && path === "/health") return text("ok");
 
-      // Checkout entry point: one stable URL, provider chosen by config.
-      if (req.method === "GET" && path === "/buy") {
-        const target = env.CHECKOUT_PROVIDER === "paddle" ? env.PADDLE_CHECKOUT_URL : env.POLAR_CHECKOUT_URL;
+      // Checkout entry points: one stable URL per plan, provider chosen by config.
+      if (req.method === "GET" && (path === "/buy" || path === "/buy/team")) {
+        const team = path === "/buy/team";
+        const target = team ? (env.CHECKOUT_PROVIDER === "polar" ? env.POLAR_TEAM_CHECKOUT_URL : undefined)
+          : env.CHECKOUT_PROVIDER === "paddle" ? env.PADDLE_CHECKOUT_URL : env.POLAR_CHECKOUT_URL;
         if (!target) return html(thanks(env.SITE_URL, env.SUPPORT_EMAIL).replace("Thank you for buying EnVault Pro", "Checkout is not open yet").replace(/<p>Your license key[^]*?<\/p>/, `<p>Email <a href="mailto:${env.SUPPORT_EMAIL}">${env.SUPPORT_EMAIL}</a> to get a key.</p>`), 503);
         const t = new URL(target);
         for (const k of ["customer_email", "customer_name", "discount_code", "reference_id", "utm_source", "utm_medium", "utm_campaign"]) {

@@ -26,7 +26,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 export interface MailContext { siteUrl: string; storeUrl: string; supportEmail: string; }
 
-export function licenseMail(rows: LicenseRow[], ctx: MailContext, kind: "new" | "resend"): Mail {
+export function licenseMail(rows: LicenseRow[], ctx: MailContext, kind: "new" | "resend" | "renewal" | "seats"): Mail {
   const first = rows[0];
   const plan = first.plan === "team" ? "Team" : "Pro";
   const keys = rows.map((r) => r.key);
@@ -35,6 +35,10 @@ export function licenseMail(rows: LicenseRow[], ctx: MailContext, kind: "new" | 
   const greeting = `Hi ${first.name},`;
   const intro = kind === "new"
     ? `Thank you for buying EnVault ${plan}. Your purchase is complete, and the key below unlocks every Pro feature on your Mac. Keep this email somewhere safe; you will need the key again if you reinstall or move to a new Mac.`
+    : kind === "renewal"
+    ? `Your EnVault ${plan} subscription renewed. Here is the key for the new year: paste it in EnVault › Settings › License${first.plan === "team" ? " on the Mac that owns your team vaults; your team picks it up from there" : ""}.`
+    : kind === "seats"
+    ? `Your EnVault ${plan} subscription now has ${first.seats} seat${first.seats === 1 ? "" : "s"}. Here is the key for it; paste it in EnVault › Settings › License. It replaces your previous key.`
     : `You asked us to send your EnVault ${rows.length === 1 ? "license again. Here it is" : "licenses again. Here they are"}, exactly as issued.`;
   const steps = [
     `1. Download EnVault: ${ctx.siteUrl}`,
@@ -57,5 +61,5 @@ ${updates ? `<p style="color:#555">Licensed to ${esc(first.name)} &lt;${esc(firs
 <p style="color:#555">Lost this email? <a href="${esc(ctx.storeUrl)}/resend">Get your key again</a>. Questions or refunds (14 days): just reply to this email.</p>
 <p>The EnVault team</p>
 </div>`;
-  return { to: first.email, subject: kind === "new" ? `Your EnVault ${plan} purchase` : "Your EnVault license, as requested", text, html, replyTo: ctx.supportEmail };
+  return { to: first.email, subject: kind === "new" ? `Your EnVault ${plan} purchase` : kind === "renewal" ? `Your EnVault ${plan} renewal` : kind === "seats" ? `Your EnVault ${plan} key for ${first.seats} seats` : "Your EnVault license, as requested", text, html, replyTo: ctx.supportEmail };
 }
