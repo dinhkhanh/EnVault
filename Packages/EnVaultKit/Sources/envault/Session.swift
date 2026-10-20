@@ -211,7 +211,8 @@ struct Session {
             do {
                 let store = try await TeamVaultStore.open(storage: try teamStorage(record), device: device, owner: record.ownerKey)
                 guard store.vaultId == record.vaultId else { throw CLIError("the folder for team vault \(record.vaultId.uuidString.prefix(8)) holds a different vault") }
-                let access = try await store.unlock(identity: me)
+                // The app's history of this vault, so missing changes and backdated revisions are caught here too.
+                let access = try await store.unlock(identity: me, seen: try teamSeen(record.vaultId))
                 out.append(TeamVault(id: record.vaultId, title: await store.title, access: access, store: store))
             } catch where id == nil {
                 // One unreachable team vault (a folder team not located on this Mac) doesn't hide the others.
@@ -255,6 +256,24 @@ struct Session {
             throw CLIError("team vaults are kept inside the EnVault app: open EnVault so envault can read them", code: .needsUser)
         }
         return AppVaultStorage(agent: agent, vaultId: vaultId)
+    }
+
+    /// What the app had accepted of a team vault. The CLI only reads it: the
+    /// app keeps it. Without an answer the vault isn't opened, since reading it
+    /// as a Mac with no history would accept what the app refuses.
+    private func teamSeen(_ vaultId: UUID) throws -> TeamSeen {
+        guard useApp else {
+            let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+            let url = URL(fileURLWithPath: home + "/Library/Containers/dk.dinhkhanh.envault/Data/Library/Application Support/" + TeamSeen.fileName(vaultId: vaultId))
+            guard FileManager.default.fileExists(atPath: url.path) else { return TeamSeen() }
+            return TeamSeen.decode(try Data(contentsOf: url))
+        }
+        guard let app = appAgent(launch: true) else {
+            throw CLIError("team vaults are kept inside the EnVault app: open EnVault so envault can read them", code: .needsUser)
+        }
+        do { return try app.teamSeen(vaultId: vaultId) ?? TeamSeen() } catch {
+            throw CLIError("EnVault: \(error.localizedDescription). Update EnVault.", code: .needsUser)
+        }
     }
 
     private var device: DeviceIdentity {

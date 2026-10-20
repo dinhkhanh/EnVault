@@ -727,7 +727,7 @@ final class AppModel {
 
     private static func seenURL(for vaultId: UUID) -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("EnVault/TeamState/\(vaultId.uuidString)-seen.json")
+        return support.appendingPathComponent(TeamSeen.fileName(vaultId: vaultId))
     }
 
     private func transport(for record: TeamRecord) -> CloudVaultTransport {
@@ -905,13 +905,18 @@ final class AppModel {
             openingId = ref.vaultId
             var record = TeamRecord(vaultId: ref.vaultId, ownerKey: Data(), zoneOwner: ref.ownerName)
             let root = Self.localRoot(for: ref.vaultId)
+            // This person may have seen the vault before, on any Mac (also before leaving it): same owner only.
+            let pinned = await store.pinnedOwnerKey(for: ref.vaultId)
+            // Never opened: download afresh, not on top of what a refused attempt left behind.
+            if pinned == nil {
+                try? FileManager.default.removeItem(at: root)
+                try? FileManager.default.removeItem(at: Self.stateURL(for: ref.vaultId))
+            }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             downloadStatus = .syncing
             defer { downloadStatus = nil }
             let download = CloudMirror(vaultId: ref.vaultId, localRoot: root, stateURL: Self.stateURL(for: ref.vaultId), transport: transport(for: record))
             try await download.pull()
-            // This person may have seen the vault before, on any Mac (also before leaving it): same owner only.
-            let pinned = await store.pinnedOwnerKey(for: ref.vaultId)
             // First sight: the header must be the one the zone's owner uploaded and nobody
             // changed since, or a participant could have swapped in their own just before.
             if pinned == nil, await download.creator(of: VaultHeader.fileName) != ref.ownerName {
@@ -1471,6 +1476,10 @@ final class AppModel {
             storage: { [weak self] agent, vaultId in
                 guard let self else { throw Agent.Failure("EnVault is quitting") }
                 return try self.vaultStorageForCLI(agent: agent, vaultId: vaultId)
+            },
+            seen: { vaultId in
+                let url = Self.seenURL(for: vaultId)
+                return FileManager.default.fileExists(atPath: url.path) ? VaultSession.seen(at: url) : nil
             })
         agentRunning = server.start()
         agent = server

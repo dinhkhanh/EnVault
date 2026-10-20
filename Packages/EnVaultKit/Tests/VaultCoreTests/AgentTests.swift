@@ -57,6 +57,36 @@ import Foundation
         #expect(info.agents == AIAgents.Policy())
     }
 
+    @MainActor @Test func theCLIGetsTheAppsTeamHistory() async throws {
+        let name = "dk.dinhkhanh.envault.agent.test-\(UUID().uuidString.prefix(8))"
+        let known = UUID(), event = ULID()
+        let info: AgentServer.InfoProvider = { Agent.Info(vaultId: nil, vaultPath: nil, mode: nil, locked: true, appVersion: "test", cliPath: nil) }
+        let server = AgentServer(info: info, authorize: { _ in throw Agent.Failure("no") },
+                                 seen: { $0 == known ? TeamSeen(events: [event], files: ["projects/x.evr": Data([1])]) : nil })
+        #expect(server.start(name: name))
+        defer { server.stop() }
+        let (got, none) = try await Task.detached {
+            (try AgentClient(name: name)!.teamSeen(vaultId: known), try AgentClient(name: name)!.teamSeen(vaultId: UUID()))
+        }.value
+        #expect(got?.events == [event] && got?.files?["projects/x.evr"] == Data([1]))
+        #expect(none == nil)
+
+        // An app that can't say refuses, rather than leaving the CLI with no history.
+        server.stop()
+        let old = AgentServer(info: info, authorize: { _ in throw Agent.Failure("no") })
+        #expect(old.start(name: name))
+        defer { old.stop() }
+        await #expect(throws: Agent.Failure.self) { try await Task.detached { try AgentClient(name: name)!.teamSeen(vaultId: known) }.value }
+    }
+
+    @Test func oldSeenFilesStillRead() throws {
+        let id = ULID()
+        #expect(TeamSeen.decode(try JSONEncoder().encode([id.string])) == TeamSeen(events: [id]))
+        // 0.8.1 kept revision ids: no file record, so the next scan takes what it finds.
+        let v081 = Data(#"{"events":["\#(id.string)"],"revisions":[],"late":[]}"#.utf8)
+        #expect(TeamSeen.decode(v081) == TeamSeen(events: [id]))
+    }
+
     @MainActor @Test func vaultThroughTheApp() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("envault-proxy-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }

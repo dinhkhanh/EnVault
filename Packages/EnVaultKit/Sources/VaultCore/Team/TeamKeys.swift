@@ -159,6 +159,12 @@ public enum TeamRevisionFile {
         return (try? JSONDecoder().decode(Envelope.self, from: data.dropFirst(magic.count)))?.epoch
     }
 
+    /// Who signed a revision file, as it claims, read without opening it.
+    public static func author(of data: Data) -> UUID? {
+        guard data.count > magic.count, data.prefix(magic.count) == magic else { return nil }
+        return (try? JSONDecoder().decode(Envelope.self, from: data.dropFirst(magic.count)))?.author
+    }
+
     static func aad(vaultId: UUID, scope: RevisionFile.Scope, ownerId: UUID, revisionId: ULID, epoch: ULID, author: UUID) -> Data {
         var c = CanonicalBytes("envault-team-rev:1")
         c.add(vaultId); c.add(scope.rawValue); c.add(ownerId); c.add(revisionId); c.add(epoch); c.add(author)

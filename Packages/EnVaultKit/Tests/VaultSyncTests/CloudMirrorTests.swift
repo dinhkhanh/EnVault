@@ -228,6 +228,32 @@ private struct Device {
         #expect(try await cloud.fetchFile(path: VaultHeader.fileName, vaultId: store.vaultId) == ours)   // put back
     }
 
+    @Test func aRefusedHeaderDoesntVouchForTheOneKept() async throws {
+        let cloud = MemoryCloudTransport()
+        let owner = UserIdentity(id: UUID(), name: "Ada", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        let mallory = UserIdentity(id: UUID(), name: "Mallory", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+        let vaultId = UUID()
+        try await cloud.ensureVault(vaultId)
+        let real = try TeamHeader.create(owner: owner, vaultId: vaultId).encoded()
+        await cloud.signIn(as: "_ada")
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: real)], vaultId: vaultId, overwrite: true)
+        await cloud.signIn(as: "_mallory")
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: try TeamHeader.create(owner: mallory, vaultId: vaultId).encoded())], vaultId: vaultId, overwrite: true)
+
+        // A joiner downloads Mallory's header; the owner's Mac then puts the real one back.
+        let root = Device.tmp()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let joiner = CloudMirror(vaultId: vaultId, localRoot: root, stateURL: root.appendingPathComponent(".sync/state.json"), transport: cloud)
+        try await joiner.pull()
+        #expect(await joiner.creator(of: VaultHeader.fileName) == "_mallory")
+        await cloud.signIn(as: "_ada")
+        try await cloud.upload([CloudFile(path: VaultHeader.fileName, data: real)], vaultId: vaultId, overwrite: true)
+        // Retrying keeps the header on disk (Mallory's), so the owner mustn't be named as its writer.
+        try await joiner.pull()
+        #expect(try Data(contentsOf: root.appendingPathComponent(VaultHeader.fileName)) != real)
+        #expect(await joiner.creator(of: VaultHeader.fileName) != "_ada")
+    }
+
     @Test func joinRequestsRememberWhoUploadedThem() async throws {
         let cloud = MemoryCloudTransport()
         let (a, vaultId) = try await Device.create(cloud: cloud, passphrase: "pw")
