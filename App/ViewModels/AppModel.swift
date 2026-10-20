@@ -976,7 +976,8 @@ final class AppModel {
             guard team.vaultId == invite.vaultId else {
                 throw VaultError.corruptHeader("this folder holds a different team vault from the one in the invitation")
             }
-            let access = try await team.unlock(identity: me)
+            // This Mac may have seen the vault before (a folder it couldn't locate): keep that history.
+            let access = try await team.unlock(identity: me, seen: VaultSession.seen(at: Self.seenURL(for: invite.vaultId)))
             if access == .notMember || access == .removed {
                 try invite.check(header: team.header, state: await team.state)
                 if await !team.hasRequestedToJoin { try await team.requestToJoin(invite: invite.invite) }
