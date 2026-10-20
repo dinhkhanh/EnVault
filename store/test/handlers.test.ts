@@ -202,3 +202,14 @@ test("a seat change whose email fails still replaces the old key, and the retry 
   assert.equal(s.store.licenses.length, 2);
   assert.ok(s.mailer.sent.at(-1)!.text.includes(s.store.licenses[1].key));
 });
+
+test("an order refunded before it was handled issues no key", async () => {
+  const s = await testServices();
+  const refund = { type: "order.refunded", data: { id: "ord_1", status: "refunded", total_amount: 2900, refunded_amount: 2900 } };
+  let out = await applyAction(s, "polar", "evt_r", refund.type, polarAction(refund));
+  assert.equal(out.body, "nothing to revoke");
+  const ev = polarOrderPaid();
+  out = await applyAction(s, "polar", "evt_1", ev.type, polarAction(ev));
+  assert.equal(out.body, "order refunded before it was licensed");
+  assert.equal(s.store.licenses.length, 0); assert.equal(s.mailer.sent.length, 0);
+});

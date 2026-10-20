@@ -68,6 +68,9 @@ async function reissueForSeats(s: Services, provider: string, subscriptionId: st
 
 export interface Outcome { status: number; body: string; }
 
+/** Kept with the webhook events: an order refunded before any license was issued for it. */
+const refundedMark = (orderId: string) => `refunded-order:${orderId}`;
+
 /** Applies a provider action. Idempotent per event id and per order id. */
 export async function applyAction(s: Services, provider: string, eventId: string, type: string, action: Action): Promise<Outcome> {
   const fresh = await s.store.recordEvent(provider, eventId, type);
@@ -94,6 +97,7 @@ async function handle(s: Services, provider: string, action: Action): Promise<Ou
         if (licensed.status === "active") await s.mailer.send(licenseMail([licensed], s.mail, kind));
         return { status: 200, body: "order already licensed" };
       }
+      if (await s.store.hasEvent(o.provider, refundedMark(o.orderId))) return { status: 200, body: "order refunded before it was licensed" };
       // A renewal whose payload doesn't say how many seats keeps the subscription's count.
       if (o.seats < 1) {
         const prior = o.subscriptionId ? (await s.store.bySubscription(o.provider, o.subscriptionId)).filter((r) => r.status === "active")
@@ -112,6 +116,10 @@ async function handle(s: Services, provider: string, action: Action): Promise<Ou
       if (action.subscriptionId) rows.push(...await s.store.bySubscription(provider, action.subscriptionId));
       const active = rows.filter((r) => r.status === "active");
       for (const r of active) await s.store.revoke(r.id, action.reason);
+      // Refunded before its order was handled (webhooks can arrive in any order): the order issues nothing.
+      if (action.orderId && !rows.some((r) => r.order_id === action.orderId)) {
+        await s.store.recordEvent(provider, refundedMark(action.orderId), "refund-before-order");
+      }
       return { status: 200, body: active.length ? `revoked ${active.map((r) => r.id).join(",")}` : "nothing to revoke" };
     }
   }
