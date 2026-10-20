@@ -27,10 +27,11 @@ test("polar order.paid issues one key, emails it, and is idempotent", async () =
   // same event redelivered
   out = await applyAction(s, "polar", "evt_1", ev.type, polarAction(ev));
   assert.equal(out.body, "duplicate event");
-  // different event id, same order (e.g. order.updated → paid again)
+  // different event id, same order (or the retry after a failed send): no second key, the same one re-sent
   out = await applyAction(s, "polar", "evt_2", ev.type, polarAction(ev));
   assert.equal(out.body, "order already licensed");
-  assert.equal(s.store.licenses.length, 1); assert.equal(s.mailer.sent.length, 1);
+  assert.equal(s.store.licenses.length, 1); assert.equal(s.mailer.sent.length, 2);
+  assert.ok(s.mailer.sent[1].text.includes(row.key));
 });
 
 test("plan from product metadata or name; seats from order", async () => {
@@ -167,9 +168,10 @@ test("a failed event can be retried; a renewal without a seat count keeps the su
   let failures = 1;
   s.mailer.send = async (m) => { if (failures-- > 0) throw new Error("mail down"); return send(m); };
   await assert.rejects(applyAction(s, "polar", "evt_r1", first.type, polarAction(first)));
-  assert.equal(s.store.licenses.length, 0);  // undelivered, so not kept
+  assert.equal(s.store.licenses.length, 1);  // kept, so it can be revoked and re-sent
   const retry = await applyAction(s, "polar", "evt_r1", first.type, polarAction(first));
-  assert.equal(retry.status, 201);
+  assert.equal(retry.body, "order already licensed");
+  assert.equal(s.store.licenses.length, 1);  // the same key, not a second one
   assert.equal(s.mailer.sent.length, 1);     // the customer got their key
 
   const renew = polarOrderPaid({ id: "ord_r2", product: team, subscription_id: "sub_r", billing_reason: "subscription_cycle",
@@ -181,4 +183,22 @@ test("a failed event can be retried; a renewal without a seat count keeps the su
   // A seat-change order for the count already in effect issues nothing.
   const same = polarOrderPaid({ id: "ord_r3", product: team, seats: 6, subscription_id: "sub_r", subscription: sub, billing_reason: "subscription_update" });
   assert.equal((await applyAction(s, "polar", "evt_r3", same.type, polarAction(same))).body, "seats unchanged");
+});
+
+test("a seat change whose email fails still replaces the old key, and the retry mails the new one", async () => {
+  const s = await testServices();
+  const team = { name: "EnVault Team", metadata: { plan: "team" } };
+  const sub = { id: "sub_m", current_period_end: "2027-10-20T00:00:00Z" };
+  const buy = polarOrderPaid({ id: "ord_m1", product: team, seats: 3, subscription_id: "sub_m", subscription: sub });
+  await applyAction(s, "polar", "evt_m1", buy.type, polarAction(buy));
+  const send = s.mailer.send.bind(s.mailer);
+  let failures = 1;
+  s.mailer.send = async (m) => { if (failures-- > 0) throw new Error("mail down"); return send(m); };
+  const more = polarOrderPaid({ id: "ord_m2", product: team, seats: 5, subscription_id: "sub_m", subscription: sub, billing_reason: "subscription_update" });
+  await assert.rejects(applyAction(s, "polar", "evt_m2", more.type, polarAction(more)));
+  assert.equal(s.store.licenses[0].status, "revoked");
+  assert.equal(s.store.licenses[1].seats, 5);
+  await applyAction(s, "polar", "evt_m2", more.type, polarAction(more));
+  assert.equal(s.store.licenses.length, 2);
+  assert.ok(s.mailer.sent.at(-1)!.text.includes(s.store.licenses[1].key));
 });

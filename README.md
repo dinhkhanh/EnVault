@@ -135,7 +135,8 @@ The vault folder is the one the running app has open, else
 
 Agents (Claude Code, Cursor, Codex…) use secrets without reading them. The CLI
 recognises one from its environment (`CLAUDECODE`, `CURSOR_AGENT`, `GEMINI_CLI`,
-`CODEX_SANDBOX`, or `ENVAULT_AGENT=name`; `ENVAULT_AGENT=0` opts out) and then never
+`CODEX_SANDBOX`, or `ENVAULT_AGENT=name`; `ENVAULT_AGENT=0` can't override an
+agent's own variable) and then never
 prompts, redacts `run` output (`[redacted:KEY]`), refuses `init`/`unlock`, and
 asks the app for every key so Settings › AI Agents applies: values ask/never/allow
 (get, pull, env, `run --no-redact`, deploy), writes on/off, and how long one Touch ID

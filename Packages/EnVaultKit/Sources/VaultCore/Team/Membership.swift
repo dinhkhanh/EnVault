@@ -79,7 +79,9 @@ public struct MembershipEvent: Codable, Equatable, Sendable {
         case .remove(let member):
             c.add("remove"); c.add(member)
         case .rotate(let recipients, let commitment, let basis):
-            c.add("rotate"); c.add(recipients.map(\.uuidString).sorted().joined(separator: ",")); c.add(commitment); c.add(basis?.string ?? "")
+            c.add("rotate"); c.add(recipients.map(\.uuidString).sorted().joined(separator: ",")); c.add(commitment)
+            // Only when set, so rotations signed before `basis` existed still verify.
+            if let basis { c.add(basis.string) }
         case .name(let member, let name):
             c.add("name"); c.add(member); c.add(name.epoch); c.add(name.box)
         case .title(let name):
