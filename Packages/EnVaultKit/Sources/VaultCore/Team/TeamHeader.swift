@@ -19,8 +19,8 @@ struct CanonicalBytes {
 }
 
 /// `vault.json` of a team vault (format 2). Written once by the owner and
-/// never replaced: the owner's public identity, signed by the owner. Every
-/// membership change traces back to this key (FR-31).
+/// never replaced: the owner's public identity (unnamed, NFR-13), signed by
+/// the owner. Every membership change traces back to this key (FR-31).
 ///
 /// Format 1 readers refuse it (`VaultHeader.decode` checks the version first).
 public struct TeamHeader: Codable, Equatable, Sendable {
@@ -38,7 +38,7 @@ public struct TeamHeader: Codable, Equatable, Sendable {
     public static func create(owner: UserIdentity, vaultId: UUID = UUID(), createdAt: Date = Date()) throws -> TeamHeader {
         var h = TeamHeader(formatVersion: formatVersion, kind: kind, vaultId: vaultId,
                            createdAt: Date(timeIntervalSince1970: createdAt.timeIntervalSince1970.rounded(.down)),
-                           owner: try owner.publicIdentity(), signature: Data())
+                           owner: try owner.publicIdentity().unnamed, signature: Data())
         h.signature = try owner.signingKey.signature(for: h.signedBytes)
         return h
     }
@@ -55,7 +55,7 @@ public struct TeamHeader: Codable, Equatable, Sendable {
 
     /// The owner's identity is self-signed and signed this header.
     public var isValid: Bool {
-        guard formatVersion == Self.formatVersion, kind == Self.kind, owner.isValid,
+        guard formatVersion == Self.formatVersion, kind == Self.kind, owner.isValid, owner.name.isEmpty,
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: owner.signingKey) else { return false }
         return key.isValidSignature(signature, for: signedBytes)
     }

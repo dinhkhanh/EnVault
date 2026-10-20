@@ -41,7 +41,7 @@ private struct Log {
 
     /// Approves `newcomer` and gives them the current epoch's key.
     mutating func add(_ newcomer: UserIdentity, as role: TeamRole, by admin: UserIdentity) throws {
-        let pub = try newcomer.publicIdentity()
+        let pub = try newcomer.publicIdentity().unnamed
         try record(.add(identity: pub, role: role), by: admin)
         if let e = state.current, let key = keys[e.id] {
             wraps[e.id, default: [:]][newcomer.id] = try TeamKeys.wrap(key, for: pub, vaultId: vaultId, epoch: e.id)
@@ -105,11 +105,11 @@ private struct Log {
     @Test func rolesAreEnforced() throws {
         var log = try team()
         let eve = person("Eve")
-        try log.record(.add(identity: try eve.publicIdentity(), role: .member), by: cyd)     // member adds
+        try log.record(.add(identity: try eve.publicIdentity().unnamed, role: .member), by: cyd)     // member adds
         try log.record(.setRole(member: cyd.id, role: .admin), by: cyd)                       // self-promotion
         try log.record(.setRole(member: ada.id, role: .viewer), by: bob)                      // admin demotes owner
         try log.record(.remove(member: ada.id), by: bob)                                      // owner removed
-        try log.record(.add(identity: try eve.publicIdentity(), role: .owner), by: ada)       // second owner
+        try log.record(.add(identity: try eve.publicIdentity().unnamed, role: .owner), by: ada)       // second owner
         try log.record(.rotate(recipients: [cyd.id], keyCommitment: Data(count: 32)), by: dee) // viewer rotates
         let s = log.state
         #expect(s.rejected.count == 6)
@@ -142,7 +142,7 @@ private struct Log {
         #expect(try log.currentKey(for: dee) != before)
         // A wrap Cyd makes for themselves with a key they choose fails the commitment.
         let e = try #require(s.current)
-        let guess = try TeamKeys.wrap(TeamKeys.newKey(), for: try cyd.publicIdentity(), vaultId: log.vaultId, epoch: e.id)
+        let guess = try TeamKeys.wrap(TeamKeys.newKey(), for: try cyd.publicIdentity().unnamed, vaultId: log.vaultId, epoch: e.id)
         #expect(throws: VaultError.self) { try TeamKeys.unwrap(guess, identity: cyd, vaultId: log.vaultId, epoch: e) }
     }
 

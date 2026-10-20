@@ -13,6 +13,8 @@ public enum VaultError: Error, Equatable, Sendable {
     case unsupportedKDF(String)
     case keychain(OSStatus)
     case biometricsUnavailable
+    /// A team vault refused the action: the role does not allow it, or the key is not ready.
+    case notPermitted(String)
     case io(String)
 }
 
@@ -31,6 +33,7 @@ extension VaultError: LocalizedError {
         case .unsupportedKDF(let id): "Unsupported key derivation function \(id). Update EnVault."
         case .keychain(let s): "Keychain error \(s)."
         case .biometricsUnavailable: "Touch ID is not available on this Mac."
+        case .notPermitted(let why): why
         case .io(let why): why
         }
     }

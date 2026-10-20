@@ -81,7 +81,9 @@ private let mac2 = DeviceIdentity(id: UUID(), name: "Mac 2")
         #expect(pub.safetyCode == me.safetyCode)
 
         var renamed = pub; renamed.name = "Mallory"
-        #expect(!renamed.isValid)
+        #expect(renamed.isValid && renamed.unnamed.isValid) // names are not signed
+        var moved = pub; moved.id = UUID()
+        #expect(!moved.isValid)
         var swapped = pub; swapped.agreementKey = Data(repeating: 9, count: 32)
         #expect(!swapped.isValid)
 
