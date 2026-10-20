@@ -60,6 +60,10 @@ final class LicenseManager {
         guard let verifier else { lastError = "License verification is not configured in this build."; return false }
         do {
             let lic = try verifier.verify(key)
+            guard lic.plan != .teamVault else {
+                lastError = "That's a team vault's entitlement, not a license key. Use the key from your purchase email."
+                return false
+            }
             licenseKey = LicenseCodec.normalize(key)
             lastError = nil
             if persist { UserDefaults.standard.set(licenseKey, forKey: Self.defaultsKey) }

@@ -167,13 +167,13 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
 
     @Test func onlyTheOwnerSetsTheLicense() async throws {
         let (store, macs) = try await team()
-        await #expect(throws: VaultError.self) { try await open(macs[bob.id]!, as: bob).setLicense("EVL1.x.y") }
-        try await store.setLicense("EVL1.a.b")
-        try await store.setLicense("EVL1.c.d")       // a renewal replaces it
-        #expect(await store.licenseKey == "EVL1.c.d")
-        #expect(try await open(macs[dee.id]!, as: dee).licenseKey == nil)   // not synced yet
+        await #expect(throws: VaultError.self) { try await open(macs[bob.id]!, as: bob).setLicense(TeamVaultLicense(entitlement: "EVL1.x.y", elsewhere: 0)) }
+        try await store.setLicense(TeamVaultLicense(entitlement: "EVL1.a.b", elsewhere: 0))
+        try await store.setLicense(TeamVaultLicense(entitlement: "EVL1.c.d", elsewhere: 3))   // a renewal, and people in other vaults
+        #expect(await store.license == TeamVaultLicense(entitlement: "EVL1.c.d", elsewhere: 3))
+        #expect(try await open(macs[dee.id]!, as: dee).license == nil)   // not synced yet
         await sync(macs[ada.id]!, macs[dee.id]!)
-        #expect(try await open(macs[dee.id]!, as: dee).licenseKey == "EVL1.c.d")
+        #expect(try await open(macs[dee.id]!, as: dee).license?.entitlement == "EVL1.c.d")
         #expect(await store.log().first?.change == .licensed)
         // Sealed: the key (which names the buyer) is not in any file.
         for (_, data) in await macs[ada.id]!.allFiles() { #expect(!String(decoding: data, as: UTF8.self).contains("EVL1.c.d")) }

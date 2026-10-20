@@ -142,3 +142,17 @@ test("team renewals and seat changes: renewal mail, new key per seat count, old 
   assert.equal(s.mailer.sent.at(-1)!.subject, "Your EnVault Team renewal");
   assert.ok(s.mailer.sent.at(-1)!.text.includes("renewed"));
 });
+
+test("team keys carry a vault entitlement that names nobody; pro keys don't", async () => {
+  const s = await testServices();
+  const team = polarOrderPaid({ id: "ord_v", product: { name: "EnVault Team", metadata: { plan: "team" } }, seats: 6 });
+  await applyAction(s, "polar", "evt_v", team.type, polarAction(team));
+  const lic = await verifyLicense(s.store.licenses[0].key, s.pub);
+  assert.ok(lic.vaultEntitlement);
+  const ent = await verifyLicense(lic.vaultEntitlement!, s.pub);
+  assert.equal(ent.plan, "team-vault"); assert.equal(ent.id, lic.id); assert.equal(ent.seats, 6);
+  assert.equal(ent.email, ""); assert.equal(ent.name, ""); assert.equal(ent.expiresAt, lic.expiresAt);
+  const pro = polarOrderPaid({ id: "ord_p" });
+  await applyAction(s, "polar", "evt_p", pro.type, polarAction(pro));
+  assert.equal((await verifyLicense(s.store.licenses[1].key, s.pub)).vaultEntitlement, undefined);
+});

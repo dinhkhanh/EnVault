@@ -1,4 +1,4 @@
-import { signLicense, isoSeconds, addMonths, type Plan } from "./license.ts";
+import { signLicense, signVaultEntitlement, isoSeconds, addMonths, type Plan, type LicensePayload } from "./license.ts";
 import type { Store, LicenseRow } from "./store.ts";
 import type { Mailer, MailContext } from "./mail.ts";
 import { licenseMail } from "./mail.ts";
@@ -28,10 +28,12 @@ export async function issue(s: Services, r: IssueRequest, notify = true, mail: M
   const expiresAt = r.expiresAt !== undefined ? r.expiresAt
     : r.periodEnd ? isoSeconds(new Date(new Date(r.periodEnd).getTime() + 7 * 86400e3)) : null;
   const id = crypto.randomUUID().toUpperCase();
-  const key = await signLicense({
+  const payload: LicensePayload = {
     id, email: r.email, name: r.name, plan: r.plan, issuedAt,
     updatesUntil: updatesUntil ?? undefined, expiresAt: expiresAt ?? undefined, seats: r.seats,
-  }, s.signingKey);
+  };
+  if (r.plan === "team") payload.vaultEntitlement = await signVaultEntitlement(payload, s.signingKey);
+  const key = await signLicense(payload, s.signingKey);
   const row: LicenseRow = {
     id, email: r.email, name: r.name, plan: r.plan, seats: r.seats, issued_at: issuedAt,
     updates_until: updatesUntil, expires_at: expiresAt, key, provider: r.provider, order_id: r.orderId,

@@ -1,7 +1,9 @@
 import Foundation
 
-/// What a team vault's license allows (FR-10, FR-27): the key the owner put
-/// in the vault, checked on each Mac with the vendor's public key.
+/// What a team vault's license allows (FR-10, FR-27): the entitlement the
+/// owner's Mac put in the vault, checked on each Mac with the vendor's public key.
+/// Seats count people across all of the owner's team vaults: `elsewhere` is
+/// how many the owner's other vaults use, as their Mac last counted.
 public enum TeamLicenseStatus: Equatable, Sendable {
     /// No Team license in the vault yet (the owner's Mac adds its own).
     case missing
@@ -19,7 +21,7 @@ public enum TeamLicenseStatus: Equatable, Sendable {
         guard let key else { return .missing }
         let license: License
         do { license = try verifier.verify(key, allowExpired: true) } catch { return .invalid(error.localizedDescription) }
-        guard license.plan == .team else { return .invalid("That is not a Team license.") }
+        guard license.plan == .teamVault else { return .invalid("That is not a team vault entitlement.") }
         guard let expires = license.expiresAt, expires < now else { return .active(seats: license.seats, expiresAt: license.expiresAt) }
         let readOnlyFrom = expires.addingTimeInterval(TimeInterval(graceDays) * 86_400)
         return now < readOnlyFrom ? .grace(seats: license.seats, readOnlyFrom: readOnlyFrom) : .readOnly(since: readOnlyFrom)

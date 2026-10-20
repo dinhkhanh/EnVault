@@ -175,18 +175,22 @@ struct TeamMembersView: View {
             HStack {
                 Text(AppModel.describe(license).prefix(1).uppercased() + AppModel.describe(license).dropFirst())
                 Spacer()
-                if let seats = license.seats { Text("\(team.members.count) of \(seats) seats used").foregroundStyle(.secondary) }
+                if let seats = license.seats { Text("\(model.seatsUsed(in: session)) of \(seats) seats used").foregroundStyle(.secondary) }
             }
             if !license.allowsWrites {
                 Text("Read-only for everyone until the owner renews. Nothing is deleted.").font(.callout).foregroundStyle(.orange)
             }
-            if let seats = license.seats, team.members.count > seats {
-                // Two admins approving at once can pass the limit; nobody new joins until it's back under.
-                Text("\(team.members.count - seats) more member\(team.members.count - seats == 1 ? "" : "s") than the license covers. Remove someone or add seats.")
+            if let elsewhere = team.license?.elsewhere, elsewhere > 0 {
+                Text("Seats count people across all of the owner's team vaults: \(elsewhere) in the others.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let seats = license.seats, model.seatsUsed(in: session) > seats {
+                // Approvals at the same moment can pass the limit; nobody new joins until it's back under.
+                let over = model.seatsUsed(in: session) - seats
+                Text("\(over) more \(over == 1 ? "person" : "people") than the license covers. Remove someone or add seats.")
                     .font(.callout).foregroundStyle(.orange)
             }
             if team.role == .owner {
-                Text("This vault uses the Team key in your Settings › License, and picks up renewals from there.").font(.caption).foregroundStyle(.secondary)
+                Text("This vault uses the Team key in your Settings › License (only its vault entitlement, which names nobody), and picks up renewals from there.").font(.caption).foregroundStyle(.secondary)
             }
         }
     }

@@ -678,16 +678,20 @@ public actor TeamVaultStore {
         try await rotate()
     }
 
-    /// The owner puts the team's license key in the vault (FR-28).
-    public func setLicense(_ key: String) async throws {
+    /// The owner puts the team's license in the vault (FR-28): the vault
+    /// entitlement from their Team key, and how many people use seats in their
+    /// other team vaults (seats count people across all of them).
+    public func setLicense(_ license: TeamVaultLicense) async throws {
         let (epoch, teamKey) = try currentKey()
-        try await record(.license(TeamKeys.seal(name: key, member: Self.licenseSlot, vaultId: vaultId, epoch: epoch, key: teamKey)))
+        let json = String(decoding: try JSONEncoder().encode(license), as: UTF8.self)
+        try await record(.license(TeamKeys.seal(name: json, member: Self.licenseSlot, vaultId: vaultId, epoch: epoch, key: teamKey)))
     }
 
-    /// The license key the owner put in the vault, opened with the team key.
-    public var licenseKey: String? {
-        guard let l = state.license, let key = keys[l.epoch] else { return nil }
-        return TeamKeys.open(l, member: Self.licenseSlot, vaultId: vaultId, key: key)
+    /// The license the owner put in the vault, opened with the team key.
+    public var license: TeamVaultLicense? {
+        guard let l = state.license, let key = keys[l.epoch],
+              let json = TeamKeys.open(l, member: Self.licenseSlot, vaultId: vaultId, key: key) else { return nil }
+        return try? JSONDecoder().decode(TeamVaultLicense.self, from: Data(json.utf8))
     }
 
     /// Binds a sealed license to its role, apart from member names and the title.
@@ -858,4 +862,13 @@ public struct TeamLogEntry: Equatable, Sendable, Identifiable {
     public var rejected: String?
     /// Arrived after newer changes were applied (see `TeamVaultStore.lateEvents`).
     public var late: Bool
+}
+
+/// What a team vault holds about its license (sealed under the team key).
+public struct TeamVaultLicense: Codable, Equatable, Sendable {
+    /// The signed team-vault entitlement from the owner's Team key.
+    public var entitlement: String
+    /// People using seats in the owner's other team vaults, as their Mac last counted.
+    public var elsewhere: Int
+    public init(entitlement: String, elsewhere: Int) { self.entitlement = entitlement; self.elsewhere = elsewhere }
 }
