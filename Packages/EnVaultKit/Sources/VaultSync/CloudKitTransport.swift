@@ -74,7 +74,14 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
     }
     private func zoneID(_ vaultId: UUID) -> CKRecordZone.ID { Self.zoneID(vaultId, ownerName: ownerName) }
     private func recordID(path: String, vaultId: UUID) -> CKRecord.ID {
-        CKRecord.ID(recordName: path.replacingOccurrences(of: "/", with: "|"), zoneID: zoneID(vaultId))
+        CKRecord.ID(recordName: Self.recordName(path), zoneID: zoneID(vaultId))
+    }
+    static func recordName(_ path: String) -> String { path.replacingOccurrences(of: "/", with: "|") }
+    /// Whether a fetched record named `name` may stand for `path`: a record named one thing
+    /// that claims another's path could pass as that file and its uploader. Checked in this
+    /// direction because mapping "|" back to "/" also turns a name containing "/" into the path.
+    static func isRecordName(_ name: String, of path: String) -> Bool {
+        !path.contains("|") && name == recordName(path)
     }
 
     /// Private scope: creates the zone. Shared scope: only the owner can create
@@ -145,9 +152,7 @@ public struct CloudKitTransport: CloudVaultTransport, @unchecked Sendable {
             for (_, res) in r.modificationResultsByID {
                 guard case .success(let mod) = res else { continue }
                 let rec = mod.record
-                // The path must be the record's own name: a record named one thing that
-                // claims another's path could pass as that file and its uploader.
-                guard let path = rec["path"] as? String, path == rec.recordID.recordName.replacingOccurrences(of: "|", with: "/") else { continue }
+                guard let path = rec["path"] as? String, Self.isRecordName(rec.recordID.recordName, of: path) else { continue }
                 // The server's record of who uploaded it, trusted only if nobody else changed it since.
                 let creator = rec.creatorUserRecordID?.recordName
                 let author = creator != nil && creator == rec.lastModifiedUserRecordID?.recordName ? creator : nil
