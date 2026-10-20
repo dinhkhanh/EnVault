@@ -495,6 +495,32 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(await store.rejectedFiles.keys.filter { $0.hasPrefix("identities/") }.count == 2)
     }
 
+    @Test func theShareUpkeepFindsOnlyAPersonsOwnRequest() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        try await open(eveMac, as: eve).requestToJoin()
+        await sync(storage, eveMac)
+        try await store.refresh()
+        let real = try #require(await store.joinRequest(of: eve.id))
+        try await store.add(try #require(await store.pendingMembers().first).identity, name: "Eve", role: .member)
+
+        // Mal signs newer requests under Eve's id and the owner's, with keys of his own.
+        for id in [eve.id, ada.id] {
+            let mal = UserIdentity(id: id, name: "Mal", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+            let r = try JoinRequest.signed(by: mal, managers: [], vaultId: store.vaultId)
+            try await storage.writeNew(VaultPath("identities", id.uuidString, "\(r.id.string).json"), data: try r.encoded())
+        }
+        // One of Eve's in a folder spelled in lower case, one dated a year ahead.
+        let lower = try JoinRequest.signed(by: eve, managers: [], vaultId: store.vaultId)
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString.lowercased(), "\(lower.id.string).json"), data: try lower.encoded())
+        let ahead = try JoinRequest.signed(by: eve, managers: [], vaultId: store.vaultId, id: ULID(date: Date().addingTimeInterval(365 * 86_400)))
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString, "\(ahead.id.string).json"), data: try ahead.encoded())
+        try await store.refresh()
+        #expect(await store.joinRequest(of: eve.id)?.id == real.id)
+        #expect(await store.joinRequest(of: ada.id) == nil)
+    }
+
     @Test func anInvitationFileChecksTheFolder() async throws {
         let (store, storage) = try await vault()
         let invite = try await store.createInvite(role: .viewer)

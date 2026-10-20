@@ -81,9 +81,19 @@ public actor TeamVaultStore {
     private var indexedEvents: Set<ULID>?
     /// Revisions sealed under an epoch whose key this Mac does not hold yet.
     private var waitingForKey: [String: ULID] = [:]
-    /// Each requester's newest valid join request.
-    private var requests: [UUID: JoinRequest] = [:]
+    /// Every valid join request, by requester.
+    private var allRequests: [UUID: [JoinRequest]] = [:]
     private var requestPaths: Set<String> = []
+    /// Each requester's newest join request signed with the keys the vault knows
+    /// them by, if it knows them: one made under someone else's id never stands
+    /// for them, or hides theirs.
+    private var requests: [UUID: JoinRequest] {
+        allRequests.compactMapValues { all in
+            all.filter { r in
+                state.everyone[r.identity.id].map { $0.signingKey == r.identity.signingKey && $0.agreementKey == r.identity.agreementKey } ?? true
+            }.max { $0.id < $1.id }
+        }
+    }
     /// Paths ignored, with the reason.
     public private(set) var rejectedFiles: [String: String] = [:]
     /// Membership changes that arrived after newer ones were already applied.
@@ -169,7 +179,7 @@ public actor TeamVaultStore {
         revisionEpochs = [:]
         indexedEvents = nil
         waitingForKey = [:]
-        requests = [:]
+        allRequests = [:]
         requestPaths = []
         rejectedFiles = [:]
         lateEvents = []
@@ -223,7 +233,8 @@ public actor TeamVaultStore {
     private func loadRequests() async throws -> Bool {
         var fresh: [(VaultPath, UUID)] = []
         for dir in try await storage.list(Self.requestsDir) {
-            guard let member = UUID(uuidString: dir) else { continue }
+            // Exactly as written: the share upkeep looks a request up by this spelling.
+            guard let member = UUID(uuidString: dir), dir == member.uuidString else { continue }
             for file in try await storage.list(Self.requestsDir.appending(dir)) where file.hasSuffix(".json") {
                 let path = Self.requestsDir.appending(dir).appending(file)
                 guard !requestPaths.contains(path.string), rejectedFiles[path.string] == nil else { continue }
@@ -232,15 +243,18 @@ public actor TeamVaultStore {
         }
         guard !fresh.isEmpty else { return false }
         var changed = false
+        // A request dated more than a day ahead waits until then: it could
+        // otherwise pass for one made after a removal that hasn't happened yet.
+        let horizon = ULID(date: Date().addingTimeInterval(86_400))
         for ((path, member), data) in zip(fresh, try await storage.readMany(fresh.map(\.0))) {
             guard let r = try? JoinRequest.decode(data), r.identity.id == member, path.lastComponent == "\(r.id.string).json",
                   r.isValid(vaultId: vaultId) else {
                 rejectedFiles[path.string] = "invalid join request"
                 continue
             }
+            guard r.id < horizon else { continue }
             requestPaths.insert(path.string)
-            if let old = requests[member], old.id > r.id { continue }
-            requests[member] = r
+            allRequests[member, default: []].append(r)
             changed = true
         }
         return changed
@@ -689,7 +703,7 @@ public actor TeamVaultStore {
         let r = try JoinRequest.signed(by: me, managers: managers, vaultId: vaultId, invite: invite)
         let path = Self.requestsDir.appending(me.id.uuidString).appending("\(r.id.string).json")
         try await storage.writeNew(path, data: try r.encoded())
-        requests[me.id] = r
+        allRequests[me.id, default: []].append(r)
         requestPaths.insert(path.string)
     }
 
