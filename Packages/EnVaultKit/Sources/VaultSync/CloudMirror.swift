@@ -16,6 +16,9 @@ struct CloudMirrorState: Codable {
     var lastSync: Date?
     /// Who uploaded each join request (`identities/…`), as the server recorded it.
     var creators: [String: String]? = nil
+    /// Files this Mac downloaded after someone changed them in place: in a team
+    /// vault, never used to put a file back (see `pull`).
+    var changed: Set<String>? = nil
 }
 
 /// Which relative paths a vault syncs. Shared zones let other Apple IDs write
@@ -28,9 +31,21 @@ public enum SyncPaths {
     public static func isSyncable(_ path: String) -> Bool {
         if path == VaultHeader.fileName { return true }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count >= 2, parts.allSatisfy(isSafeComponent) else { return false }
+        guard parts.count >= 2, parts.allSatisfy({ isSafeComponent($0) && isCanonicalCase($0) }) else { return false }
         if parts[0] == "projects" { return path.hasSuffix(".\(RevisionFile.fileExtension)") }
         return teamFolders.contains(String(parts[0]))
+    }
+
+    /// Ids in upper case, everything else in lower case, as vaults write them.
+    /// Disks are case-insensitive: a twin spelled otherwise would land on the
+    /// real file, or the real file in the twin's folder.
+    static func isCanonicalCase(_ c: Substring) -> Bool {
+        var rest = Substring(c.lowercased()), spelled = ""
+        if rest.hasPrefix("prev-") { spelled = "prev-"; rest = rest.dropFirst(5) }
+        let stem = String(rest.prefix { $0 != "." })
+        let isId = UUID(uuidString: stem) != nil || ULID(string: stem) != nil
+        spelled += (isId ? stem.uppercased() : stem) + rest.dropFirst(stem.count)
+        return spelled == c
     }
 
     /// Letters, digits, `.`, `_`, `-`; no leading dot, so no `.`, `..` or hidden files.
@@ -56,11 +71,14 @@ public actor CloudMirror {
     private let stateURL: URL
     private var state: CloudMirrorState
     private let storage: LocalFolderStorage
+    /// This Mac's account owns the vault's zone (it shares the vault, or it is personal).
+    private let hostsZone: Bool
     public private(set) var status: SyncStatus = .idle
     public var lastSync: Date? { state.lastSync }
 
-    public init(vaultId: UUID, localRoot: URL, stateURL: URL, transport: CloudVaultTransport) {
+    public init(vaultId: UUID, localRoot: URL, stateURL: URL, transport: CloudVaultTransport, hostsZone: Bool = false) {
         self.vaultId = vaultId
+        self.hostsZone = hostsZone
         self.localRoot = localRoot
         self.stateURL = stateURL
         self.transport = transport
@@ -130,6 +148,9 @@ public actor CloudMirror {
                 state.headerHash = nil
                 continue
             }
+            let team = await isTeamVault()
+            // Team files never change once written: put back the ones someone overwrote.
+            var putBack: [CloudFile] = []
             for f in changes.files {
                 guard SyncPaths.isSyncable(f.path) else { continue }
                 let path = VaultPath(f.path.split(separator: "/").map(String.init))
@@ -149,6 +170,10 @@ public actor CloudMirror {
                         state.headerHash = h
                         continue
                     }
+                    // Someone re-saved the zone owner's header (same bytes, so nobody
+                    // else re-uploads it): first joins would refuse it. The owner's Mac
+                    // saves it again, which makes the owner its last modifier.
+                    if hostsZone, team, f.creator == nil, let local { putBack.append(CloudFile(path: f.path, data: local)) }
                     // Who wrote the header we keep, a first-time joiner checks it is the zone's
                     // owner. Never recorded for one refused above: it would vouch for ours.
                     var creators = state.creators ?? [:]
@@ -164,23 +189,45 @@ public actor CloudMirror {
                 if f.path.hasPrefix("identities/"), let c = f.creator, state.creators?[f.path] == nil {
                     state.creators = (state.creators ?? [:]).merging([f.path: c]) { a, _ in a }
                 }
+                if team, let local = try? await storage.read(path), local != f.data {
+                    if state.changed?.contains(f.path) == true {
+                        // Ours came overwritten: follow the zone, and trust it again once
+                        // the record is as its uploader left it.
+                        try await storage.writeReplace(path, data: f.data)
+                        if f.creator != nil { state.changed?.remove(f.path) }
+                        written += 1
+                    } else if f.creator == nil {
+                        // Overwritten in place (a create-only upload that lost the race
+                        // differs too, but its record's uploader is its last modifier).
+                        putBack.append(CloudFile(path: f.path, data: local))
+                    }
+                    state.uploaded.insert(f.path)
+                    continue
+                }
                 // Echo of our own upload (possibly compacted away since): ignore.
                 if state.uploaded.contains(f.path) { continue }
                 if try await !storage.exists(path) {
                     try await storage.writeNew(path, data: f.data)
+                    // Not only in team vaults: a first download may come before the header.
+                    if f.creator == nil { state.changed = (state.changed ?? []).union([f.path]) }
                     written += 1
                 }
                 state.uploaded.insert(f.path)
             }
-            let team = await isTeamVault()
             for p in changes.deletedPaths where SyncPaths.isSyncable(p) {
                 let path = VaultPath(p.split(separator: "/").map(String.init))
                 // Team vaults never delete anything (no compaction), so a deletion
                 // there is someone erasing history or undoing a removal: keep the
                 // local file, and the next push puts it back.
                 if !team, try await storage.exists(path) { try await storage.delete(path) }
+                // A join request put back by anyone but its author would name them as
+                // its uploader, and the share upkeep would match the wrong person.
+                if team, p.hasPrefix("identities/"), state.creators?[p] != nil || state.changed?.contains(p) == true { continue }
+                // The header goes up again on the next push (it is never in `uploaded`).
+                if team, p == VaultHeader.fileName { state.headerHash = nil }
                 state.uploaded.remove(p)
             }
+            if !putBack.isEmpty { try await transport.upload(putBack, vaultId: vaultId, overwrite: true) }
             state.changeToken = changes.token
             more = changes.moreComing
             saveState()

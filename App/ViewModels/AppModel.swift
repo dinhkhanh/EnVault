@@ -976,7 +976,8 @@ final class AppModel {
             guard team.vaultId == invite.vaultId else {
                 throw VaultError.corruptHeader("this folder holds a different team vault from the one in the invitation")
             }
-            let access = try await team.unlock(identity: me)
+            // This Mac may have seen the vault before (a folder it couldn't locate): keep that history.
+            let access = try await team.unlock(identity: me, seen: VaultSession.seen(at: Self.seenURL(for: invite.vaultId)))
             if access == .notMember || access == .removed {
                 try invite.check(header: team.header, state: await team.state)
                 if await !team.hasRequestedToJoin { try await team.requestToJoin(invite: invite.invite) }
@@ -1304,8 +1305,10 @@ final class AppModel {
                         _ = try await sharing.setPermission(of: p, canWrite: canWrite, on: s.vaultId)
                     }
                 } else if let removed = ids.compactMap({ state.removedAt[$0] }).max(), !handled.contains(removed.string) {
-                    // Not if they asked to join again since (invited back).
-                    let askedAgain = ids.contains { id in requested[id].map { $0 > removed } ?? false }
+                    // Not if they asked to join again since (invited back). A request
+                    // dated ahead of now was made before, to pass for one made after.
+                    let now = ULID(date: Date().addingTimeInterval(3600))
+                    let askedAgain = ids.contains { id in requested[id].map { $0 > removed && $0 < now } ?? false }
                     if p.status == .accepted, !askedAgain {
                         _ = try await sharing.removeParticipant(p, from: s.vaultId)
                     }

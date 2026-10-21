@@ -294,6 +294,25 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         #expect(try await onAda.maintain().isEmpty)
     }
 
+    @Test func aNewcomerApprovedDuringARemovalIsRepaired() async throws {
+        let (_, macs) = try await team()
+        let onAda = try await open(macs[ada.id]!, as: ada)
+        let onBob = try await open(macs[bob.id]!, as: bob)
+        // Bob approves Xia; before his files reach Ada, Ada removes Dee, which rotates.
+        let xia = person("Xia"), xiaMac = MemoryStorage()
+        try await onBob.add(try xia.publicIdentity(), name: "Xia", role: .member)
+        try await Task.sleep(for: .milliseconds(3))
+        try await onAda.remove(dee.id)
+        await sync(macs[ada.id]!, macs[bob.id]!, xiaMac)
+        #expect(try await open(xiaMac, as: xia).access == .awaitingKey(.member))
+
+        try await onAda.refresh()
+        #expect(try await onAda.maintain().wraps == [xia.id])
+        await sync(macs[ada.id]!, xiaMac, macs[dee.id]!)
+        #expect(try await open(xiaMac, as: xia).access == .member(.member))
+        #expect(try await open(macs[dee.id]!, as: dee).access == .removed)
+    }
+
     @Test func lateChangesAreFlagged() async throws {
         let (_, macs) = try await team()
         let onAda = try await open(macs[ada.id]!, as: ada)
@@ -474,6 +493,32 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         try await store.refresh()
         #expect(await store.pendingMembers().isEmpty)
         #expect(await store.rejectedFiles.keys.filter { $0.hasPrefix("identities/") }.count == 2)
+    }
+
+    @Test func theShareUpkeepFindsOnlyAPersonsOwnRequest() async throws {
+        let (store, storage) = try await vault()
+        let eve = person("Eve"), eveMac = MemoryStorage()
+        await sync(storage, eveMac)
+        try await open(eveMac, as: eve).requestToJoin()
+        await sync(storage, eveMac)
+        try await store.refresh()
+        let real = try #require(await store.joinRequest(of: eve.id))
+        try await store.add(try #require(await store.pendingMembers().first).identity, name: "Eve", role: .member)
+
+        // Mal signs newer requests under Eve's id and the owner's, with keys of his own.
+        for id in [eve.id, ada.id] {
+            let mal = UserIdentity(id: id, name: "Mal", createdAt: Date(), agreementKey: .init(), signingKey: .init())
+            let r = try JoinRequest.signed(by: mal, managers: [], vaultId: store.vaultId)
+            try await storage.writeNew(VaultPath("identities", id.uuidString, "\(r.id.string).json"), data: try r.encoded())
+        }
+        // One of Eve's in a folder spelled in lower case, one dated a year ahead.
+        let lower = try JoinRequest.signed(by: eve, managers: [], vaultId: store.vaultId)
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString.lowercased(), "\(lower.id.string).json"), data: try lower.encoded())
+        let ahead = try JoinRequest.signed(by: eve, managers: [], vaultId: store.vaultId, id: ULID(date: Date().addingTimeInterval(365 * 86_400)))
+        try await storage.writeNew(VaultPath("identities", eve.id.uuidString, "\(ahead.id.string).json"), data: try ahead.encoded())
+        try await store.refresh()
+        #expect(await store.joinRequest(of: eve.id)?.id == real.id)
+        #expect(await store.joinRequest(of: ada.id) == nil)
     }
 
     @Test func anInvitationFileChecksTheFolder() async throws {
@@ -782,22 +827,48 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         }
     }
 
+    @Test func savesUnderAKeyFromAFastClockStillCount() async throws {
+        let (store, storage) = try await vault()
+        // Ada's clock runs two hours fast when she rotates.
+        let id = ULID(date: Date().addingTimeInterval(7200)), key = TeamKeys.newKey()
+        let members = await store.state.members.values.map(\.identity)
+        let rotation = try MembershipEvent.signed(.rotate(recipients: members.map(\.id), keyCommitment: TeamKeys.commitment(to: key, vaultId: store.vaultId, epoch: id), leftOut: []),
+                                                  by: ada, vaultId: store.vaultId, id: id)
+        try await storage.writeNew(VaultPath("members", "\(id.string).json"), data: try rotation.encoded())
+        for m in members {
+            try await storage.writeNew(VaultPath("keys", id.string, "\(m.id.uuidString).json"), data: try TeamKeys.wrap(key, for: m, vaultId: store.vaultId, epoch: id).encoded())
+        }
+        let onCyd = try await open(storage, as: cyd)
+        #expect(await onCyd.state.current?.id == id)
+        let p = try await onCyd.createProject(name: "api")
+        let item = try await onCyd.createItem(in: p.id, name: ".env", payload: secret)
+        let onBob = try await open(storage, as: bob)
+        #expect(await onBob.item(item.id) != nil)
+        #expect(await onBob.rejectedFiles.isEmpty)
+    }
+
     @Test func junkFromTheFutureDoesntMakeEverythingLate() async throws {
         let (store, storage) = try await vault()
         let seen = await store.seenState
+        // An admin's change dated far ahead: it applies, so it counts as accepted.
         let future = ULID(string: "7ZZZZZZZZZZZZZZZZZZZZZZZZZ")!
         try await storage.writeNew(VaultPath("members", "\(future.string).json"),
-                                   data: try MembershipEvent.signed(.setRole(member: cyd.id, role: .admin), by: cyd, vaultId: store.vaultId, id: future).encoded())
-        let onAda = try await open(storage, as: ada, seen: seen)
-        try await onAda.setRole(of: cyd.id, to: .viewer)
-        let onBob = try await open(storage, as: bob, seen: await onAda.seenState)
+                                   data: try MembershipEvent.signed(.humansOnly(target: UUID(), on: true), by: bob, vaultId: store.vaultId, id: future).encoded())
+        let bobSaw = try await open(storage, as: bob, seen: seen).seenState
+        #expect(bobSaw.events.contains(future))
+        // Ada's next change is older than that one, but not late.
+        try await open(storage, as: ada, seen: seen).setRole(of: cyd.id, to: .viewer)
+        let onBob = try await open(storage, as: bob, seen: bobSaw)
+        #expect(await onBob.state.role(of: cyd.id) == .viewer)
         #expect(await onBob.lateEvents.isEmpty)
     }
 
     @Test func aKeyHPKERefusesIsNotAnIdentity() throws {
-        // All zeros is a low-order X25519 point.
-        var bad = try person("Eve").publicIdentity()
+        let eve = person("Eve")
+        var bad = try eve.publicIdentity()
+        // All zeros is a low-order X25519 point; signed, so only the key itself is wrong.
         bad.agreementKey = Data(count: 32)
+        bad.signature = try eve.signingKey.signature(for: bad.signedBytes)
         #expect(!bad.isValid)
     }
 
@@ -806,19 +877,24 @@ private let secret = ItemPayload.envFile(text: "API_KEY=1")
         let e1 = try #require(await store.state.current).id
         let p = try await store.createProject(name: "api")
         let first = try await store.createItem(in: p.id, name: "first", payload: .envFile(text: "A=1"))
-        // Squat the link the next rotation would write.
-        try await store.remove(cyd.id)                        // rotates to E2 and links E2 → E1
+        try await store.remove(cyd.id)                        // rotates to E2, linked to E1
         let e2 = try #require(await store.state.current).id
-        _ = e2
-        // Someone squats E3's future link path: rotate again, then check a newcomer still reads `first`.
-        try await store.rotate()
-        let e3 = try #require(await store.state.current).id
-        let squat = VaultPath("keys", e3.string, "prev-\(e1.string).json")
-        if try await !storage.exists(squat) { try await storage.writeNew(squat, data: Data("junk".utf8)) }
+        // Someone got junk into the link's place first.
+        let link = VaultPath("keys", e2.string, "prev-\(e1.string).json")
+        try await storage.delete(link)
+        try await storage.writeNew(link, data: Data("junk".utf8))
+        // The next rotation, on a Mac that opens the vault afresh, links around it.
+        try await open(storage, as: ada).rotate()
         let eve = person("Eve")
-        try await store.add(try eve.publicIdentity(), name: "Eve", role: .member)
-        _ = try await store.maintain()
+        try await open(storage, as: ada).add(try eve.publicIdentity(), name: "Eve", role: .member)
         #expect(try await open(storage, as: eve).item(first.id) != nil)
+    }
+
+    @Test func eachNewKeyLinksOnlyToTheOneBefore() async throws {
+        let (_, storage) = try await vault()
+        for _ in 0..<3 { try await open(storage, as: ada).rotate() }
+        let epochs = try await open(storage, as: ada).state.epochs.count
+        #expect(await storage.allFiles().keys.filter { $0.contains("/prev-") }.count == epochs - 1)
     }
 }
 

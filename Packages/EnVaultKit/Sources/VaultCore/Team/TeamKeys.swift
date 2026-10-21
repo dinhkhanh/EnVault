@@ -180,6 +180,11 @@ public enum TeamRevisionFile {
         return magic + (try JSONEncoder().encode(Envelope(epoch: epoch, author: author.id, box: box, signature: sig)))
     }
 
+    /// The earliest date a revision sealed under `epoch` may carry: an hour
+    /// before the rotation, for clocks that disagree. Writers whose clock is
+    /// further behind the rotating admin's date theirs here (`ULID(notBefore:)`).
+    public static func earliest(under epoch: ULID) -> Date { epoch.timestamp.addingTimeInterval(-3600) }
+
     /// Opens a revision and checks its author: signed by them, and their role
     /// allowed writing as of this revision's id. Returns the value and author.
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data, vaultId: UUID, scope: RevisionFile.Scope, ownerId: UUID,
@@ -200,8 +205,8 @@ public enum TeamRevisionFile {
             throw VaultError.corruptRevision("\(revisionId): author could not write then")
         }
         // Nobody writes under a key before it exists: a revision dated well before
-        // its epoch was backdated (an hour allows for clocks that disagree).
-        guard revisionId.timestamp >= env.epoch.timestamp.addingTimeInterval(-3600) else {
+        // its epoch was backdated.
+        guard revisionId.timestamp >= earliest(under: env.epoch) else {
             throw VaultError.corruptRevision("\(revisionId): dated before its key existed")
         }
         guard let key = keys[env.epoch] else { throw VaultError.corruptRevision("\(revisionId): no key for epoch \(env.epoch)") }

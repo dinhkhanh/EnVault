@@ -54,7 +54,9 @@ public protocol CloudVaultTransport: Sendable {
 /// In-memory transport: an append-only event log per vault, so change tokens
 /// are just positions in the log. Mirrors exactly how the mirror sees CloudKit.
 public actor MemoryCloudTransport: CloudVaultTransport {
-    private struct Event { let seq: Int; let path: String; let data: Data?; var creator: String? = nil }
+    /// `creator`: who created the record, kept when someone else saves over it;
+    /// `modifier`: who saved it last. Reported like CloudKit: only when they agree.
+    private struct Event { let seq: Int; let path: String; let data: Data?; var creator: String? = nil; var modifier: String? = nil }
     private var logs: [UUID: [Event]] = [:]
     private var seq = 0
     public var subscribed: Set<UUID> = []
@@ -79,7 +81,8 @@ public actor MemoryCloudTransport: CloudVaultTransport {
         for f in files {
             if existing[f.path] != nil, !overwrite { continue }
             seq += 1
-            logs[vaultId]!.append(Event(seq: seq, path: f.path, data: f.data, creator: user))
+            let creator = existing[f.path] != nil ? logs[vaultId]!.last { $0.path == f.path }?.creator : user
+            logs[vaultId]!.append(Event(seq: seq, path: f.path, data: f.data, creator: creator, modifier: user))
         }
     }
 
@@ -101,7 +104,7 @@ public actor MemoryCloudTransport: CloudVaultTransport {
         // Collapse to the latest state per path within the batch, like CloudKit does.
         var latest: [String: Event] = [:]
         for e in events { latest[e.path] = e }
-        let files = latest.values.filter { $0.data != nil }.sorted { $0.seq < $1.seq }.map { CloudFile(path: $0.path, data: $0.data!, creator: $0.creator) }
+        let files = latest.values.filter { $0.data != nil }.sorted { $0.seq < $1.seq }.map { CloudFile(path: $0.path, data: $0.data!, creator: $0.creator == $0.modifier ? $0.creator : nil) }
         let deleted = latest.values.filter { $0.data == nil }.map(\.path)
         let newSeq = log.last?.seq ?? since
         return CloudChanges(files: files, deletedPaths: deleted, token: Data(String(newSeq).utf8), moreComing: false)
